@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type EpcAddress } from '../api'
+import { api, isMockMode, type EpcAddress } from '../api'
 import { useSession } from '../context/SessionContext'
 
 export function StartScreen() {
-  const { address, setAddress } = useSession()
-  const [postcode, setPostcode] = useState(address?.postcode ?? 'N10 2AB')
+  const { address, setAddress, placeLabel } = useSession()
+  const [postcode, setPostcode] = useState(isMockMode() ? 'N10 2AB' : '')
   const [results, setResults] = useState<EpcAddress[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -53,23 +53,47 @@ export function StartScreen() {
         </div>
         {error && <p className="error">{error}</p>}
 
-        {results.length > 0 && (
-          <ul className="address-list">
-            {results.map((a) => (
-              <li key={a.lmk_key}>
-                <button
-                  type="button"
-                  className={address?.lmk_key === a.lmk_key ? 'selected' : ''}
-                  onClick={() => setAddress(a)}
-                >
-                  <strong>{a.address}</strong>
-                  <span>
-                    {a.property_type}, {a.floor_area_m2} m², built {a.year_built}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+        {address ? (
+          <div className="selected-house">
+            <p>
+              <strong>Selected: {placeLabel}</strong>
+              {address.current_energy_efficiency_band && <> · EPC band {address.current_energy_efficiency_band}</>}
+            </p>
+            <p className="subtle">From here on we show the postcode district only.</p>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setAddress(null)
+                setResults([])
+              }}
+            >
+              Choose a different house
+            </button>
+          </div>
+        ) : (
+          results.length > 0 && (
+            <ul className="address-list">
+              {results.map((a) => (
+                <li key={a.certificate_id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddress(a)
+                      setResults([])
+                      // Only the district stays on screen once a house is picked.
+                      setPostcode('')
+                    }}
+                  >
+                    <strong>{a.address}</strong>
+                    <span>
+                      EPC {a.current_energy_efficiency_band ?? '?'}, registered {a.registration_date.slice(0, 10)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )
         )}
       </div>
 

@@ -5,6 +5,7 @@ to disk or the database here, and responses carry readings, never images.
 """
 
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -163,29 +164,34 @@ def check_quotes(
     size = None
     if size_low_kw is not None and size_high_kw is not None:
         size = SizeContext(size_low_kw, size_high_kw, design_load_kw)
-    results = []
-    for idx in sorted(grouped):
-        pages = grouped[idx]
-        first, *rest = pages
-        try:
-            verified = extract(
-                gemini,
-                datasheets,
-                "quote",
-                first[0],
-                first[1],
-                media_parts=rest or None,
+    order = sorted(grouped)
+    # Each quote is an independent read: run them together so three quotes take one read's time.
+    with ThreadPoolExecutor(max_workers=len(order) or 1) as pool:
+        futures = []
+        for idx in order:
+            (first_data, first_mime), *rest = grouped[idx]
+            futures.append(
+                pool.submit(
+                    extract,
+                    gemini,
+                    datasheets,
+                    "quote",
+                    first_data,
+                    first_mime,
+                    media_parts=rest or None,
+                )
             )
+        try:
+            verified = [future.result() for future in futures]
         except GeminiError:
             raise _gemini_failed() from None
-        results.append(flag_quote(names[idx], verified, size))
-    return results
+    return [flag_quote(names[idx], v, size) for idx, v in zip(order, verified, strict=True)]
 
 
 @router.post("/review", response_model=ReviewResult)
 def review_all(gemini: Gemini, datasheets: Datasheets, body: ReviewRequest) -> ReviewResult:
     media = [*body.photos, *([body.bill] if body.bill else [])]
-    media += [q.document for q in body.quotes if q.document]
+    media += [page for q in body.quotes if q.document for page in (q.document, *q.pages)]
     # Gemini caps inline data at 20 MB per request, prompt included.
     if sum(len(m.data_base64) * 3 // 4 for m in media) > MAX_REVIEW_BYTES:
         raise HTTPException(413, "Attachments too large for one review: 18 MB maximum")

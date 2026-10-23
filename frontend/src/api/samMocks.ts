@@ -1,31 +1,35 @@
+/** Offline demo data: Sam's invented 1930s semi. The UI labels mock mode wherever it is shown. */
 import type {
   AnalysisBundle,
+  AnalysisEvent,
+  AnalysisResult,
   CostComparison,
   EpcAddress,
+  InputReading,
   PhotoCheckResult,
   PhotoKind,
   QuoteCheckResult,
+  ReviewResult,
   VerificationLogEntry,
+  VerifiedReading,
 } from './types'
 
 const r = (low: number, central: number, high: number) => ({ low, central, high })
 
 export const SAM_EPC_ADDRESSES: EpcAddress[] = [
   {
-    lmk_key: 'sam-demo-1',
+    certificate_id: '0000-0000-0000-0000-0014',
     address: '14 Oakwood Avenue, London',
     postcode: 'N10 2AB',
-    property_type: 'Semi-detached',
-    floor_area_m2: 90,
-    year_built: 1930,
+    registration_date: '2019-03-14',
+    current_energy_efficiency_band: 'D',
   },
   {
-    lmk_key: 'sam-demo-2',
+    certificate_id: '0000-0000-0000-0000-0016',
     address: '16 Oakwood Avenue, London',
     postcode: 'N10 2AB',
-    property_type: 'Semi-detached',
-    floor_area_m2: 88,
-    year_built: 1932,
+    registration_date: '2021-07-02',
+    current_energy_efficiency_band: 'D',
   },
 ]
 
@@ -190,7 +194,9 @@ function costAtFlow(flow: number): CostComparison {
   }
 }
 
-const PHOTO_MOCKS: Record<PhotoKind, PhotoCheckResult> = {
+type PhotoMock = Omit<PhotoCheckResult, 'expected_kind' | 'matches_expected' | 'usable' | 'model' | 'elapsed_ms'>
+
+const PHOTO_MOCKS: Record<PhotoKind, PhotoMock> = {
   boiler_plate: {
     kind: 'boiler_plate',
     legible: true,
@@ -239,10 +245,14 @@ const PHOTO_MOCKS: Record<PhotoKind, PhotoCheckResult> = {
 }
 
 export function mockPhotoCheck(kind: PhotoKind, blurry = false): PhotoCheckResult {
+  const meta = { expected_kind: kind, model: 'gemini-3.8-flash', elapsed_ms: 3400 }
   if (blurry) {
     return {
+      ...meta,
       kind,
+      matches_expected: true,
       legible: false,
+      usable: false,
       summary: "Couldn't read this — too blurry",
       key_fields: {},
       confidence: 'low',
@@ -250,64 +260,146 @@ export function mockPhotoCheck(kind: PhotoKind, blurry = false): PhotoCheckResul
       privacy_warning: null,
     }
   }
-  return { ...PHOTO_MOCKS[kind] }
+  return { ...meta, ...PHOTO_MOCKS[kind], matches_expected: true, usable: true }
 }
 
-export function mockVerificationStream(): VerificationLogEntry[] {
-  const base = Date.now()
+function entry(
+  id: string,
+  input: string,
+  step: VerificationLogEntry['step'],
+  model: string,
+  check: string,
+  passed: boolean,
+  action: string,
+  offsetMs: number,
+): VerificationLogEntry {
+  return { id, input, step, model, check, passed, action, at: new Date(Date.now() + offsetMs).toISOString() }
+}
+
+function mockLog(): VerificationLogEntry[] {
   return [
-    {
-      id: '1',
-      step: 'read',
-      model: 'gemini-4-argon',
-      check: 'Boiler data plate OCR',
-      passed: true,
-      action: 'Read make, model, kW rating, efficiency',
-      at: new Date(base).toISOString(),
-    },
-    {
-      id: '2',
-      step: 'check',
-      model: 'gemini-4-argon',
-      check: 'Privacy scan',
-      passed: true,
-      action: 'No faces or number plates stored',
-      at: new Date(base + 400).toISOString(),
-    },
-    {
-      id: '3',
-      step: 'read',
-      model: 'gemini-4-argon',
-      check: 'Gas bill annual kWh',
-      passed: true,
-      action: 'Extracted 12-month total',
-      at: new Date(base + 900).toISOString(),
-    },
-    {
-      id: '4',
-      step: 'reread',
-      model: 'gemini-4-argon',
-      check: 'Bill period cross-check',
-      passed: true,
-      action: 'Monthly sum matches annual total',
-      at: new Date(base + 1400).toISOString(),
-    },
-    {
-      id: '5',
-      step: 'pass',
-      model: 'gae-heatpump',
-      check: 'Measured vs fabric cross-check',
-      passed: true,
-      action: 'Estimates disagree — reasons ranked',
-      at: new Date(base + 2000).toISOString(),
-    },
+    entry('boiler_plate-v1', 'boiler_plate', 'read', 'gemini-3.8-flash', 'Gemini reads the input', true, '{"make": "Worcester", "model": "Greenstar 24i"}', 0),
+    entry('boiler_plate-v2', 'boiler_plate', 'check', 'code', 'model found in datasheet library: matched', true, 'ok', 300),
+    entry('boiler_plate-v3', 'boiler_plate', 'pass', 'code', 'all checks passed', true, 'use this reading', 350),
+    entry('radiators-v1', 'radiators', 'read', 'gemini-3.8-flash', 'Gemini reads the input', true, '{"radiator_type": "other"}', 500),
+    entry('radiators-v2', 'radiators', 'check', 'code', 'radiator legible: model reports it cannot read the radiator', false, 'ask Gemini to look again', 600),
+    entry('radiators-v3', 'radiators', 'reread', 'gemini-4-argon', 'Gemini re-reads with the failed checks', true, '{"radiator_type": "K2", "height_mm": 600, "width_mm": 1200}', 900),
+    entry('radiators-v4', 'radiators', 'pass', 'code', 'all checks passed', true, 'use this reading', 950),
+    entry('gas_bill-v1', 'gas_bill', 'read', 'gemini-4-argon', 'Gemini reads the input', true, '{"total_kwh": 12000}', 1200),
+    entry('gas_bill-v2', 'gas_bill', 'check', 'code', 'period covers about a year: 365 days', true, 'ok', 1250),
+    entry('gas_bill-v3', 'gas_bill', 'pass', 'code', 'all checks passed', true, 'use this reading', 1300),
+    entry('survey-v1', 'maths', 'check', 'code', 'Estimate A vs B: ratio 1.85 (fabric_higher)', false, 'explain the gap: 4 ranked reason(s)', 1500),
   ]
+}
+
+const READ_STATUS: Partial<Record<PhotoKind, InputReading['status']>> = {
+  boiler_plate: 'verified',
+  radiators: 'verified',
+  gas_bill: 'verified',
+}
+
+export function mockAnalysisResult(kinds: PhotoKind[]): AnalysisResult {
+  const all: PhotoKind[] = ['boiler_plate', 'radiators', 'fuse_cutout', 'outdoor_space', 'gas_bill']
+  return {
+    survey_id: null,
+    saved: false,
+    storage_note: 'Offline demo data: nothing is saved.',
+    postcode_district: 'N10',
+    epc: {
+      property_type: 'semi_detached',
+      floor_area_m2: 90,
+      age_band: '1930-1949',
+      year_built: 1930,
+      wall_type: 'cavity_unfilled',
+      glazing: 'double_unknown_date',
+      loft_insulation_mm: 100,
+      floor_insulated: false,
+      main_heating_fuel: 'gas',
+      current_energy_efficiency_band: 'D',
+      walls: ['cavity wall, as built, no insulation (assumed)'],
+      roofs: ['pitched, 100 mm loft insulation'],
+      floors: ['suspended, no insulation (assumed)'],
+      windows: ['fully double glazed'],
+      main_heating: ['boiler and radiators, mains gas'],
+    },
+    bundle: SAM_ANALYSIS,
+    size_basis: 'measured',
+    readings: all.map((kind) => ({
+      kind,
+      status: kinds.includes(kind) ? (READ_STATUS[kind] ?? 'verified') : 'not_provided',
+      attempts: kind === 'radiators' ? 2 : 1,
+      reading: null,
+      warnings: [],
+      photograph_instead: null,
+      used_for: '',
+    })),
+    gaps: [],
+    defaults: [
+      {
+        input: 'radiators',
+        name: 'photographed_room_share_of_heat_loss',
+        value: '20% of 4.7 kW',
+        note: 'No room sizes from one photo: assumes the room is about a fifth of the house\'s heat loss.',
+        confidence: 'low',
+      },
+    ],
+    log: mockLog(),
+    timings_ms: {},
+  }
+}
+
+export function mockAnalysisEvents(kinds: PhotoKind[]): AnalysisEvent[] {
+  const result = mockAnalysisResult(kinds.length ? kinds : ['boiler_plate', 'radiators', 'gas_bill'])
+  return [
+    { type: 'step', step: 'epc', status: 'running', ms: null },
+    ...result.log.map((e): AnalysisEvent => ({ type: 'log', entry: e })),
+    { type: 'step', step: 'epc', status: 'done', ms: 900 },
+    { type: 'result', result },
+  ]
+}
+
+function mockVerified(kw: number): VerifiedReading {
+  return {
+    kind: 'quote',
+    status: 'verified',
+    reading: { heat_pump_kw: kw },
+    attempts: 1,
+    warnings: [],
+    photograph_instead: null,
+    datasheet_id: null,
+    log: [],
+  }
+}
+
+export function mockReview(quoteIds: string[]): ReviewResult {
+  return {
+    review: {
+      estimates_explanation:
+        'Your bills point to about 4.7 kW; the fabric calc says 8.75 kW. The likeliest reason is cavity walls filled since the EPC, then the default air change rate.',
+      cited_reason_codes: ['missed_insulation', 'default_air_change_rate'],
+      quote_reviews: quoteIds.map((id) => ({
+        quote_id: id,
+        flags: [{ severity: 'amber', message: 'Ask how the size was chosen.', evidence: 'Target size 5-7 kW.' }],
+      })),
+      questions_to_ask: ['Can I see the room-by-room heat loss calculation?'],
+      summary: 'A 5-7 kW unit at 45°C or below fits what your bills show.',
+    },
+    stripped: [
+      { where: 'summary', text: 'This saves you £3,456 a year.', numbers: ['3,456'] },
+    ],
+    datasheets_used: [],
+    model: 'gemini-4-argon',
+    log: [],
+    disclaimer:
+      'A second opinion with confidence ranges, not financial advice. Nothing is sent to installers or network operators. It advises; you decide.',
+  }
 }
 
 export const SAM_QUOTE_CHECKS: QuoteCheckResult[] = [
   {
     filename: 'installer-a-9kw.pdf',
     quoted_kw: 9,
+    verified: mockVerified(9),
     design_flow_temp_c: 55,
     flags: [
       {
@@ -336,6 +428,7 @@ export const SAM_QUOTE_CHECKS: QuoteCheckResult[] = [
   {
     filename: 'installer-b-12kw.pdf',
     quoted_kw: 12,
+    verified: mockVerified(12),
     design_flow_temp_c: 50,
     flags: [
       {
@@ -357,6 +450,7 @@ export const SAM_QUOTE_CHECKS: QuoteCheckResult[] = [
   {
     filename: 'installer-c-6kw.pdf',
     quoted_kw: 6,
+    verified: mockVerified(6),
     design_flow_temp_c: 40,
     flags: [
       {

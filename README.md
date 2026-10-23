@@ -22,7 +22,8 @@ the hackathon; open-source libraries and starter templates are credited below.
 | --- | --- |
 | Heat-pump maths core (`backend/src/gae/heatpump/`) | Built, unit-tested |
 | FastAPI backend with health endpoint | Built |
-| React frontend | Mobile-first demo UI with typed mock API (`VITE_USE_MOCKS`) |
+| React frontend | Mobile-first demo UI on the live API; offline mocks with `VITE_USE_MOCKS=true` |
+| End-to-end analysis (`backend/src/gae/survey/`) | Built: EPC, photos, bill and weather to the maths core, streamed live log, saved to Atlas |
 | EPC lookup and exact-period heating degree days | Built, mocked HTTP tests |
 | MongoDB Atlas persistence and datasheet retrieval | Built; managed embeddings require Atlas setup |
 | Gemini photo checks, verified extraction and one-context review | Built, fake-client tests plus a live smoke test |
@@ -86,8 +87,47 @@ npm run build
 ```
 
 With `VITE_USE_MOCKS=true` (default in `.env.example`), the UI runs the full demo flow without a
-backend. Set `VITE_USE_MOCKS=false` when API routes are wired; the browser still calls only `/api`
-via the Vite proxy (no API keys in the frontend).
+backend, labelled "offline demo data"; the production build and CI need no backend. Set
+`VITE_USE_MOCKS=false` to use the live API; the browser still calls only `/api` via the Vite proxy
+(no API keys in the frontend).
+
+### Run the demo locally
+
+```bash
+cp .env.example .env                     # GEMINI_API_KEY, EPC_API_TOKEN, MONGODB_URI (optional)
+
+cd backend
+uv sync
+uv run python -m gae.db.seed             # once: public datasheet library into Atlas (safe to repeat)
+uv run python -m gae.db.indexes          # once: Search + Vector Search indexes (safe to repeat)
+uv run uvicorn gae.main:app --port 8000  # http://127.0.0.1:8000/api/health shows what is configured
+
+cd ../frontend                           # second terminal
+npm install
+VITE_USE_MOCKS=false npm run dev         # http://localhost:5173
+```
+
+Then: enter a postcode and pick a **house** (flats are refused by design), add the photos you have
+(boiler plate, radiator, fuse cutout and gas bill; the outdoor spot is optional), redact each one,
+and press **Run estimates**. Without `MONGODB_URI` everything still runs: datasheets come from the
+seed file in memory and the survey is simply not saved.
+
+What happens on **Run estimates** (`POST /api/analysis`, multipart: `certificate_id` plus one file
+per photo kind, all optional):
+
+1. The EPC fetch and every photo/bill extraction start together; each extraction is its own Gemini
+   verification loop (read, check in code, re-read once on failure, give up honestly).
+2. The bill's exact dates and the postcode centroid give heating degree days (Open-Meteo), then
+   Estimate B. No bill, or a bill that isn't a full 12 months, means no Estimate B: the screen says
+   what to provide, and the cross-check says it can't compare.
+3. The maths core runs: fabric (A), measured (B), cross-check, costs by flow temperature, target spec.
+4. The survey is saved to Atlas with the postcode district only.
+
+The response streams newline-delimited JSON (`step`, `log`, then one `result` or `error`), so the
+verification log appears as it happens, including any failed check and its re-read. After the
+estimates are on screen, **Ask Gemini to review everything** calls `POST /api/analysis/review`
+(the bundle, readings and the same redacted files; 1-2 minutes at high thinking). Checked quotes on
+the Quotes screen are sized against the bundle's target range and measured design load.
 
 ### Secret scan on commit
 
@@ -144,6 +184,8 @@ needs a paid-tier key). Uploads are multipart, held in memory for the request an
   page so multi-page PDFs stay one quote; optional `size_low_kw`, `size_high_kw`, `design_load_kw`
   from the maths core) reads each quote through the same loop and flags it in code:
   oversized, high design flow, buffer tank, grant not deducted, kW not matching the datasheet.
+- `POST /api/analysis` and `POST /api/analysis/review` run the whole survey; see
+  [Run the demo locally](#run-the-demo-locally).
 - `POST /api/review` (JSON) sends photos, bill, EPC record, full matched datasheets, every quote and
   the maths-core outputs to one Gemini 4 Argon interaction, then removes any statement whose
   numbers do not trace back to those inputs.
@@ -174,8 +216,14 @@ in a `VITE_*` variable, because Vite bundles those into the browser build.
   which strips any remaining image metadata in memory (Pillow) before the paid Gemini API call.
   Calls use `store=False`, so Google does not retain your uploads as stored interactions.
 - **What we store:** no upload files, no raw photos, and no bill or quote documents. The API keeps
-  uploads in RAM for the request only. Survey persistence (when wired) holds extracted numbers and
-  text fields, not images.
+  uploads in RAM for the request only. A saved survey holds the postcode district (outward code,
+  e.g. `HA8`) as its only location, plus extracted readings, the maths bundle and the verification
+  log. Never an address, full postcode, UPRN or certificate number: the survey model rejects them.
+- **Where the house is stays private:** once you pick your house, every screen shows only "house in
+  HA8" (the district). Gemini never receives an address: the review gets an allowlist of EPC building
+  fields (type, age band, floor area, wall/roof/floor/window/heating descriptions, ratings), with
+  any address, postcode, UPRN or certificate key stripped, and a test asserts none reaches the
+  request. Quotes are labelled "Quote A", "Quote B", not by file name.
 - Photos are for reading data plates, radiators and fuse cutouts. Gemini is told never to transcribe
   people, plates, names, addresses or meter numbers; the instant check warns when identifying
   detail may still be visible and asks you to cover it and resend.
@@ -208,10 +256,10 @@ in a `VITE_*` variable, because Vite bundles those into the browser build.
 
 ## How we use MongoDB Atlas
 
-Atlas is the core backend store. `surveys` holds one document per property with an optional
-address/postcode, EPC snapshot, extracted readings with confidence, both estimates, cross-check,
-cost, target spec, quote flags and verification log. UUIDs identify surveys; creation/update times
-are server generated. `datasheets` holds 15 public manufacturer variants from Vaillant,
+Atlas is the core backend store. `surveys` holds one document per analysis with the postcode
+district only (never an address), EPC building snapshot, extracted readings with confidence, both
+estimates, cross-check, cost, target spec, quote flags and verification log. UUIDs identify
+surveys; creation/update times are server generated. `datasheets` holds 15 public manufacturer variants from Vaillant,
 Mitsubishi Electric, Daikin, Samsung, Worcester Bosch, Baxi and Ideal.
 
 - **Atlas Search:** `datasheets_text` indexes make, model and curated text with fuzzy matching,

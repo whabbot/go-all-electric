@@ -3,7 +3,7 @@ import { useSession } from '../context/SessionContext'
 import { ExactValue, RangeValue } from '../components/RangeValue'
 
 export function SpecScreen() {
-  const { analysis } = useSession()
+  const { analysis, placeLabel } = useSession()
   if (!analysis) {
     return (
       <p className="warning">
@@ -12,11 +12,13 @@ export function SpecScreen() {
     )
   }
 
-  const spec = analysis.target_spec
+  const spec = analysis.bundle.target_spec
+  const fromBills = analysis.size_basis === 'measured'
 
   return (
     <section className="screen spec-screen">
       <h1>Target spec</h1>
+      {placeLabel && <p className="place-label">{placeLabel}</p>}
       <p className="lede">What a good installation should look like for this home — second opinion, not a survey.</p>
 
       <div className="card highlight">
@@ -24,7 +26,11 @@ export function SpecScreen() {
         <p className="kw-display">
           <RangeValue range={spec.size_kw} unit=" kW" decimals={0} />
         </p>
-        <p className="subtle">Sized from measured load, not the fabric high estimate.</p>
+        <p className="subtle">
+          {fromBills
+            ? 'Sized from measured load, not the fabric high estimate.'
+            : "Sized from the fabric estimate only (no usable bill), which often reads high. Add a bill to size from what the house actually used."}
+        </p>
       </div>
 
       <div className="card">
@@ -41,13 +47,21 @@ export function SpecScreen() {
 
       <div className="card">
         <h2>Radiators</h2>
+        {spec.radiators.length === 0 && (
+          <p className="subtle">
+            Couldn&apos;t check radiators: add a clear radiator photo with a tape measure across it.
+          </p>
+        )}
         <ul className="radiator-list">
           {spec.radiators.map((r) => (
             <li key={r.room} className={`rad-${r.status}`}>
               <strong>{r.room}</strong>
               <span className={`status-pill status-${r.status}`}>{r.status}</span>
               <p>
-                At {r.flow_temp_c}°C: {r.output_w} W output vs {r.heat_loss_w} W loss
+                At {r.flow_temp_c}°C: {Math.round(r.output_w)} W output vs {Math.round(r.heat_loss_w)} W loss
+                {r.room === 'Photographed room' || analysis.defaults.some((d) => d.input === 'radiators')
+                  ? ' (rating and room loss are named estimates, low confidence)'
+                  : ''}
               </p>
               {r.status === 'upsize' && (
                 <p className="subtle">Consider ~{Math.round(r.required_output_dt50_w)} W (ΔT50) or higher flow.</p>

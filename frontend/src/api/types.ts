@@ -1,4 +1,4 @@
-/** Mirrors backend heatpump maths-core and planned Gemini / quote-check payloads. */
+/** Mirrors the backend: heatpump maths core, Gemini readings and the survey analysis call. */
 
 export type Confidence = 'low' | 'medium' | 'high'
 
@@ -140,14 +140,21 @@ export type PhotoKind =
   | 'outdoor_space'
   | 'gas_bill'
 
+export type DetectedKind = PhotoKind | 'gas_meter' | 'consumer_unit' | 'other'
+
 export type PhotoCheckResult = {
-  kind: PhotoKind
+  kind: DetectedKind
+  expected_kind: PhotoKind
+  matches_expected: boolean
   legible: boolean
+  usable: boolean
   summary: string
   key_fields: Record<string, string>
   confidence: Confidence
   retake_hint: string | null
   privacy_warning: string | null
+  model: string
+  elapsed_ms: number
 }
 
 export type VerificationStep =
@@ -160,6 +167,8 @@ export type VerificationStep =
 export type VerificationLogEntry = {
   id: string
   step: VerificationStep
+  /** Which input the entry is about, e.g. `gas_bill`, `radiators`, `review`. */
+  input: string
   model: string
   check: string
   passed: boolean
@@ -180,27 +189,152 @@ export type QuoteUploadGroup = {
   pages: File[]
 }
 
+export type ReadingStatus = 'verified' | 'verified_with_warnings' | 'couldnt_tell'
+
+export type VerifiedReading = {
+  kind: string
+  status: ReadingStatus
+  reading: Record<string, unknown> | null
+  attempts: number
+  warnings: string[]
+  photograph_instead: string | null
+  datasheet_id: string | null
+  log: VerificationLogEntry[]
+}
+
 export type QuoteCheckResult = {
   filename: string
   quoted_kw: number | null
   design_flow_temp_c: number | null
   flags: QuoteFlag[]
   questions_to_ask: string[]
+  verified: VerifiedReading
 }
 
+/** From the analysis bundle, so quote flags compare against this home's numbers. */
+export type QuoteSizeContext = {
+  size_low_kw: number
+  size_high_kw: number
+  design_load_kw: number | null
+}
+
+/** One EPC search row. The address is for picking only: after that the UI shows the district. */
 export type EpcAddress = {
-  lmk_key: string
+  certificate_id: string
   address: string
   postcode: string
-  property_type: string
-  floor_area_m2: number
-  year_built: number
+  registration_date: string
+  current_energy_efficiency_band: string | null
 }
 
+/** `measured` and `cross_check` are null when there is no usable gas bill (no Estimate B). */
 export type AnalysisBundle = {
-  measured: MeasuredEstimate
+  measured: MeasuredEstimate | null
   fabric: FabricEstimate
-  cross_check: CrossCheck
+  cross_check: CrossCheck | null
   costs_by_flow_temp: CostComparison[]
   target_spec: TargetSpec
+}
+
+export type EpcSummary = {
+  property_type: string
+  floor_area_m2: number | null
+  age_band: string | null
+  year_built: number
+  wall_type: string
+  glazing: string
+  loft_insulation_mm: number
+  floor_insulated: boolean
+  main_heating_fuel: string
+  current_energy_efficiency_band: string | null
+  walls: string[]
+  roofs: string[]
+  floors: string[]
+  windows: string[]
+  main_heating: string[]
+}
+
+export type InputReading = {
+  kind: PhotoKind
+  status: ReadingStatus | 'not_provided'
+  attempts: number
+  reading: Record<string, unknown> | null
+  warnings: string[]
+  photograph_instead: string | null
+  used_for: string
+}
+
+export type NamedDefault = {
+  input: string
+  name: string
+  value: string
+  note: string
+  confidence: Confidence
+}
+
+/** Something we couldn't tell, what it means, and what to provide instead. */
+export type Gap = {
+  input: string
+  message: string
+  provide: string
+}
+
+export type AnalysisResult = {
+  survey_id: string | null
+  saved: boolean
+  storage_note: string | null
+  postcode_district: string | null
+  epc: EpcSummary
+  bundle: AnalysisBundle
+  size_basis: 'measured' | 'fabric'
+  readings: InputReading[]
+  gaps: Gap[]
+  defaults: NamedDefault[]
+  log: VerificationLogEntry[]
+  timings_ms: Record<string, number>
+}
+
+export type AnalysisStepStatus = 'running' | 'done'
+
+/** `POST /api/analysis` streams these as newline-delimited JSON. */
+export type AnalysisEvent =
+  | { type: 'step'; step: string; status: AnalysisStepStatus; ms: number | null }
+  | { type: 'log'; entry: VerificationLogEntry }
+  | { type: 'result'; result: AnalysisResult }
+  | { type: 'error'; status: number; message: string }
+
+export type ReviewFlag = {
+  severity: QuoteFlagSeverity
+  message: string
+  evidence: string
+}
+
+export type ArgonReview = {
+  estimates_explanation: string
+  cited_reason_codes: ReasonCode[]
+  quote_reviews: { quote_id: string; flags: ReviewFlag[] }[]
+  questions_to_ask: string[]
+  summary: string
+}
+
+/** A sentence removed because a number in it doesn't trace back to our maths or your documents. */
+export type StrippedClaim = {
+  where: string
+  text: string
+  numbers: string[]
+}
+
+export type ReviewResult = {
+  review: ArgonReview
+  stripped: StrippedClaim[]
+  datasheets_used: string[]
+  model: string
+  log: VerificationLogEntry[]
+  disclaimer: string
+}
+
+export type ReviewQuote = {
+  quote_id: string
+  pages: File[]
+  reading: Record<string, unknown> | null
 }

@@ -243,14 +243,18 @@ def extract(
     mime_type: str,
     *,
     media_parts: list[tuple[bytes, str]] | None = None,
+    log: VerificationLog | None = None,
 ) -> VerifiedReading:
-    """Read, check, re-read once on failure, then verify or give up with a retake hint."""
+    """Read, check, re-read once on failure, then verify or give up with a retake hint.
+
+    Pass `log` to watch entries as they are added (the survey streams them to the UI).
+    """
     spec = SPECS[kind]
     parts = [(data, mime_type)]
     if media_parts:
         parts.extend(media_parts)
     blocks = [media(part[0], part[1]) for part in parts]
-    log = VerificationLog()
+    log = VerificationLog() if log is None else log
     reading: Reading | None = None
     outcome: checks.Outcome | None = None
     failed: list[checks.Check] = []

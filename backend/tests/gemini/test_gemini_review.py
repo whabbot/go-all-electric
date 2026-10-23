@@ -1,6 +1,7 @@
 """Quote flags in code, and the one-context review with its number check."""
 
 from gae.gemini.client import Call, FakeGemini
+from gae.gemini.datasheets import InMemoryDatasheetLookup
 from gae.gemini.quotes import SizeContext, flag_quote
 from gae.gemini.review import allowed_numbers, review, supported, tidy
 from gae.gemini.schemas import (
@@ -198,3 +199,24 @@ def test_clean_review_passes(sam_maths, lookup) -> None:
     result = review(FakeGemini([reply]), lookup, request(sam_maths))
     assert result.stripped == []
     assert result.log[-1].step == "pass"
+
+
+def test_review_never_sends_address_like_epc_fields(sam_maths: MathsBundle) -> None:
+    req = request(sam_maths)
+    req.epc_record = {
+        "address_line_1": "1 Synthetic Street",
+        "address_line_2": "Flat B",
+        "postcode": "ZZ1 1ZZ",
+        "uprn": 100000000001,
+        "certificate_number": "0000-1111-2222-3333-4444",
+        "lmk_key": "abc123",
+        "total_floor_area": 90,
+        "walls": [{"description": "Cavity wall", "location_note": "near ZZ1 1ZZ"}],
+        "main_heating": [{"description": "Boiler, mains gas", "address": "1 Synthetic Street"}],
+    }
+    fake = FakeGemini([argon_reply(sam_maths)])
+    review(fake, InMemoryDatasheetLookup([]), req)
+    prompt = fake.calls[0].prompt
+    for private in ("Synthetic Street", "Flat B", "ZZ1", "100000000001", "0000-1111", "abc123"):
+        assert private not in prompt
+    assert "Cavity wall" in prompt and '"total_floor_area": 90' in prompt

@@ -282,6 +282,8 @@ class MediaInput(BaseModel):
 class QuoteInput(BaseModel):
     quote_id: str = Field(description="Label used in flags, e.g. 'Quote A (9 kW)'.")
     document: MediaInput | None = None
+    # Further pages of the same quote (photos or rendered PDF pages), after `document`.
+    pages: list[MediaInput] = Field(default_factory=list, max_length=7)
     reading: QuoteReading | None = None
 
 
