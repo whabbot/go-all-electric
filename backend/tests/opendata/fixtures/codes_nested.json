@@ -1,0 +1,74 @@
+{
+  "construction_age_band": {
+    "data": [
+      {
+        "key": "A",
+        "values": [
+          {
+            "value": "England and Wales: before 1900",
+            "schemaVersion": "SAP-Schema-12.0",
+            "assessmentType": "SAP"
+          },
+          {
+            "value": "Pre-1900",
+            "schemaVersion": "SAP-Schema-12.0",
+            "assessmentType": "RdSAP"
+          },
+          {
+            "value": "Wrong schema label",
+            "schemaVersion": "SAP-Schema-13.0",
+            "assessmentType": "RdSAP"
+          }
+        ]
+      }
+    ]
+  },
+  "property_type": {
+    "data": [
+      {
+        "key": "2",
+        "values": [
+          {
+            "value": "Flat",
+            "schemaVersion": "SAP-Schema-12.0",
+            "assessmentType": "SAP"
+          },
+          {
+            "value": "Flat",
+            "schemaVersion": "SAP-Schema-12.0",
+            "assessmentType": "RdSAP"
+          },
+          {
+            "value": "Wrong schema label",
+            "schemaVersion": "SAP-Schema-13.0",
+            "assessmentType": "RdSAP"
+          }
+        ]
+      }
+    ]
+  },
+  "built_form": {
+    "data": [
+      {
+        "key": "1",
+        "values": [
+          {
+            "value": "Detached",
+            "schemaVersion": "SAP-Schema-12.0",
+            "assessmentType": "SAP"
+          },
+          {
+            "value": "Detached",
+            "schemaVersion": "SAP-Schema-12.0",
+            "assessmentType": "RdSAP"
+          },
+          {
+            "value": "Wrong schema label",
+            "schemaVersion": "SAP-Schema-13.0",
+            "assessmentType": "RdSAP"
+          }
+        ]
+      }
+    ]
+  }
+}

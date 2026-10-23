@@ -1,6 +1,7 @@
 {
   "data": {
     "schema_type": "RdSAP-Schema-21.0.1",
+    "assessment_type": "RdSAP",
     "postcode": "ZZ1 1ZZ",
     "address_line_1": "1 Synthetic Example Lane",
     "dwelling_type": "Semi-detached house",
