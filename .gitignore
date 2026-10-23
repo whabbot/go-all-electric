@@ -1,0 +1,36 @@
+# --- Secrets: never commit real keys -------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Private demo material: real photos, bills, addresses ----------------------------------
+# Keep anything real (boiler plates, radiators, bills, EPC lookups for a real address) here.
+private/
+demo-data/
+
+# --- Python --------------------------------------------------------------------------------
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# --- Node / frontend -----------------------------------------------------------------------
+node_modules/
+dist/
+dist-ssr/
+*.local
+*.log
+
+# --- Build output and editors --------------------------------------------------------------
+build/
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
