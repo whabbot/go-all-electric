@@ -381,12 +381,15 @@ Before deploying:
    in `~/.config/go-all-electric/.env` with mode 600. Use ordinary `NAME=value` lines
    (quotes are supported; no shell expansion or multiline values). Choose a demo access
    code and share it privately with judges. Existing local env files may lack that code.
-3. **Choose Atlas network access.** Cloud Run egress IPs are dynamic. For the demo,
-   Atlas can allow `0.0.0.0/0`, which exposes its network endpoint to all IPv4 addresses
-   while database authentication still applies. Alternatively configure VPC egress through
-   Cloud NAT with a static IP and allow only that IP: tighter network access, with extra
-   setup and cost. Make this choice in Atlas before testing; the deploy script does not
-   change Atlas access or configure NAT. Use a database user with only the needed privileges.
+3. **Use a single static Atlas egress IP.** The script creates a custom VPC network
+   (`gae-network`), a `10.42.0.0/24` subnet (`gae-egress`) in `europe-west2`, a Cloud Router
+   (`gae-router`), a reserved regional external IP (`gae-egress-ip`), and Cloud NAT
+   (`gae-nat`) using that address. Cloud Run sends all outbound traffic through Direct
+   VPC egress and that NAT. No default network is required. The deployer also needs
+   Compute Network Admin and permission to reserve external addresses (for example,
+   Compute Public IP Admin). Use a database user with only the needed privileges.
+   After deployment, the script prints the IP: add exactly that address as a `/32` in
+   Atlas network access before using database-backed routes. Do not allow `0.0.0.0/0`.
 4. From the repository, run:
 
    ```sh
@@ -399,6 +402,13 @@ repository path). It uses `europe-west2`, 0–2 instances, 2 GiB memory, one CPU
 8, and a 900-second timeout. Public invocation is enabled; the application access code
 protects every `/api/*` route except `/api/health`. Re-running adds current secret versions
 and redeploys. Do not run with shell tracing. Credentials are runtime environment variables.
+
+The VPC, subnet, router, address and NAT are reused on subsequent runs; the NAT
+configuration is updated to use the reserved address and subnet. Cloud NAT and reserved
+IPv4 addresses incur charges. For cleanup, delete the Cloud Run service first, delete
+`gae-nat` from `gae-router`, delete the router, release `gae-egress-ip`, then delete the
+subnet and VPC. Remove the `/32` from Atlas too. Alternatively, delete the dedicated
+Google Cloud project to remove its resources and stop their charges.
 
 The first visit shows **Enter access code**. A verified code is remembered in localStorage
 on that device and sent in `X-Access-Code`. Rotating the code invalidates saved codes.
