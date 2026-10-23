@@ -25,8 +25,9 @@ the hackathon; open-source libraries and starter templates are credited below.
 | React frontend | Mobile-first demo UI with typed mock API (`VITE_USE_MOCKS`) |
 | EPC lookup and exact-period heating degree days | Built, mocked HTTP tests |
 | MongoDB Atlas persistence and datasheet retrieval | Built; managed embeddings require Atlas setup |
-| Gemini photo and bill reading | Planned |
-| Quote checker, solar, EV charging, sequenced plan | Planned |
+| Gemini photo checks, verified extraction and one-context review | Built, fake-client tests plus a live smoke test |
+| Quote checker (flags in code from verified quote readings) | Built |
+| Solar, EV charging, sequenced plan | Planned |
 
 ## How the maths works
 
@@ -102,7 +103,8 @@ frontend lint and build, then a gitleaks scan of the full history.
 | Variable | Used for | Status |
 | --- | --- | --- |
 | `VITE_USE_MOCKS` | Frontend: mock Sam demo vs live `/api` (never put secrets in `VITE_*`) | Built |
-| `GEMINI_API_KEY` | Gemini 4 Argon photo and bill reading | Planned |
+| `GEMINI_API_KEY` | Gemini photo checks, bill/quote reading and the review | Built |
+| `GEMINI_LEAD_MODEL`, `GEMINI_FAST_MODEL` | Optional model ids (defaults `gemini-4-argon`, `gemini-3.8-flash`); not secrets | Built |
 | `EPC_API_TOKEN` | GOV.UK EPC replacement API bearer token, issued after GOV.UK One Login | Required for EPC lookup |
 | `EPC_API_EMAIL`, `EPC_API_KEY` | Retained legacy configuration; retired API Basic auth is no longer used | Deprecated |
 | `MONGODB_URI` | Server-side Atlas connection string; database `go_all_electric` | Built |
@@ -128,6 +130,25 @@ for defaults, unsupported flats, monthly-bill requirements and weather uncertain
 field caveats alongside the fabric result. These clients do not persist addresses or coordinates;
 responses disable caching. Disable query-string logging in deployment to keep postcodes private.
 
+### Gemini endpoints
+
+Set `GEMINI_API_KEY` (from [Google AI Studio](https://aistudio.google.com/apikey); Gemini 4 Argon
+needs a paid-tier key). Uploads are multipart, held in memory for the request and never stored.
+
+- `POST /api/photos/check` (`kind`, `file`) is the instant check on upload: what the photo shows,
+  whether it is legible, key fields already visible, a retake hint, and a face/number-plate warning.
+- `POST /api/photos/extract` (`kind`, `file`) runs the verification loop and returns a typed
+  reading, its status (`verified`, `verified_with_warnings` or `couldnt_tell` with what to
+  photograph instead) and the step-by-step verification log for the UI.
+- `POST /api/quotes/check` (`quotes` files, optional `size_low_kw`, `size_high_kw`,
+  `design_load_kw` from the maths core) reads each quote through the same loop and flags it in code:
+  oversized, high design flow, buffer tank, grant not deducted, kW not matching the datasheet.
+- `POST /api/review` (JSON) sends photos, bill, EPC record, full matched datasheets, every quote and
+  the maths-core outputs to one Gemini 4 Argon interaction, then removes any statement whose
+  numbers do not trace back to those inputs.
+
+`kind` is one of `boiler_plate`, `radiators`, `fuse_cutout`, `outdoor_space`, `gas_bill`.
+
 ## Secrets
 
 Keys live in `.env` only and are used server-side only. The frontend never receives any API key.
@@ -142,8 +163,15 @@ in a `VITE_*` variable, because Vite bundles those into the browser build.
 ## Privacy and honesty
 
 - Photos are for reading data plates, radiators and fuse cutouts. Faces, number plates and street
-  views are not needed, and the photo pipeline (planned) will be told to ignore them and not store
-  them.
+  views are not needed: Gemini is told not to transcribe people, plates, names, addresses or account
+  numbers, the instant check warns when a face or number plate is visible, and uploads stay in
+  memory for the request. Gemini calls use `store=False`, so interactions are not retained.
+- Every Gemini reading is checked in code (bill period about a year, kWh plausible, plate model
+  in the datasheet library and within its catalogue output, quote line items add up). A failed
+  check gets one more careful look; if that fails too the answer is "couldn't tell" plus what to
+  photograph instead, never a guess.
+- The review explains; it does not calculate. Every number it writes must match the maths core or
+  the user's own documents, otherwise the statement is removed and listed.
 - Answers are ranges with stated caveats, never a single confident number. Where the two estimates
   disagree, the app says why instead of averaging them.
 - When data is missing (no summer bills, no efficiency on the data plate), the maths falls back to
@@ -153,7 +181,8 @@ in a `VITE_*` variable, because Vite bundles those into the browser build.
 
 | Source | Use | Status |
 | --- | --- | --- |
-| Gemini 4 Argon (`gemini-4-argon`) via the Interactions API, `google-genai>=2.3.0` | Read boiler data plates, radiators, fuse cutouts and gas bills from photos | Planned (dependency declared) |
+| Gemini 4 Argon (`gemini-4-argon`) via the Interactions API, `google-genai>=2.3.0` | Reads gas bills and installer quotes (`thinking_level` medium); every re-read after a failed code check (high); one-context review of all evidence (high) | Built |
+| Gemini 3.8 Flash (`gemini-3.8-flash`) via the Interactions API | Instant photo check on upload (`thinking_level` low, about 3-4 s); first read of data plates, radiators, fuse cutouts and outdoor space (medium) | Built |
 | [Get energy performance of buildings data](https://get-energy-performance-data.communities.gov.uk/guidance/energy-certificate-data-apis) (MHCLG, England/Wales) | Latest EPC per matching address, floor area, dwelling form, age band, fabric and heating descriptions | Built; 2026 replacement API, bearer auth |
 | [postcodes.io](https://postcodes.io/docs/api/lookup-postcode/) | Postcode centroid for weather requests; no exact home coordinates stored | Built; no key |
 | [Open-Meteo](https://open-meteo.com/en/docs/historical-weather-api) historical reanalysis | Daily mean temperatures at postcode centroid; heating degree days at 15.5C base for exact inclusive bill dates | Built; no key; attribution Open-Meteo, weather data CC BY 4.0 |

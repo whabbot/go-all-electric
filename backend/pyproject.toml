@@ -8,12 +8,12 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.161.1",
     "httpx>=0.28.1",
-    # Declared for the Gemini integration task; not wired yet.
     "google-genai>=2.3.0",
     "pydantic>=2.14.1",
     "pydantic-settings>=2.16.1",
     "pymongo>=4.19.0",
     "uvicorn[standard]>=0.54.0",
+    "python-multipart>=0.0.20",
 ]
 
 [build-system]
