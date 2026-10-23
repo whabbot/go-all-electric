@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 
 type Props = {
   id: string
@@ -6,9 +6,11 @@ type Props = {
   description: string
   initialText: string
   downloadFileName: string
+  /** Shown between the description and the text, e.g. where a Gemini draft came from. */
+  children?: ReactNode
 }
 
-export function PackDraft({ id, title, description, initialText, downloadFileName }: Props) {
+export function PackDraft({ id, title, description, initialText, downloadFileName, children }: Props) {
   const [text, setText] = useState(initialText)
   const [reviewed, setReviewed] = useState(false)
   const [copyNote, setCopyNote] = useState<string | null>(null)
@@ -36,6 +38,7 @@ export function PackDraft({ id, title, description, initialText, downloadFileNam
     <article className="card pack-draft" aria-labelledby={`${id}-title`}>
       <h2 id={`${id}-title`}>{title}</h2>
       <p className="subtle">{description}</p>
+      {children}
       <label className="pack-draft-label" htmlFor={`${id}-textarea`}>Edit before you share</label>
       <textarea
         id={`${id}-textarea`}

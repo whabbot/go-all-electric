@@ -1,4 +1,12 @@
-import type { AnalysisResult, CrossCheck, QuoteCheckResult, Range, Exact } from '../api/types'
+import type {
+  AnalysisResult,
+  CrossCheck,
+  Exact,
+  InstallerDraftsRequest,
+  PackQuoteReading,
+  QuoteCheckResult,
+  Range,
+} from '../api/types'
 
 export function formatRangeText(range: Range, unit = '', decimals = 1): string {
   const f = (n: number) => n.toFixed(decimals)
@@ -200,4 +208,48 @@ export function buildNetworkOperatorDraft(analysis: AnalysisResult): string {
   )
 
   return lines.join('\n')
+}
+
+const READING_FIELDS: (keyof PackQuoteReading)[] = [
+  'heat_pump_make',
+  'heat_pump_model',
+  'heat_pump_kw',
+  'design_flow_temp_c',
+  'buffer_tank',
+  'total_gbp',
+  'grant_deducted',
+  'grant_amount_gbp',
+  'mcs_heat_loss_kw',
+]
+
+/**
+ * What the Gemini drafter sees: our numbers, the quote checker's flags and allowlisted quote
+ * fields, by quote label. Never the address, file name, notes or line items.
+ */
+export function buildInstallerDraftsRequest(
+  analysis: AnalysisResult,
+  quotes: { label: string; result: QuoteCheckResult }[],
+): InstallerDraftsRequest {
+  const { measured, target_spec: spec } = analysis.bundle
+  return {
+    bundle: {
+      size_kw: spec.size_kw,
+      max_flow_temp_c: spec.max_flow_temp_c.value,
+      measured_design_load_kw: measured?.design_load_kw ?? null,
+      htc_w_per_k: measured?.htc_w_per_k ?? null,
+      grant_gbp: spec.grant.amount_gbp.value,
+    },
+    quotes: quotes.map(({ label, result }) => {
+      const read = result.verified.reading
+      return {
+        label,
+        reading: read
+          ? (Object.fromEntries(READING_FIELDS.map((k) => [k, read[k] ?? null])) as PackQuoteReading)
+          : null,
+        flags: result.flags.map(({ severity, message, evidence }) => ({ severity, message, evidence })),
+        questions: result.questions_to_ask,
+      }
+    }),
+    fuse_rating_a: analysis.plan?.supply.fuse_rating_a ?? null,
+  }
 }

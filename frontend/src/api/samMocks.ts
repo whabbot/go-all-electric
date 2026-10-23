@@ -7,10 +7,14 @@ import type {
   CostComparison,
   EpcAddress,
   InputReading,
+  InstallerDraft,
+  InstallerDraftsRequest,
+  InstallerDraftsResult,
   PhotoCheckResult,
   PhotoKind,
   QuoteCheckResult,
   ReviewResult,
+  SuggestedModel,
   VerificationLogEntry,
   VerifiedReading,
 } from './types'
@@ -562,3 +566,106 @@ export const SAM_QUOTE_CHECKS: QuoteCheckResult[] = [
     ],
   },
 ]
+
+/** Right-sized entries from the public datasheet seed (`backend/src/gae/db/datasheets.json`). */
+const MOCK_LIBRARY: SuggestedModel[] = [
+  {
+    datasheet_id: 'mitsubishi-electric-ecodan-r290-puz-wz60vaa',
+    make: 'Mitsubishi Electric',
+    model: 'Ecodan R290 PUZ-WZ60VAA',
+    nominal_capacity_kw: 6,
+    scop_35: null,
+    source_url: 'https://les.mitsubishielectric.co.uk/products/residential-heating/outdoor/ecodan-r290',
+  },
+  {
+    datasheet_id: 'daikin-altherma-3-low-capacity-monobloc-6kw-class',
+    make: 'Daikin',
+    model: 'Altherma 3 Low Capacity Monobloc 6kW class',
+    nominal_capacity_kw: 6,
+    scop_35: null,
+    source_url:
+      'https://www.daikin.co.uk/content/dam/dauk/document-library/Brochures/Heating/Heating%20Installer%20brochures/Daikin%20Altherma%203%20Low%20Capacity%20Monobloc_764.pdf',
+  },
+  {
+    datasheet_id: 'vaillant-arotherm-plus-vwl-55-6-230v',
+    make: 'Vaillant',
+    model: 'aroTHERM plus VWL 55/6 230V',
+    nominal_capacity_kw: 5,
+    scop_35: 4.48,
+    source_url:
+      'https://professional.vaillant.co.uk/downloads/product-brochures/heat-pump-range-brochure-mar-2025-web-2998527.pdf',
+  },
+]
+
+/** A plausible checked Argon draft per quote, built from the request's own numbers. */
+export function mockInstallerDrafts(req: InstallerDraftsRequest): InstallerDraftsResult {
+  const { size_kw: size, max_flow_temp_c: flow, measured_design_load_kw: load } = req.bundle
+  const f = (n: number) => String(Math.round(n * 100) / 100)
+  const library = MOCK_LIBRARY.filter((m) => m.nominal_capacity_kw >= size.low && m.nominal_capacity_kw <= size.high)
+  const largest = Math.max(...req.quotes.map((q) => q.reading?.heat_pump_kw ?? 0))
+  const drafts = req.quotes.map((q, i): InstallerDraft => {
+    const kw = q.reading?.heat_pump_kw ?? null
+    const oversized = kw != null && kw > size.high
+    const models = oversized ? library.slice(0, 2) : library.slice(0, 1)
+    const names = models.map((m) => `${m.make} ${m.model}`)
+    const lines = [
+      `Thank you for your quote (${q.label}). Before I decide, I have compared it with what my gas bills show.`,
+      '',
+      (load
+        ? `My bills put the design heat loss at about ${f(load.central)} kW (${f(load.low)} to ${f(load.high)} kW), so I am looking for a ${f(size.low)}-${f(size.high)} kW heat pump`
+        : `I am looking for a ${f(size.low)}-${f(size.high)} kW heat pump`) +
+        ` designed for ${f(flow)}°C or below.` +
+        (req.fuse_rating_a != null ? ` My main fuse is ${req.fuse_rating_a} A.` : ''),
+      '',
+    ]
+    if (oversized && kw != null) {
+      lines.push(
+        `Your quote is for ${f(kw)} kW, above that range. Could you share the room-by-room heat loss calculation and the air change rate behind this size?`,
+      )
+    } else if (kw != null) {
+      lines.push(`Your ${f(kw)} kW unit is already inside that range, which is reassuring.`)
+    }
+    for (const question of q.questions.slice(0, 3)) lines.push(question)
+    lines.push(
+      '',
+      oversized
+        ? `Would you re-quote on a right-sized unit, such as the ${names.join(' or the ')}?`
+        : `Could you price the ${names[0]} alongside it for comparison?`,
+      '',
+      'I am comparing quotes and will decide once I have heard back.',
+      '',
+      'Kind regards,',
+      '[your name]',
+      'Property: [your address]',
+    )
+    const stripped =
+      kw === largest && oversized
+        ? [{ where: 'body', text: 'A smaller unit would also cut my bills by about £410 a year.', numbers: ['410'] }]
+        : []
+    const id = `pack-${i}`
+    return {
+      quote_label: q.label,
+      source: 'argon',
+      subject: `Questions and a re-quote request about ${q.label}`,
+      text: lines.join('\n'),
+      stripped,
+      models,
+      fallback_reason: null,
+      elapsed_ms: 6200 + i * 700,
+      log: [
+        entry(`${id}-v1`, q.label, 'check', 'code', `datasheet library: ${library.length} heat pumps inside ${f(size.low)}-${f(size.high)} kW`, true, library.map((m) => m.datasheet_id).join(', '), 0),
+        entry(`${id}-v2`, q.label, 'read', 'gemini-4-argon', 'draft installer email', true, 'check numbers', 6000),
+        ...stripped.map((s, j) =>
+          entry(`${id}-s${j}`, q.label, 'check', 'code', `numbers ${s.numbers.join(', ')} in the body not in our figures`, false, 'removed sentence', 6050),
+        ),
+        entry(`${id}-v3`, q.label, stripped.length ? 'check' : 'pass', 'code', 'every number traced to our figures, your quote or the datasheets', !stripped.length, stripped.length ? `removed ${stripped.length} sentence(s), show the rest` : 'show draft', 6100),
+      ],
+    }
+  })
+  return {
+    drafts,
+    model: 'gemini-4-argon',
+    disclaimer:
+      'Drafts only. Nothing is sent to installers: review, edit and copy them yourself. It advises; you decide.',
+  }
+}

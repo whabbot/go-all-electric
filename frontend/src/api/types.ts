@@ -396,3 +396,67 @@ export type ReviewQuote = {
   pages: File[]
   reading: Record<string, unknown> | null
 }
+
+/** `POST /api/pack/installer-drafts`. No address, name, account or meter field exists here. */
+export type PackBundle = {
+  size_kw: Range
+  max_flow_temp_c: number
+  measured_design_load_kw: Range | null
+  htc_w_per_k: Range | null
+  grant_gbp: number | null
+}
+
+/** The verified quote reading without notes or line items (they can carry an address). */
+export type PackQuoteReading = {
+  heat_pump_make: string | null
+  heat_pump_model: string | null
+  heat_pump_kw: number | null
+  design_flow_temp_c: number | null
+  buffer_tank: boolean | null
+  total_gbp: number | null
+  grant_deducted: boolean | null
+  grant_amount_gbp: number | null
+  mcs_heat_loss_kw: number | null
+}
+
+export type PackQuote = {
+  /** "Quote C (12 kW)", never a file name. */
+  label: string
+  reading: PackQuoteReading | null
+  flags: QuoteFlag[]
+  questions: string[]
+}
+
+export type InstallerDraftsRequest = {
+  bundle: PackBundle
+  quotes: PackQuote[]
+  fuse_rating_a: number | null
+}
+
+/** A right-sized heat pump from our public datasheet library. */
+export type SuggestedModel = {
+  datasheet_id: string
+  make: string
+  model: string
+  nominal_capacity_kw: number
+  scop_35: number | null
+  source_url: string
+}
+
+export type InstallerDraft = {
+  quote_label: string
+  source: 'argon' | 'template'
+  subject: string
+  text: string
+  stripped: StrippedClaim[]
+  models: SuggestedModel[]
+  fallback_reason: string | null
+  elapsed_ms: number
+  log: VerificationLogEntry[]
+}
+
+export type InstallerDraftsResult = {
+  drafts: InstallerDraft[]
+  model: string
+  disclaimer: string
+}

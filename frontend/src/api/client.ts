@@ -2,6 +2,7 @@ import {
   SAM_EPC_ADDRESSES,
   SAM_QUOTE_CHECKS,
   mockAnalysisEvents,
+  mockInstallerDrafts,
   mockPhotoCheck,
   mockReview,
 } from './samMocks'
@@ -9,6 +10,8 @@ import type {
   AnalysisEvent,
   AnalysisResult,
   EpcAddress,
+  InstallerDraftsRequest,
+  InstallerDraftsResult,
   PhotoCheckResult,
   PhotoKind,
   QuoteCheckResult,
@@ -185,10 +188,26 @@ export async function reviewAnalysis(
   return res.json() as Promise<ReviewResult>
 }
 
+/** Gemini 4 Argon drafts one installer email per quote; every number is checked in code. */
+export async function draftInstallerEmails(req: InstallerDraftsRequest): Promise<InstallerDraftsResult> {
+  if (isMockMode()) {
+    await mockDelay(5000, 7000)
+    return mockInstallerDrafts(req)
+  }
+  const res = await fetch('/api/pack/installer-drafts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  })
+  if (!res.ok) throw await failure(res, 'Drafting')
+  return res.json() as Promise<InstallerDraftsResult>
+}
+
 export const api = {
   searchEpcAddresses,
   checkPhoto,
   runAnalysis,
   checkQuotes,
   reviewAnalysis,
+  draftInstallerEmails,
 }
