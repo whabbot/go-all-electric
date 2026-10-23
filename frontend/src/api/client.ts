@@ -23,6 +23,17 @@ import type {
   ReviewResult,
 } from './types'
 
+export const ACCESS_CODE_KEY = 'gae-access-code'
+
+export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers)
+  const code = localStorage.getItem(ACCESS_CODE_KEY)
+  if (code) headers.set('X-Access-Code', code)
+  const response = await fetch(input, { ...init, headers })
+  if (response.status === 401) window.dispatchEvent(new Event('gae-access-required'))
+  return response
+}
+
 /** Defaults to mocks when unset so production builds work without a backend. */
 export const isMockMode = () => {
   const flag = import.meta.env.VITE_USE_MOCKS
@@ -59,7 +70,7 @@ export async function searchEpcAddresses(postcode: string): Promise<EpcAddress[]
       a.postcode.replace(/\s+/g, '').toUpperCase().startsWith(normalised.slice(0, 4)),
     )
   }
-  const res = await fetch(`/api/epc/search?postcode=${encodeURIComponent(postcode)}`)
+  const res = await apiFetch(`/api/epc/search?postcode=${encodeURIComponent(postcode)}`)
   if (!res.ok) throw await failure(res, 'EPC search')
   const body = (await res.json()) as { addresses: EpcAddress[] }
   return body.addresses
@@ -74,7 +85,7 @@ export async function checkPhoto(kind: PhotoKind, file: File): Promise<PhotoChec
   const form = new FormData()
   form.append('kind', kind)
   form.append('file', file)
-  const res = await fetch('/api/photos/check', { method: 'POST', body: form })
+  const res = await apiFetch('/api/photos/check', { method: 'POST', body: form })
   if (!res.ok) throw await failure(res, 'Photo check')
   return res.json() as Promise<PhotoCheckResult>
 }
@@ -90,7 +101,7 @@ export async function checkRadiatorVideo(
   const form = new FormData()
   form.append('file', file)
   if (designLoadKw != null) form.append('design_load_kw', String(designLoadKw))
-  const res = await fetch('/api/radiators/video', { method: 'POST', body: form })
+  const res = await apiFetch('/api/radiators/video', { method: 'POST', body: form })
   if (!res.ok) throw await failure(res, 'Radiator video check')
   return res.json() as Promise<RadiatorVideoResult>
 }
@@ -119,7 +130,7 @@ export async function runAnalysis(
   form.append('certificate_id', certificateId)
   for (const [kind, file] of Object.entries(files)) if (file) form.append(kind, file)
   if (radiatorVideo) form.append('radiator_video', radiatorVideo)
-  const res = await fetch('/api/analysis', { method: 'POST', body: form })
+  const res = await apiFetch('/api/analysis', { method: 'POST', body: form })
   if (!res.ok || !res.body) throw await failure(res, 'Analysis')
 
   const reader = res.body.getReader()
@@ -171,7 +182,7 @@ export async function checkQuotes(
     form.append('size_high_kw', String(size.size_high_kw))
     if (size.design_load_kw != null) form.append('design_load_kw', String(size.design_load_kw))
   }
-  const res = await fetch('/api/quotes/check', { method: 'POST', body: form })
+  const res = await apiFetch('/api/quotes/check', { method: 'POST', body: form })
   if (!res.ok) throw await failure(res, 'Quote check')
   return res.json() as Promise<QuoteCheckResult[]>
 }
@@ -203,7 +214,7 @@ export async function reviewAnalysis(
       form.append('quote_index', String(quoteIndex))
     }
   })
-  const res = await fetch('/api/analysis/review', { method: 'POST', body: form })
+  const res = await apiFetch('/api/analysis/review', { method: 'POST', body: form })
   if (!res.ok) throw await failure(res, 'Review')
   return res.json() as Promise<ReviewResult>
 }
@@ -214,7 +225,7 @@ export async function draftInstallerEmails(req: InstallerDraftsRequest): Promise
     await mockDelay(5000, 7000)
     return mockInstallerDrafts(req)
   }
-  const res = await fetch('/api/pack/installer-drafts', {
+  const res = await apiFetch('/api/pack/installer-drafts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
