@@ -116,3 +116,45 @@ def test_schema_mismatch_is_a_gemini_error(stub) -> None:
 def test_repr_never_shows_the_key(stub) -> None:
     stub("{}")
     assert "test-key-not-real" not in repr(live())
+
+
+def test_large_video_uses_files_api_and_deletes_immediately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    uploaded: list[str] = []
+    deleted: list[str] = []
+    interactions = StubInteractions(
+        '{"summary": "x", "estimates_explanation": "y", "cited_reason_codes": [],'
+        ' "quote_reviews": [], "questions_to_ask": []}'
+    )
+
+    class StubFiles:
+        def upload(self, *, file, config):
+            uploaded.append(config["mime_type"])
+            return SimpleNamespace(
+                name="files/temp-123", uri="https://generativelanguage/files/123"
+            )
+
+        def delete(self, *, name):
+            deleted.append(name)
+
+    monkeypatch.setattr(
+        client_module.genai,
+        "Client",
+        lambda api_key: SimpleNamespace(interactions=interactions, files=StubFiles()),
+    )
+    monkeypatch.setattr(client_module, "INLINE_VIDEO_MAX_BYTES", 8)
+
+    live().generate(
+        model="gemini-4-argon",
+        input=[text("watch"), client_module.video(b"0123456789abcdef", "video/mp4")],
+        schema=ArgonReview,
+        thinking_level="high",
+    )
+    assert uploaded == ["video/mp4"]
+    assert deleted == ["files/temp-123"]
+    assert interactions.kwargs["input"][1] == {
+        "type": "video",
+        "uri": "https://generativelanguage/files/123",
+        "mime_type": "video/mp4",
+    }

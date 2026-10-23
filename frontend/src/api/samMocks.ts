@@ -10,6 +10,7 @@ import type {
   PhotoCheckResult,
   PhotoKind,
   QuoteCheckResult,
+  RadiatorVideoResult,
   ReviewResult,
   VerificationLogEntry,
   VerifiedReading,
@@ -381,7 +382,125 @@ export const SAM_PLAN: AllElectricPlan = {
   defaults: [],
 }
 
-export function mockAnalysisResult(kinds: PhotoKind[]): AnalysisResult {
+export const SAM_RADIATOR_VIDEO: RadiatorVideoResult = {
+  status: 'verified_with_warnings',
+  attempts: 2,
+  model: 'gemini-4-argon',
+  radiator_count: 3,
+  radiators: [
+    {
+      first_seen: '0:03',
+      last_seen: '0:08',
+      room: 'Living room',
+      status: 'verified',
+      radiator_type: 'K2',
+      panels: 2,
+      fin_rows: 2,
+      width_mm: 1200,
+      height_mm: 600,
+      confidence: 'medium',
+      could_not_judge: [],
+      warnings: [],
+      photo_request: null,
+      upsize_status: 'upsize',
+      output_at_flow_temp_w: 1030,
+      heat_loss_w: 1570,
+      required_output_dt50_w: 3250,
+      min_flow_temp_c: 52,
+    },
+    {
+      first_seen: '0:14',
+      last_seen: '0:18',
+      room: 'Hallway',
+      status: 'couldnt_tell',
+      radiator_type: null,
+      panels: null,
+      fin_rows: null,
+      width_mm: null,
+      height_mm: null,
+      confidence: 'low',
+      could_not_judge: ['Too much motion blur at 0:14 to see convector fins or width'],
+      warnings: ['radiator 2 (0:14) width missing or implausible: null'],
+      photo_request: "couldn't tell: photograph the radiator seen at 0:14",
+      upsize_status: 'couldnt_tell',
+      output_at_flow_temp_w: null,
+      heat_loss_w: null,
+      required_output_dt50_w: null,
+      min_flow_temp_c: null,
+    },
+    {
+      first_seen: '0:23',
+      last_seen: '0:29',
+      room: 'Main bedroom',
+      status: 'verified',
+      radiator_type: 'K2',
+      panels: 2,
+      fin_rows: 2,
+      width_mm: 1400,
+      height_mm: 600,
+      confidence: 'medium',
+      could_not_judge: [],
+      warnings: [],
+      photo_request: null,
+      upsize_status: 'marginal',
+      output_at_flow_temp_w: 1200,
+      heat_loss_w: 1570,
+      required_output_dt50_w: 3250,
+      min_flow_temp_c: 48,
+    },
+  ],
+  photo_requests: ["couldn't tell: photograph the radiator seen at 0:14"],
+  could_not_judge: ['Too much motion blur at 0:14 to see convector fins or width'],
+  warnings: ["couldn't tell: photograph the radiator seen at 0:14"],
+  log: [
+    entry(
+      'radiator_video-v1',
+      'radiator_video',
+      'read',
+      'gemini-4-argon',
+      'Gemini watches the radiator walkthrough video',
+      true,
+      '3 radiator(s) spotted',
+      600,
+    ),
+    entry(
+      'radiator_video-v2',
+      'radiator_video',
+      'check',
+      'code',
+      'radiator 2 (0:14) width missing or implausible: null',
+      false,
+      'ask Gemini to look again',
+      700,
+    ),
+    entry(
+      'radiator_video-v3',
+      'radiator_video',
+      'reread',
+      'gemini-4-argon',
+      'Gemini re-watches with the failed checks',
+      true,
+      '2 verified, 1 uncertain',
+      950,
+    ),
+    entry(
+      'radiator_video-v4',
+      'radiator_video',
+      'pass',
+      'code',
+      'verified 2 radiator(s); 1 need a photo',
+      true,
+      'use verified radiators and request photos for uncertain ones',
+      1000,
+    ),
+  ],
+}
+
+export function mockRadiatorVideo(): RadiatorVideoResult {
+  return SAM_RADIATOR_VIDEO
+}
+
+export function mockAnalysisResult(kinds: PhotoKind[], hasRadiatorVideo = false): AnalysisResult {
   const all: PhotoKind[] = ['boiler_plate', 'radiators', 'fuse_cutout', 'outdoor_space', 'gas_bill']
   return {
     survey_id: null,
@@ -424,7 +543,16 @@ export function mockAnalysisResult(kinds: PhotoKind[]): AnalysisResult {
         used_for: '',
       }
     }),
-    gaps: [],
+    radiator_video: hasRadiatorVideo ? SAM_RADIATOR_VIDEO : null,
+    gaps: hasRadiatorVideo
+      ? [
+          {
+            input: 'radiator_video',
+            message: "couldn't tell: photograph the radiator seen at 0:14",
+            provide: "couldn't tell: photograph the radiator seen at 0:14",
+          },
+        ]
+      : [],
     defaults: [
       {
         input: 'radiators',
@@ -435,13 +563,16 @@ export function mockAnalysisResult(kinds: PhotoKind[]): AnalysisResult {
       },
     ],
     plan: SAM_PLAN,
-    log: mockLog(),
+    log: hasRadiatorVideo ? [...mockLog(), ...SAM_RADIATOR_VIDEO.log] : mockLog(),
     timings_ms: {},
   }
 }
 
-export function mockAnalysisEvents(kinds: PhotoKind[]): AnalysisEvent[] {
-  const result = mockAnalysisResult(kinds.length ? kinds : ['boiler_plate', 'radiators', 'gas_bill'])
+export function mockAnalysisEvents(kinds: PhotoKind[], hasRadiatorVideo = false): AnalysisEvent[] {
+  const result = mockAnalysisResult(
+    kinds.length ? kinds : ['boiler_plate', 'radiators', 'gas_bill'],
+    hasRadiatorVideo,
+  )
   return [
     { type: 'step', step: 'epc', status: 'running', ms: null },
     ...result.log.map((e): AnalysisEvent => ({ type: 'log', entry: e })),

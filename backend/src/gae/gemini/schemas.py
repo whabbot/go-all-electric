@@ -116,6 +116,33 @@ class RadiatorReading(Reading):
     room: str | None
 
 
+class VideoRadiator(RadiatorReading):
+    first_seen: str = Field(
+        description="First-seen timestamp in M:SS or MM:SS format, e.g. '0:14'."
+    )
+    last_seen: str | None = Field(
+        default=None,
+        description="Last-seen timestamp in M:SS or MM:SS format, e.g. '0:19', or null.",
+    )
+    could_not_judge: list[str] = Field(
+        default_factory=list,
+        description="Anything about this radiator that could not be judged from the clip.",
+    )
+
+
+class RadiatorVideoReading(Reading):
+    radiator_count: int = Field(
+        description="Total number of distinct radiators seen in the video walkthrough."
+    )
+    radiators: list[VideoRadiator] = Field(
+        description="One entry per distinct radiator, in order of first appearance."
+    )
+    could_not_judge: list[str] = Field(
+        default_factory=list,
+        description="Anything across the clip that could not be judged (e.g. dark hallway).",
+    )
+
+
 class FuseCutoutReading(Reading):
     rating_a: int | None = Field(description="Main service fuse rating in amps, e.g. 60, 80, 100.")
     looks_like: Literal["cutout", "meter", "consumer_unit", "other"]
@@ -214,6 +241,44 @@ class VerifiedReading[T: Reading](BaseModel):
     warnings: list[str]
     photograph_instead: str | None
     datasheet_id: str | None = None
+    log: list[VerificationLogEntry]
+
+
+UpsizeStatus = Literal["ok", "marginal", "upsize", "couldnt_tell"]
+
+
+class VerifiedVideoRadiator(BaseModel):
+    first_seen: str
+    last_seen: str | None = None
+    room: str | None = None
+    status: Literal["verified", "verified_with_warnings", "couldnt_tell"]
+    radiator_type: (
+        Literal["single_panel", "K1", "P+", "K2", "K3", "column", "towel_rail", "other"] | None
+    ) = None
+    panels: int | None = None
+    fin_rows: int | None = None
+    width_mm: int | None = None
+    height_mm: int | None = None
+    confidence: Confidence
+    could_not_judge: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    photo_request: str | None = None
+    upsize_status: UpsizeStatus = "couldnt_tell"
+    output_at_flow_temp_w: float | None = None
+    heat_loss_w: float | None = None
+    required_output_dt50_w: float | None = None
+    min_flow_temp_c: float | None = None
+
+
+class RadiatorVideoResult(BaseModel):
+    status: Literal["verified", "verified_with_warnings", "couldnt_tell"]
+    attempts: int
+    model: str
+    radiator_count: int
+    radiators: list[VerifiedVideoRadiator]
+    photo_requests: list[str] = Field(default_factory=list)
+    could_not_judge: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     log: list[VerificationLogEntry]
 
 

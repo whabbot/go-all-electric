@@ -3,6 +3,7 @@ import {
   SAM_QUOTE_CHECKS,
   mockAnalysisEvents,
   mockPhotoCheck,
+  mockRadiatorVideo,
   mockReview,
 } from './samMocks'
 import type {
@@ -14,6 +15,7 @@ import type {
   QuoteCheckResult,
   QuoteSizeContext,
   QuoteUploadGroup,
+  RadiatorVideoResult,
   ReviewQuote,
   ReviewResult,
 } from './types'
@@ -74,6 +76,22 @@ export async function checkPhoto(kind: PhotoKind, file: File): Promise<PhotoChec
   return res.json() as Promise<PhotoCheckResult>
 }
 
+export async function checkRadiatorVideo(
+  file: File,
+  designLoadKw?: number | null,
+): Promise<RadiatorVideoResult> {
+  if (isMockMode()) {
+    await mockDelay(1200, 2200)
+    return mockRadiatorVideo()
+  }
+  const form = new FormData()
+  form.append('file', file)
+  if (designLoadKw != null) form.append('design_load_kw', String(designLoadKw))
+  const res = await fetch('/api/radiators/video', { method: 'POST', body: form })
+  if (!res.ok) throw await failure(res, 'Radiator video check')
+  return res.json() as Promise<RadiatorVideoResult>
+}
+
 /**
  * One analysis call: EPC record, every photo and the bill (optional), weather, then the maths.
  * Progress and verification-log entries arrive through `onEvent` as they happen.
@@ -82,10 +100,11 @@ export async function runAnalysis(
   certificateId: string,
   files: Partial<Record<PhotoKind, File>>,
   onEvent: (event: AnalysisEvent) => void,
+  radiatorVideo?: File | null,
 ): Promise<AnalysisResult> {
   if (isMockMode()) {
     let result: AnalysisResult | null = null
-    for (const event of mockAnalysisEvents(Object.keys(files) as PhotoKind[])) {
+    for (const event of mockAnalysisEvents(Object.keys(files) as PhotoKind[], Boolean(radiatorVideo))) {
       await delay(event.type === 'log' ? 260 : 120)
       onEvent(event)
       if (event.type === 'result') result = event.result
@@ -96,6 +115,7 @@ export async function runAnalysis(
   const form = new FormData()
   form.append('certificate_id', certificateId)
   for (const [kind, file] of Object.entries(files)) if (file) form.append(kind, file)
+  if (radiatorVideo) form.append('radiator_video', radiatorVideo)
   const res = await fetch('/api/analysis', { method: 'POST', body: form })
   if (!res.ok || !res.body) throw await failure(res, 'Analysis')
 
@@ -188,6 +208,7 @@ export async function reviewAnalysis(
 export const api = {
   searchEpcAddresses,
   checkPhoto,
+  checkRadiatorVideo,
   runAnalysis,
   checkQuotes,
   reviewAnalysis,

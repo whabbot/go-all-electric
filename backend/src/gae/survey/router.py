@@ -33,6 +33,7 @@ from gae.gemini.router import (
     SeedFallbackLookup,
     _gemini_failed,
     _read,
+    _read_video,
     get_gemini,
 )
 from gae.gemini.schemas import MathsBundle, MediaInput, PhotoKind, QuoteInput, ReviewRequest
@@ -98,6 +99,7 @@ def analyse(
     certificate_id: Annotated[str, Form(pattern=CERTIFICATE_PATTERN)],
     boiler_plate: Upload = None,
     radiators: Upload = None,
+    radiator_video: Upload = None,
     fuse_cutout: Upload = None,
     outdoor_space: Upload = None,
     gas_bill: Upload = None,
@@ -110,12 +112,16 @@ def analyse(
         PhotoKind.GAS_BILL: gas_bill,
     }
     files = {kind: _read(upload) for kind, upload in uploads.items() if upload is not None}
+    raw_video = _read_video(radiator_video) if radiator_video is not None else None
     events: queue.Queue[dict | None] = queue.Queue()
 
     def work() -> None:
+        nonlocal raw_video
         try:
             with services() as live:
-                result = run_analysis(live, certificate_id, files, events.put)
+                result = run_analysis(
+                    live, certificate_id, files, events.put, radiator_video=raw_video
+                )
             events.put({"type": "result", "result": result.model_dump(mode="json")})
         except AnalysisRefused as exc:
             events.put({"type": "error", "status": exc.status_code, "message": str(exc)})
@@ -131,6 +137,7 @@ def analyse(
             )
         finally:
             files.clear()
+            raw_video = None
             events.put(None)
 
     threading.Thread(target=work, daemon=True).start()

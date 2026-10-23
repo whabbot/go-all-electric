@@ -180,11 +180,17 @@ needs a paid-tier key). Uploads are multipart, held in memory for the request an
 - `POST /api/photos/extract` (`kind`, `file`) runs the verification loop and returns a typed
   reading, its status (`verified`, `verified_with_warnings` or `couldnt_tell` with what to
   photograph instead) and the step-by-step verification log for the UI.
+- `POST /api/radiators/video` (`file`, optional `design_load_kw`) strips container metadata,
+  watches a radiator walkthrough video on `gemini-4-argon` (`thinking_level=high`), checks count,
+  de-duplication and radiator dimensions/types in code, re-asks once on failure, checks upsizing at
+  45C flow, and turns any still-uncertain radiator into a `"couldn't tell: photograph the radiator
+  seen at 0:14"` request.
 - `POST /api/quotes/check` (`quotes` page images, parallel `quote_index` and `quote_name` per
   page so multi-page PDFs stay one quote; optional `size_low_kw`, `size_high_kw`, `design_load_kw`
   from the maths core) reads each quote through the same loop and flags it in code:
   oversized, high design flow, buffer tank, grant not deducted, kW not matching the datasheet.
-- `POST /api/analysis` and `POST /api/analysis/review` run the whole survey; see
+- `POST /api/analysis` (accepts an optional `radiator_video` alongside or instead of radiator
+  photos) and `POST /api/analysis/review` run the whole survey; see
   [Run the demo locally](#run-the-demo-locally).
 - `POST /api/review` (JSON) sends photos, bill, EPC record, full matched datasheets, every quote and
   the maths-core outputs to one Gemini 4 Argon interaction, then removes any statement whose
@@ -215,7 +221,15 @@ in a `VITE_*` variable, because Vite bundles those into the browser build.
 - **What reaches Gemini:** only the redacted JPEG bytes from that step, over HTTPS to our backend,
   which strips any remaining image metadata in memory (Pillow) before the paid Gemini API call.
   Calls use `store=False`, so Google does not retain your uploads as stored interactions.
-- **What we store:** no upload files, no raw photos, and no bill or quote documents. The API keeps
+- **Radiator walkthrough video privacy:** the Capture screen warns plainly that video is not
+  covered up like photos: film radiators only, close, with no windows, people or house numbers.
+  Videos are capped at 100 MB and 90 seconds. Before any Gemini call, the backend strips all
+  container metadata (GPS/location atoms, device tags, creation/modification timestamps) server-side
+  in memory for MP4/MOV, or via a private temporary directory deleted in a `finally` block when
+  remuxing WebM. Inline video (`store=False`) is preferred; when the Files API is required for
+  larger videos, the uploaded file is deleted immediately after the Gemini call in a `finally`
+  block. Videos are never written to MongoDB Atlas or logs.
+- **What we store:** no upload files, no raw photos, no radiator videos, and no bill or quote documents. The API keeps
   uploads in RAM for the request only. A saved survey holds the postcode district (outward code,
   e.g. `HA8`) as its only location, plus extracted readings, the maths bundle and the verification
   log. Never an address, full postcode, UPRN or certificate number: the survey model rejects them.
@@ -242,7 +256,7 @@ in a `VITE_*` variable, because Vite bundles those into the browser build.
 
 | Source | Use | Status |
 | --- | --- | --- |
-| Gemini 4 Argon (`gemini-4-argon`) via the Interactions API, `google-genai>=2.3.0` | Reads gas bills and installer quotes (`thinking_level` medium); every re-read after a failed code check (high); one-context review of all evidence (high) | Built |
+| Gemini 4 Argon (`gemini-4-argon`) via the Interactions API, `google-genai>=2.3.0` | Reads gas bills and installer quotes (`thinking_level` medium); watches radiator walkthrough videos (`thinking_level` high, verified in code with one re-read and photo requests for uncertain radiators); every re-read after a failed code check (high); one-context review of all evidence (high) | Built |
 | Gemini 3.8 Flash (`gemini-3.8-flash`) via the Interactions API | Instant photo check on upload (`thinking_level` low, about 3-4 s); first read of data plates, radiators, fuse cutouts and outdoor space (medium) | Built |
 | [Get energy performance of buildings data](https://get-energy-performance-data.communities.gov.uk/guidance/energy-certificate-data-apis) (MHCLG, England/Wales) | Latest EPC per matching address, floor area, dwelling form, age band, fabric and heating descriptions | Built; 2026 replacement API, bearer auth |
 | [postcodes.io](https://postcodes.io/docs/api/lookup-postcode/) | Postcode centroid for weather requests; no exact home coordinates stored | Built; no key |

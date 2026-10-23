@@ -191,6 +191,51 @@ export type QuoteUploadGroup = {
 
 export type ReadingStatus = 'verified' | 'verified_with_warnings' | 'couldnt_tell'
 
+export type RadiatorKind =
+  | 'single_panel'
+  | 'K1'
+  | 'P+'
+  | 'K2'
+  | 'K3'
+  | 'column'
+  | 'towel_rail'
+  | 'other'
+
+export type UpsizeStatus = 'ok' | 'marginal' | 'upsize' | 'couldnt_tell'
+
+export type VerifiedVideoRadiator = {
+  first_seen: string
+  last_seen: string | null
+  room: string | null
+  status: ReadingStatus
+  radiator_type: RadiatorKind | null
+  panels: number | null
+  fin_rows: number | null
+  width_mm: number | null
+  height_mm: number | null
+  confidence: Confidence
+  could_not_judge: string[]
+  warnings: string[]
+  photo_request: string | null
+  upsize_status: UpsizeStatus
+  output_at_flow_temp_w: number | null
+  heat_loss_w: number | null
+  required_output_dt50_w: number | null
+  min_flow_temp_c: number | null
+}
+
+export type RadiatorVideoResult = {
+  status: ReadingStatus
+  attempts: number
+  model: string
+  radiator_count: number
+  radiators: VerifiedVideoRadiator[]
+  photo_requests: string[]
+  could_not_judge: string[]
+  warnings: string[]
+  log: VerificationLogEntry[]
+}
+
 export type VerifiedReading = {
   kind: string
   status: ReadingStatus
@@ -345,6 +390,7 @@ export type AnalysisResult = {
   bundle: AnalysisBundle
   size_basis: 'measured' | 'fabric'
   readings: InputReading[]
+  radiator_video?: RadiatorVideoResult | null
   gaps: Gap[]
   defaults: NamedDefault[]
   plan: AllElectricPlan

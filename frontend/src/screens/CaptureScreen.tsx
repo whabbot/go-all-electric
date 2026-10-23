@@ -2,10 +2,13 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, isMockMode } from '../api'
 import { ImageCoverUp } from '../components/ImageCoverUp'
+import { RadiatorVideoResults } from '../components/RadiatorVideoResults'
 import { useSession } from '../context/SessionContext'
 import { prepareImageFile } from '../lib/imagePrepare'
 import { coverUpGuidance, coverUpTitle } from '../lib/photoGuidance'
 import type { PhotoKind } from '../api'
+
+const VIDEO_MAX_BYTES = 100 * 1024 * 1024
 
 type PendingCoverUp = {
   kind: PhotoKind
@@ -14,10 +17,19 @@ type PendingCoverUp = {
 }
 
 export function CaptureScreen() {
-  const { photos, setPhoto, placeLabel, address } = useSession()
+  const {
+    photos,
+    setPhoto,
+    radiatorVideo,
+    radiatorVideoResult,
+    setRadiatorVideo,
+    placeLabel,
+    address,
+  } = useSession()
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [pending, setPending] = useState<PendingCoverUp | null>(null)
   const [prepareError, setPrepareError] = useState<string | null>(null)
+  const [videoError, setVideoError] = useState<string | null>(null)
 
   useEffect(() => {
     return () => {
@@ -56,6 +68,30 @@ export function CaptureScreen() {
       setPhoto(kind, redacted, null)
     } finally {
       setBusy((b) => ({ ...b, [kind]: false }))
+    }
+  }
+
+  const onVideoFile = async (file: File | null) => {
+    if (!file) return
+    setVideoError(null)
+    if (file.size === 0) {
+      setVideoError('Empty video file.')
+      return
+    }
+    if (file.size > VIDEO_MAX_BYTES) {
+      setVideoError('Video is over 100 MB; film a shorter walkthrough (up to 90 seconds).')
+      return
+    }
+    setBusy((b) => ({ ...b, radiator_video: true }))
+    setRadiatorVideo(file, null)
+    try {
+      const result = await api.checkRadiatorVideo(file)
+      setRadiatorVideo(file, result)
+    } catch (e: unknown) {
+      setRadiatorVideo(null, null)
+      setVideoError(e instanceof Error ? e.message : 'Could not check that radiator video.')
+    } finally {
+      setBusy((b) => ({ ...b, radiator_video: false }))
     }
   }
 
@@ -116,6 +152,34 @@ export function CaptureScreen() {
                 {!slot.result.privacy_warning && slot.result.legible && (
                   <p className="privacy-ok">Redacted image only — no metadata stored.</p>
                 )}
+              </div>
+            )}
+
+            {slot.kind === 'radiators' && (
+              <div className="video-capture-option">
+                <h3>Or film your radiators</h3>
+                <p className="privacy-warn">
+                  Video is not covered up like photos: film radiators only, close, with no windows,
+                  people or house numbers.
+                </p>
+                <p className="subtle">
+                  GPS, device and timestamp metadata are stripped server-side before Gemini sees the
+                  video (max 90 s, 100 MB). Uncertain radiators become photo requests, never guesses.
+                </p>
+                <label className="upload-btn">
+                  <input
+                    type="file"
+                    accept="video/mp4,video/quicktime,video/webm,video/*"
+                    capture="environment"
+                    onChange={(e) => void onVideoFile(e.target.files?.[0] ?? null)}
+                  />
+                  {busy.radiator_video ? 'Watching video…' : 'Film radiators or upload video'}
+                </label>
+                {radiatorVideo && !busy.radiator_video && (
+                  <p className="file-name">Radiator walkthrough video ready</p>
+                )}
+                {videoError && <p className="error">{videoError}</p>}
+                {radiatorVideoResult && <RadiatorVideoResults result={radiatorVideoResult} />}
               </div>
             )}
           </div>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, isMockMode, type AnalysisResult, type PhotoKind, type VerificationLogEntry } from '../api'
 import { EstimateHero } from '../components/EstimateHero'
+import { RadiatorVideoResults } from '../components/RadiatorVideoResults'
 import { ReviewPanel } from '../components/ReviewPanel'
 import { VerificationLogPanel } from '../components/VerificationLog'
 import { useSession } from '../context/SessionContext'
@@ -10,6 +11,7 @@ const STEP_LABELS: Record<string, string> = {
   epc: 'EPC record',
   read_boiler_plate: 'Boiler data plate',
   read_radiators: 'Radiators',
+  read_radiator_video: 'Radiator walkthrough video',
   read_fuse_cutout: 'Fuse cutout',
   read_outdoor_space: 'Outdoor unit spot',
   read_gas_bill: 'Gas bill',
@@ -88,6 +90,13 @@ function Inputs({ analysis }: { analysis: AnalysisResult }) {
         </ul>
       </section>
 
+      {analysis.radiator_video && (
+        <section className="card">
+          <h2>Radiator walkthrough video</h2>
+          <RadiatorVideoResults result={analysis.radiator_video} />
+        </section>
+      )}
+
       {analysis.defaults.length > 0 && (
         <section className="card">
           <h2>Named defaults</h2>
@@ -109,7 +118,7 @@ function Inputs({ analysis }: { analysis: AnalysisResult }) {
 }
 
 export function EstimatesScreen() {
-  const { address, placeLabel, analysis, setAnalysis, files } = useSession()
+  const { address, placeLabel, analysis, setAnalysis, files, radiatorVideo } = useSession()
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<Progress>({})
@@ -124,13 +133,18 @@ export function EstimatesScreen() {
     setLiveLog([])
     const certificate = address?.certificate_id ?? 'sam-demo'
     api
-      .runAnalysis(certificate, files, (event) => {
-        if (event.type === 'step') {
-          setProgress((p) => ({ ...p, [event.step]: { status: event.status, ms: event.ms } }))
-        } else if (event.type === 'log') {
-          setLiveLog((log) => [...log, event.entry])
-        }
-      })
+      .runAnalysis(
+        certificate,
+        files,
+        (event) => {
+          if (event.type === 'step') {
+            setProgress((p) => ({ ...p, [event.step]: { status: event.status, ms: event.ms } }))
+          } else if (event.type === 'log') {
+            setLiveLog((log) => [...log, event.entry])
+          }
+        },
+        radiatorVideo,
+      )
       .then(setAnalysis)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Analysis failed'))
       .finally(() => setRunning(false))
