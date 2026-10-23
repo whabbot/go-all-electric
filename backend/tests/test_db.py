@@ -7,7 +7,13 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from pymongo.errors import OperationFailure, ServerSelectionTimeoutError
 
-from gae.db.datasheets import AtlasDatasheetLookup, fuse, text_pipeline, vector_pipeline
+from gae.db.datasheets import (
+    AtlasDatasheetLookup,
+    fuse,
+    hybrid_pipeline,
+    text_pipeline,
+    vector_pipeline,
+)
 from gae.db.indexes import TEXT_DEFINITION, VECTOR_DEFINITION, ensure_indexes
 from gae.db.models import SurveyInput
 from gae.db.router import get_database
@@ -19,6 +25,19 @@ from gae.main import app
 def sheet(index=0):
     data = load_seed()[index].model_dump(mode="json")
     return {"_id": data["id"], **data}
+
+
+def native_sheet():
+    return {
+        **sheet(),
+        "fusion_details": {
+            "value": 2 / 61,
+            "details": [
+                {"inputPipelineName": "atlas_search", "rank": 1},
+                {"inputPipelineName": "vector_search", "rank": 1},
+            ],
+        },
+    }
 
 
 def test_seed_valid_unique_sourced_and_idempotent_upserts():
@@ -57,21 +76,55 @@ def test_fusion_promotes_agreement_preserves_ranks_and_deduplicates():
 
 def test_search_executes_fuzzy_and_managed_voyage_pipelines():
     collection = MagicMock()
-    collection.aggregate.side_effect = [[sheet()], [sheet()]]
+    collection.aggregate.return_value = [native_sheet()]
     result = AtlasDatasheetLookup(collection).search("Vailant aroterm", 2)
     assert result.mode == "hybrid"
     assert result.matches[0].produced_by == ["atlas_search", "vector_search"]
     calls = collection.aggregate.call_args_list
-    assert calls[0].args[0] == text_pipeline("Vailant aroterm", 20)
-    assert calls[1].args[0] == vector_pipeline("Vailant aroterm", 20)
-    vector = calls[1].args[0][0]["$vectorSearch"]
+    assert result.fusion == "native_rank_fusion"
+    assert len(calls) == 1
+    assert calls[0].args[0] == hybrid_pipeline("Vailant aroterm", 20, 2)
+    pipelines = calls[0].args[0][0]["$rankFusion"]["input"]["pipelines"]
+    assert pipelines["atlas_search"] == text_pipeline("Vailant aroterm", 20)
+    assert pipelines["vector_search"] == vector_pipeline("Vailant aroterm", 20)
+    vector = pipelines["vector_search"][0]["$vectorSearch"]
     assert vector["model"] == VECTOR_DEFINITION["fields"][0]["model"]
     assert "queryVector" not in vector
 
 
+def test_native_provenance_excludes_a_channel_that_did_not_match():
+    collection = MagicMock()
+    doc = native_sheet()
+    doc["fusion_details"]["details"][1]["rank"] = "N/A"
+    doc["fusion_details"]["value"] = 1 / 61
+    collection.aggregate.return_value = [doc]
+    result = AtlasDatasheetLookup(collection).search("aroTHERM")
+    assert result.matches[0].ranks == {"atlas_search": 1}
+    assert result.matches[0].produced_by == ["atlas_search"]
+    assert result.matches[0].score == pytest.approx(1 / 61)
+
+
+def test_native_stage_unavailable_falls_back_to_application_rrf():
+    collection = MagicMock()
+    collection.aggregate.side_effect = [
+        OperationFailure("stage unavailable", code=40324),
+        [sheet()],
+        [sheet()],
+    ]
+    result = AtlasDatasheetLookup(collection).search("aroTHERM")
+    assert result.mode == "hybrid" and result.fusion == "application_rrf"
+    assert result.warnings
+    assert result.matches[0].score == pytest.approx(2 / 61)
+    assert result.matches[0].produced_by == ["atlas_search", "vector_search"]
+
+
 def test_known_missing_semantic_index_degrades_honestly():
     collection = MagicMock()
-    collection.aggregate.side_effect = [[sheet()], OperationFailure("unavailable", code=27)]
+    collection.aggregate.side_effect = [
+        OperationFailure("unavailable", code=27),
+        [sheet()],
+        OperationFailure("unavailable", code=27),
+    ]
     result = AtlasDatasheetLookup(collection).search("aroTHERM")
     assert result.mode == "full_text" and result.warnings
     assert result.matches[0].produced_by == ["atlas_search"]
@@ -79,7 +132,7 @@ def test_known_missing_semantic_index_degrades_honestly():
 
 def test_unknown_driver_failure_does_not_masquerade_as_fallback():
     collection = MagicMock()
-    collection.aggregate.side_effect = [[sheet()], OperationFailure("auth", code=13)]
+    collection.aggregate.side_effect = [OperationFailure("auth", code=13)]
     with pytest.raises(OperationFailure):
         AtlasDatasheetLookup(collection).search("aroTHERM")
 
@@ -97,7 +150,7 @@ def test_datasheet_lookup_contract():
         "kind": "heat_pump",
         "nominal_capacity_kw": {"$gte": 3, "$lte": 7},
     }
-    collection.aggregate.side_effect = [[sheet()], [sheet()]]
+    collection.aggregate.return_value = [native_sheet()]
     assert lookup.find_by_make_model("aroTHERM")[0].id == sheet()["id"]
 
 
@@ -204,7 +257,7 @@ def test_api_survey_lifecycle_and_validation(api):
 
 def test_api_search_scores_provenance_and_boundaries(api):
     client, db = api
-    db["datasheets"].aggregate.side_effect = [[sheet()], [sheet()]]
+    db["datasheets"].aggregate.return_value = [native_sheet()]
     response = client.get("/api/datasheets/search?q=Vailant")
     assert response.status_code == 200
     match = response.json()["matches"][0]

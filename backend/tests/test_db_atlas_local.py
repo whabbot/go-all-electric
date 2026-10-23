@@ -85,6 +85,7 @@ def test_real_fuzzy_vector_and_hybrid_search(monkeypatch):
             monkeypatch.setattr("gae.db.datasheets.vector_pipeline", local_vector)
             result = AtlasDatasheetLookup(collection).search("Vailant aroTHERM")
             assert result.mode == "hybrid"
+            assert result.fusion == "native_rank_fusion"
             assert len(result.matches) == 2
             assert all(
                 match.produced_by == ["atlas_search", "vector_search"] for match in result.matches

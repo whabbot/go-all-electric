@@ -102,4 +102,5 @@ class SearchMatch(StrictModel):
 class SearchResults(StrictModel):
     matches: list[SearchMatch]
     mode: Literal["hybrid", "full_text"]
+    fusion: Literal["native_rank_fusion", "application_rrf", "none"] = "none"
     warnings: list[str] = Field(default_factory=list)

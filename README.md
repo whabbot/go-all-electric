@@ -179,11 +179,14 @@ Mitsubishi Electric, Daikin, Samsung, Worcester Bosch, Baxi and Ideal.
 - **Automated Embedding / Voyage AI:** `autoEmbed`, model `voyage-4-lite`, generates document
   and query embeddings inside Atlas. No separate Voyage key is needed. Only public product
   facts and model search text enter the embedding model; survey documents are never indexed.
-- **Hybrid search:** the two Atlas ranked result sets are combined with reciprocal-rank fusion
-  in Python (`sum(1 / (60 + rank))`). Each result exposes its contributing channels and ranks.
-  This documented RRF approach works across versions without requiring `$rankFusion`.
-  A known unavailable semantic index returns an explicit full-text-only warning; other driver
-  failures return a generic 503. Scores rank candidates; they are not identification confidence.
+- **Native Atlas Hybrid Search:** `$rankFusion` combines `$search` and `$vectorSearch` inside
+  MongoDB using reciprocal-rank fusion with equal channel weights. `scoreDetails` metadata
+  provides the contributing channels and ranks for each result. Responses identify the path as
+  `fusion: native_rank_fusion`. This native stage was verified against Atlas Local.
+  Clusters lacking the native stage fall back to application RRF (`sum(1 / (60 + rank))`),
+  labelled `fusion: application_rrf` with a warning. A known unavailable semantic index returns
+  an explicit full-text-only warning and `fusion: none`; other driver failures return a generic
+  503. Scores rank candidates; they are not identification confidence.
 
 Setup from `backend/`:
 
@@ -214,7 +217,7 @@ plates and raw photos upstream. No source image is stored by this package. Delet
 it is no longer needed. No information is sent to installers or network operators.
 
 Unit tests mock the driver and use no network or keys. The optional integration test uses real
-Atlas Local Search and Vector Search with a tiny synthetic-vector fixture, a unique temporary
+Atlas Local Search, Vector Search and native `$rankFusion` with a tiny synthetic-vector fixture, a unique temporary
 collection, and cleanup; it does **not** validate managed Voyage inference. Run it explicitly:
 
 ```bash

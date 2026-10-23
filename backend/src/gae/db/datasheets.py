@@ -1,7 +1,7 @@
 """Public datasheet lookup. Search queries must contain model text, never bill/address text.
 
-Reciprocal rank fusion is performed in Python over Atlas's two ranked result sets. This
-keeps per-channel provenance stable and also works on Atlas Local without $rankFusion.
+Native $rankFusion combines Atlas ranked results. Python RRF supports older clusters;
+responses explicitly identify the fusion implementation and any degraded search.
 """
 
 from typing import Protocol
@@ -60,6 +60,42 @@ def vector_pipeline(query: str, limit: int) -> list[dict]:
     ]
 
 
+def hybrid_pipeline(query: str, candidates: int, limit: int) -> list[dict]:
+    return [
+        {
+            "$rankFusion": {
+                "input": {
+                    "pipelines": {
+                        "atlas_search": text_pipeline(query, candidates),
+                        "vector_search": vector_pipeline(query, candidates),
+                    }
+                },
+                "combination": {"weights": {"atlas_search": 1, "vector_search": 1}},
+                "scoreDetails": True,
+            }
+        },
+        {"$limit": limit},
+        {"$addFields": {"fusion_details": {"$meta": "scoreDetails"}}},
+    ]
+
+
+def native_match(document: dict) -> SearchMatch:
+    details = document["fusion_details"]
+    ranks = {
+        item["inputPipelineName"]: item["rank"]
+        for item in details["details"]
+        if item.get("inputPipelineName") in {"atlas_search", "vector_search"}
+        and isinstance(item.get("rank"), int)
+        and item["rank"] > 0
+    }
+    return SearchMatch(
+        datasheet=as_datasheet(document),
+        score=details["value"],
+        produced_by=sorted(ranks),
+        ranks=ranks,
+    )
+
+
 def as_datasheet(document: dict) -> Datasheet:
     return Datasheet.model_validate(
         {key: value for key, value in document.items() if key in Datasheet.model_fields}
@@ -91,6 +127,23 @@ class AtlasDatasheetLookup:
     def search(self, text: str, limit: int = 5) -> SearchResults:
         limit = max(1, min(limit, 20))
         candidates = max(20, limit * 3)
+        try:
+            documents = list(
+                self.collection.aggregate(
+                    hybrid_pipeline(text, candidates, limit),
+                    maxTimeMS=10000,
+                )
+            )
+            return SearchResults(
+                matches=[native_match(doc) for doc in documents],
+                mode="hybrid",
+                fusion="native_rank_fusion",
+            )
+        except OperationFailure as exc:
+            # Only known unavailable stages/indexes enter compatibility handling. A bad
+            # credential, timeout or unknown error must propagate to the API's generic 503.
+            if exc.code not in {27, 59, 72, 115, 31082, 40324}:
+                raise
         full_text = list(
             self.collection.aggregate(text_pipeline(text, candidates), maxTimeMS=10000)
         )
@@ -109,7 +162,10 @@ class AtlasDatasheetLookup:
                 warnings=["Semantic index unavailable; fuzzy full-text results only."],
             )
         return SearchResults(
-            matches=fuse({"atlas_search": full_text, "vector_search": vector}, limit), mode="hybrid"
+            matches=fuse({"atlas_search": full_text, "vector_search": vector}, limit),
+            mode="hybrid",
+            fusion="application_rrf",
+            warnings=["Native fusion unavailable; application reciprocal-rank fusion used."],
         )
 
     def find_by_make_model(self, text: str, limit: int = 5) -> list[Datasheet]:
