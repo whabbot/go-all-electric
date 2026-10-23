@@ -24,7 +24,8 @@ the hackathon; open-source libraries and starter templates are credited below.
 | FastAPI backend with health endpoint | Built |
 | React frontend | Mobile-first demo UI with typed mock API (`VITE_USE_MOCKS`) |
 | EPC lookup and exact-period heating degree days | Built, mocked HTTP tests |
-| Gemini photo and bill reading, MongoDB Atlas | Planned |
+| MongoDB Atlas persistence and datasheet retrieval | Built; managed embeddings require Atlas setup |
+| Gemini photo and bill reading | Planned |
 | Quote checker, solar, EV charging, sequenced plan | Planned |
 
 ## How the maths works
@@ -104,7 +105,7 @@ frontend lint and build, then a gitleaks scan of the full history.
 | `GEMINI_API_KEY` | Gemini 4 Argon photo and bill reading | Planned |
 | `EPC_API_TOKEN` | GOV.UK EPC replacement API bearer token, issued after GOV.UK One Login | Required for EPC lookup |
 | `EPC_API_EMAIL`, `EPC_API_KEY` | Retained legacy configuration; retired API Basic auth is no longer used | Deprecated |
-| `MONGODB_URI` | MongoDB Atlas connection string | Planned |
+| `MONGODB_URI` | Server-side Atlas connection string; database `go_all_electric` | Built |
 | `GOOGLE_SOLAR_API_KEY` | Google Solar API roof potential | Planned |
 
 ### Open-data endpoints
@@ -157,9 +158,80 @@ in a `VITE_*` variable, because Vite bundles those into the browser build.
 | [postcodes.io](https://postcodes.io/docs/api/lookup-postcode/) | Postcode centroid for weather requests; no exact home coordinates stored | Built; no key |
 | [Open-Meteo](https://open-meteo.com/en/docs/historical-weather-api) historical reanalysis | Daily mean temperatures at postcode centroid; heating degree days at 15.5C base for exact inclusive bill dates | Built; no key; attribution Open-Meteo, weather data CC BY 4.0 |
 | [Google Solar API](https://developers.google.com/maps/documentation/solar) / [PVGIS](https://joint-research-centre.ec.europa.eu/pvgis-online-tool_en) | Roof solar potential | Planned |
-| MongoDB Atlas | Core data store (homes, estimates, quotes) | Planned (dependency declared) |
+| MongoDB Atlas | Core survey store, fuzzy Search, Vector Search, hybrid datasheet matching | Built (`gae/db`) |
+| Voyage `voyage-4-lite` through Atlas Automated Embedding | Managed embeddings of public manufacturer datasheet text and model queries | Built; requires supported Atlas cluster and queryable index |
+| Manufacturer UK product pages and technical brochures | 15 heat pump / gas boiler variants; per-entry source URLs in `gae/db/datasheets.json` | Curated seed; unverified values are null |
 | Ofgem price cap, Oct-Dec 2026 | Unit rates in the cost answer | Built (constants) |
 | CIBSE Guide A, RdSAP defaults, MCS guidance, BS EN 442 | Fabric defaults, design temperatures, radiator exponent | Built (constants) |
+
+## How we use MongoDB Atlas
+
+Atlas is the core backend store. `surveys` holds one document per property with an optional
+address/postcode, EPC snapshot, extracted readings with confidence, both estimates, cross-check,
+cost, target spec, quote flags and verification log. UUIDs identify surveys; creation/update times
+are server generated. `datasheets` holds 15 public manufacturer variants from Vaillant,
+Mitsubishi Electric, Daikin, Samsung, Worcester Bosch, Baxi and Ideal.
+
+- **Atlas Search:** `datasheets_text` indexes make, model and curated text with fuzzy matching,
+  useful for OCR mistakes such as “Vailant”.
+- **Atlas Vector Search:** `datasheets_semantic` searches the public datasheet text semantically,
+  useful when a plate or quote uses a different description.
+- **Automated Embedding / Voyage AI:** `autoEmbed`, model `voyage-4-lite`, generates document
+  and query embeddings inside Atlas. No separate Voyage key is needed. Only public product
+  facts and model search text enter the embedding model; survey documents are never indexed.
+- **Native Atlas Hybrid Search:** `$rankFusion` combines `$search` and `$vectorSearch` inside
+  MongoDB using reciprocal-rank fusion with equal channel weights. `scoreDetails` metadata
+  provides the contributing channels and ranks for each result. Responses identify the path as
+  `fusion: native_rank_fusion`. This native stage was verified against Atlas Local.
+  Clusters lacking the native stage fall back to application RRF (`sum(1 / (60 + rank))`),
+  labelled `fusion: application_rrf` with a warning. A known unavailable semantic index returns
+  an explicit full-text-only warning and `fusion: none`; other driver failures return a generic
+  503. Scores rank candidates; they are not identification confidence.
+
+Setup from `backend/`:
+
+1. Create an Atlas cluster supporting Search, Vector Search and the Automated Embedding preview;
+   use a least-privilege database user and restrict network access. Enable storage auto-scaling
+   on dedicated clusters as required by Automated Embedding. Set server-only `MONGODB_URI`.
+2. Run `uv run python -m gae.db.seed` (upserts stable IDs; safe to repeat).
+3. Run `uv run python -m gae.db.indexes` (creates or updates definitions; safe to repeat).
+   Wait for both indexes to show `queryable: true` in Atlas before demoing hybrid search.
+4. Start the backend, then call `GET /api/datasheets/search?q=Vaillant%20aroTHERM`.
+   `POST /api/surveys`, `GET /api/surveys`, and `GET`, `PUT`, `DELETE /api/surveys/{id}`
+   persist, list, replace and erase surveys. `PUT` replaces editable fields, including defaults.
+
+The data layer uses synchronous PyMongo in FastAPI's worker threadpool. Its own `DatasheetLookup`
+Protocol provides `find_by_make_model(text)`, `get_full_datasheet_text(id)` (the full curated
+record text, not a downloaded PDF), and `search_by_spec(min_kw=..., max_kw=..., kind=...)`.
+An adapter can wire these methods into the Gemini worker once its interface lands. Capacity
+filters use the manufacturer's nominal class; combi names usually denote hot-water capacity,
+so central-heating min/max are stored separately. SCOP is a published comparison under stated
+conditions, not a running-cost guarantee; nulls must never become invented specifications.
+
+This is a localhost, single-user hackathon API: survey routes do not yet have user authentication
+or tenant isolation. Keep it bound to loopback or behind a trusted access proxy, use synthetic
+surveys for shared demos, and add authentication before exposing real homeowner records.
+Survey validation rejects image/raw-document fields, data-image URLs, unsafe keys and oversized
+payloads. It cannot identify personal content inside free text; extraction must discard faces,
+plates and raw photos upstream. No source image is stored by this package. Delete a survey when
+it is no longer needed. No information is sent to installers or network operators.
+
+Unit tests mock the driver and use no network or keys. The optional integration test uses real
+Atlas Local Search, Vector Search and native `$rankFusion` with a tiny synthetic-vector fixture, a unique temporary
+collection, and cleanup; it does **not** validate managed Voyage inference. Run it explicitly:
+
+```bash
+docker run --detach --rm --name gae-atlas-test -p 127.0.0.1:27028:27017 mongodb/mongodb-atlas-local:latest
+ATLAS_LOCAL_URI='mongodb://127.0.0.1:27028/?directConnection=true' uv run pytest -m atlas_local -o addopts='' tests/test_db_atlas_local.py
+docker stop gae-atlas-test
+```
+
+Index syntax and model availability were checked against the official
+[Automated Embedding documentation](https://www.mongodb.com/docs/vector-search/crud-embeddings/automated-embedding/),
+[Atlas Search text operator](https://www.mongodb.com/docs/atlas/atlas-search/text/), and
+[RRF documentation](https://www.mongodb.com/docs/manual/reference/operator/aggregation/rankfusion/).
+Automated Embedding is a preview capability; unsupported clusters need a compatible deployment
+before semantic queries can work. Optional Voyage reranking is not enabled for this small library.
 
 ## Agent skills
 
