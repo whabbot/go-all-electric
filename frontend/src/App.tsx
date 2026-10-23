@@ -1,48 +1,40 @@
-import { useEffect, useState } from 'react'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { DemoNav } from './components/DemoNav'
+import { SessionProvider } from './context/SessionContext'
+import { CaptureScreen } from './screens/CaptureScreen'
+import { CostScreen } from './screens/CostScreen'
+import { EstimatesScreen } from './screens/EstimatesScreen'
+import { PlanScreen } from './screens/PlanScreen'
+import { QuotesScreen } from './screens/QuotesScreen'
+import { SpecScreen } from './screens/SpecScreen'
+import { StartScreen } from './screens/StartScreen'
 
-type Health = {
-  status: string
-  configured: Record<string, boolean>
-}
-
-// Placeholder page: proves the frontend can reach the backend. The real UI replaces this.
 function App() {
-  const [health, setHealth] = useState<Health | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    fetch('/api/health')
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json() as Promise<Health>
-      })
-      .then(setHealth)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
-  }, [])
-
   return (
-    <main>
-      <h1>Go All-Electric</h1>
-      <p>Your gas bills have already measured your house; we use that to check the installer's maths.</p>
-      <section aria-live="polite">
-        <h2>Backend</h2>
-        {error && <p>Backend unreachable: {error}. Start it with <code>uv run uvicorn gae.main:app</code>.</p>}
-        {!error && !health && <p>Checking…</p>}
-        {health && (
-          <ul>
-            <li>Status: {health.status}</li>
-            {Object.entries(health.configured).map(([name, ok]) => (
-              <li key={name}>
-                {name}: {ok ? 'configured' : 'not configured'}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-      <p>
-        <small>It advises; you decide.</small>
-      </p>
-    </main>
+    <SessionProvider>
+      <BrowserRouter>
+        <div className="app-shell">
+          <header className="app-header">
+            <p className="brand">Go All-Electric</p>
+            <DemoNav />
+          </header>
+          <main className="app-main">
+            <Routes>
+              <Route path="/" element={<StartScreen />} />
+              <Route path="/capture" element={<CaptureScreen />} />
+              <Route path="/estimates" element={<EstimatesScreen />} />
+              <Route path="/cost" element={<CostScreen />} />
+              <Route path="/spec" element={<SpecScreen />} />
+              <Route path="/quotes" element={<QuotesScreen />} />
+              <Route path="/plan" element={<PlanScreen />} />
+            </Routes>
+          </main>
+          <footer className="app-footer">
+            <small>Second opinion with ranges — not financial advice. It advises; you decide.</small>
+          </footer>
+        </div>
+      </BrowserRouter>
+    </SessionProvider>
   )
 }
 
