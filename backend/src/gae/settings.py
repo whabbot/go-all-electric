@@ -17,6 +17,10 @@ class Settings(BaseSettings):
         env_file=(".env", "../.env"), env_file_encoding="utf-8", extra="ignore"
     )
 
+    access_code: SecretStr | None = None
+    gemini_requests_per_ip: int = 30
+    gemini_limit_window_seconds: int = 3600
+
     gemini_api_key: SecretStr | None = None
     epc_api_token: SecretStr | None = None
     epc_api_email: SecretStr | None = None

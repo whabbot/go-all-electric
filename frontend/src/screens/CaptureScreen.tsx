@@ -28,6 +28,7 @@ export function CaptureScreen() {
   } = useSession()
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [pending, setPending] = useState<PendingCoverUp | null>(null)
+  const [photoErrors, setPhotoErrors] = useState<Record<string, string>>({})
   const [prepareError, setPrepareError] = useState<string | null>(null)
   const [videoError, setVideoError] = useState<string | null>(null)
 
@@ -58,13 +59,18 @@ export function CaptureScreen() {
     if (!pending) return
     const { kind } = pending
     closePending()
+    setPhotoErrors((errors) => ({ ...errors, [kind]: '' }))
     setBusy((b) => ({ ...b, [kind]: true }))
     // Only the redacted, re-encoded file is kept (in memory) and later sent for analysis.
     setPhoto(kind, redacted, null)
     try {
       const result = await api.checkPhoto(kind, redacted)
       setPhoto(kind, redacted, result)
-    } catch {
+    } catch (error: unknown) {
+      setPhotoErrors((errors) => ({
+        ...errors,
+        [kind]: error instanceof Error ? error.message : 'Could not check that photo.',
+      }))
       setPhoto(kind, redacted, null)
     } finally {
       setBusy((b) => ({ ...b, [kind]: false }))
@@ -129,6 +135,7 @@ export function CaptureScreen() {
               />
               {busy[slot.kind] ? 'Checking…' : 'Take photo or upload'}
             </label>
+            {photoErrors[slot.kind] && <p className="error" role="alert">{photoErrors[slot.kind]}</p>}
             {slot.fileName && <p className="file-name">Redacted photo ready</p>}
             {slot.result && (
               <div className={`check-result ${slot.result.legible ? 'ok' : 'warn'}`}>

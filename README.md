@@ -359,3 +359,87 @@ Claude Code under `.claude/skills/`.
 ## Licence
 
 [MIT](LICENSE).
+
+
+## Deploy to Cloud Run
+
+One Python 3.14 container builds the real API frontend (`VITE_USE_MOCKS=false`) and
+serves it with FastAPI on `$PORT` (default 8080). `/api` and the app share an origin;
+refreshing `/capture`, `/quotes`, `/pack` or `/plan` works. No key is used at build time
+or placed in a `VITE_*` variable. `.dockerignore` and `.gcloudignore` exclude private
+inputs, env files, dependencies and test caches from the image and source upload.
+
+Before deploying:
+
+1. Install Google Cloud CLI, run `gcloud auth login`, and choose a project with billing.
+   The deployer needs permission to enable APIs, manage service accounts and their IAM
+   policies, create Secret Manager secrets, update Cloud Logging sink exclusions, build sources,
+   and deploy Cloud Run services.
+   The script grants `roles/run.builder` to a dedicated build account and grants the
+   runtime account access only to the four named secrets.
+2. Put nonempty `GEMINI_API_KEY`, `MONGODB_URI`, `EPC_API_TOKEN`, and `ACCESS_CODE` values
+   in `~/.config/go-all-electric/.env` with mode 600. Use ordinary `NAME=value` lines
+   (quotes are supported; no shell expansion or multiline values). Choose a demo access
+   code and share it privately with judges. Existing local env files may lack that code.
+3. **Choose Atlas network access.** Cloud Run egress IPs are dynamic. For the demo,
+   Atlas can allow `0.0.0.0/0`, which exposes its network endpoint to all IPv4 addresses
+   while database authentication still applies. Alternatively configure VPC egress through
+   Cloud NAT with a static IP and allow only that IP: tighter network access, with extra
+   setup and cost. Make this choice in Atlas before testing; the deploy script does not
+   change Atlas access or configure NAT. Use a database user with only the needed privileges.
+4. From the repository, run:
+
+   ```sh
+   GOOGLE_CLOUD_PROJECT=your-project-id ./deploy/cloudrun.sh
+   ```
+
+The script enables the required APIs, creates or updates Secret Manager secrets using
+stdin without echoing values, and runs `gcloud run deploy --source .` (using the absolute
+repository path). It uses `europe-west2`, 0–2 instances, 2 GiB memory, one CPU, concurrency
+8, and a 900-second timeout. Public invocation is enabled; the application access code
+protects every `/api/*` route except `/api/health`. Re-running adds current secret versions
+and redeploys. Do not run with shell tracing. Credentials are runtime environment variables.
+
+The first visit shows **Enter access code**. A verified code is remembered in localStorage
+on that device and sent in `X-Access-Code`. Rotating the code invalidates saved codes.
+When `ACCESS_CODE` is unset, local development retains its existing open behavior.
+With a code set, Gemini endpoints share a default limit of 30 POST requests per IP per
+3600 seconds. Set `GEMINI_REQUESTS_PER_IP` and `GEMINI_LIMIT_WINDOW_SECONDS` to tune it
+(`GEMINI_REQUESTS_PER_IP=0` disables the limit). A 429 response explains the limit in the UI
+and supplies `Retry-After`. Rejected access codes do not consume the allowance.
+
+This small in-memory limiter is per container and resets on restart; two instances can
+provide up to two allowances. People sharing Wi-Fi also share an IP allowance. It uses
+the last `X-Forwarded-For` address for the direct Cloud Run URL, ignoring supplied prefixes.
+Revisit trusted proxy handling if adding another proxy or load balancer. It is a demo
+credit guard, not a distributed billing cap.
+
+The container disables uvicorn access logs and HTTP client INFO logs so application
+logs do not record query strings or postcodes. Cloud Run's **platform request logs** are
+separate and include request URLs. The script adds or updates an exclusion scoped to
+this service's `run.googleapis.com/requests` log in the `_Default` sink before deploying;
+application logs remain available, but stored request-level traffic diagnostics do not.
+If the project has additional logging sinks, apply the equivalent exclusion there too.
+Do not enable HTTP debug logging. Photos remain request data and are not persisted by
+this deployment; uploads are never included in the image.
+
+### Local container and Android check
+
+```sh
+docker build -t go-all-electric .
+docker run --rm -p 8080:8080 \
+  --env-file "$HOME/.config/go-all-electric/.env" go-all-electric
+```
+
+Ensure that env file includes `ACCESS_CODE` for gated validation. Never put a code or API
+key on a command line or commit an env file. Use SAMPLE
+inputs for verification. Check wrong-code refusal, EPC search and a photo check at
+`http://localhost:8080`, then check the deployed HTTPS URL on Android at about 400 px.
+The manifest includes local 192 px and 512 px icons and standalone display; Chrome's
+**Add to Home screen / Install app** opens it like an app. No offline service worker is
+installed. Photo and video inputs use `capture="environment"` to offer the rear camera.
+Keep combined uploads below Cloud Run's 32 MiB HTTP/1 request limit; its 900-second
+request timeout does not extend an upstream model's timeout.
+
+See [Google's source deployment permissions](https://docs.cloud.google.com/run/docs/configuring/services/build-service-account)
+for the account roles used by the script.

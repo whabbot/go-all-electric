@@ -1,4 +1,5 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { AccessGate } from './components/AccessGate'
 import { DemoNav } from './components/DemoNav'
 import { SessionProvider } from './context/SessionContext'
 import { CaptureScreen } from './screens/CaptureScreen'
@@ -12,6 +13,7 @@ import { StartScreen } from './screens/StartScreen'
 
 function App() {
   return (
+    <AccessGate>
     <SessionProvider>
       <BrowserRouter>
         <div className="app-shell">
@@ -37,6 +39,7 @@ function App() {
         </div>
       </BrowserRouter>
     </SessionProvider>
+    </AccessGate>
   )
 }
 
