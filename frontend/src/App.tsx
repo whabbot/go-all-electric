@@ -4,6 +4,7 @@ import { SessionProvider } from './context/SessionContext'
 import { CaptureScreen } from './screens/CaptureScreen'
 import { CostScreen } from './screens/CostScreen'
 import { EstimatesScreen } from './screens/EstimatesScreen'
+import { PackScreen } from './screens/PackScreen'
 import { PlanScreen } from './screens/PlanScreen'
 import { QuotesScreen } from './screens/QuotesScreen'
 import { SpecScreen } from './screens/SpecScreen'
@@ -27,6 +28,7 @@ function App() {
               <Route path="/spec" element={<SpecScreen />} />
               <Route path="/quotes" element={<QuotesScreen />} />
               <Route path="/plan" element={<PlanScreen />} />
+              <Route path="/pack" element={<PackScreen />} />
             </Routes>
           </main>
           <footer className="app-footer">
