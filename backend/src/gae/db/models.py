@@ -19,8 +19,11 @@ class Reading(StrictModel):
 
 
 class SurveyInput(StrictModel):
-    address: str | None = Field(default=None, max_length=300)
-    postcode: str | None = Field(default=None, max_length=12)
+    # Location is the postcode district (outward code, e.g. "SW1A") only: never an address,
+    # full postcode, UPRN or certificate number, so a stored survey cannot locate the house.
+    postcode_district: str | None = Field(
+        default=None, pattern=r"^(?:[A-Z]{1,2}[0-9][A-Z0-9]?|GIR)$"
+    )
     epc_snapshot: dict[str, JsonValue] = Field(default_factory=dict)
     extracted_readings: dict[str, Reading] = Field(default_factory=dict)
     estimates: dict[str, JsonValue] = Field(default_factory=dict)
@@ -47,12 +50,24 @@ class SurveyInput(StrictModel):
             "faces",
             "number_plate",
             "api_key",
+            # Location identifiers: the district above is the only location kept.
+            "postcode",
+            "uprn",
+            "certificate_id",
+            "certificate_number",
+            "lmk_key",
         }
 
         def check(value: JsonValue) -> None:
             if isinstance(value, dict):
                 for key, child in value.items():
-                    if key.lower() in forbidden or key.startswith("$") or "." in key:
+                    lowered = key.lower()
+                    if (
+                        lowered in forbidden
+                        or lowered.startswith("address")
+                        or key.startswith("$")
+                        or "." in key
+                    ):
                         raise ValueError("Store extracted values only; unsafe field name")
                     check(child)
             elif isinstance(value, list):

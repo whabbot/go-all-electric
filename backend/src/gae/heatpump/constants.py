@@ -179,6 +179,21 @@ RADIATOR_RATED_DELTA_T_K = 50.0
 RADIATOR_EXPONENT = 1.3
 # Room heat losses are themselves estimates; within this margin a radiator is "marginal".
 RADIATOR_MARGIN = 0.10
+# Approximate Delta-T 50 output per m2 of front face for steel panel radiators, from typical
+# UK catalogue tables for 600 mm-high panels (e.g. 600 x 1000 mm: Type 10 ~630 W, Type 11/K1
+# ~1,030 W, Type 21/P+ ~1,350 W, Type 22/K2 ~1,680 W, Type 33/K3 ~2,370 W). Scaling by face
+# area from a photo-estimated size is rough, so photo-based ratings are low confidence.
+PANEL_RADIATOR_DT50_W_PER_M2 = {
+    "single_panel": 1_050,
+    "K1": 1_710,
+    "P+": 2_250,
+    "K2": 2_800,
+    "K3": 3_950,
+}
+# With one radiator photo and no room sizes, the photographed room's heat loss is a named
+# assumption: a main living room is roughly a fifth of a typical 3-bed semi's design heat loss.
+# Confirm with a room-by-room heat loss survey.
+PHOTOGRAPHED_ROOM_SHARE_OF_HEAT_LOSS = 0.20
 
 # --- Boiler Upgrade Scheme -----------------------------------------------------------------
 # Source: project plan, Oct 2026 (BUS grant towards an air or ground source heat pump).

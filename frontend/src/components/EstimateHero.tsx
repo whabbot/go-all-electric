@@ -1,12 +1,13 @@
-import type { AnalysisBundle } from '../api'
+import type { AnalysisBundle, Gap } from '../api'
 import { RangeValue } from './RangeValue'
 
 const MAX_KW = 12
 
-export function EstimateHero({ analysis }: { analysis: AnalysisBundle }) {
+export function EstimateHero({ analysis, billGap }: { analysis: AnalysisBundle; billGap: Gap | null }) {
   const { measured, fabric, cross_check: check } = analysis
-  const verdictLabel =
-    check.verdict === 'fabric_higher'
+  const verdictLabel = !check
+    ? null
+    : check.verdict === 'fabric_higher'
       ? 'Fabric calc reads higher than your bills'
       : check.verdict === 'measured_higher'
         ? 'Your bills read higher than the fabric calc'
@@ -15,22 +16,41 @@ export function EstimateHero({ analysis }: { analysis: AnalysisBundle }) {
   return (
     <section className="hero-estimates">
       <p className="hero-tagline">It doesn&apos;t trust its own model. It checks it against what your house actually used.</p>
-      <div className={`verdict-banner verdict-${check.verdict}`}>
-        <strong>{verdictLabel}</strong>
-        <p>
-          Fabric is about{' '}
-          <RangeValue range={check.ratio} decimals={2} unit="×" /> higher than measured (ratio).
-        </p>
-      </div>
+      {check ? (
+        <div className={`verdict-banner verdict-${check.verdict}`}>
+          <strong>{verdictLabel}</strong>
+          <p>
+            Fabric ÷ measured: <strong className="ratio-central">{check.ratio.central.toFixed(2)}×</strong>{' '}
+            <span className="subtle">
+              (range <span className="range-value">{check.ratio.low.toFixed(2)}–{check.ratio.high.toFixed(2)}×</span>)
+            </span>
+          </p>
+        </div>
+      ) : (
+        <div className="cannot-compare">
+          <strong>Can&apos;t compare yet</strong>
+          <p>{billGap?.message ?? 'No measured estimate: nothing to check the fabric calc against.'}</p>
+          {billGap && <p className="subtle">{billGap.provide}</p>}
+        </div>
+      )}
 
       <div className="estimate-columns">
         <div className="estimate-card estimate-b">
           <h2>Estimate B — measured</h2>
           <p className="estimate-sub">From your gas bill &amp; degree days</p>
-          <div className="kw-display">
-            <RangeValue range={measured.design_load_kw} unit=" kW" decimals={1} />
-          </div>
-          <RangeBand range={measured.design_load_kw} color="var(--color-measured)" label="B" />
+          {measured ? (
+            <>
+              <div className="kw-display">
+                <RangeValue range={measured.design_load_kw} unit=" kW" decimals={1} />
+              </div>
+              <RangeBand range={measured.design_load_kw} color="var(--color-measured)" label="B" />
+              {measured.caveats.length > 0 && (
+                <p className="subtle">Caveats: {measured.caveats.map((c) => c.replaceAll('_', ' ')).join(', ')}</p>
+              )}
+            </>
+          ) : (
+            <p className="kw-display couldnt-tell">Couldn&apos;t tell</p>
+          )}
         </div>
 
         <div className="estimate-card estimate-a">
@@ -43,6 +63,7 @@ export function EstimateHero({ analysis }: { analysis: AnalysisBundle }) {
         </div>
       </div>
 
+      {check && check.reasons.length > 0 && (
       <div className="reasons-block">
         <h3>Why they disagree — ranked</h3>
         <ol className="reasons-list">
@@ -57,6 +78,7 @@ export function EstimateHero({ analysis }: { analysis: AnalysisBundle }) {
           ))}
         </ol>
       </div>
+      )}
     </section>
   )
 }

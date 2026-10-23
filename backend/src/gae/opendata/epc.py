@@ -7,7 +7,7 @@ import httpx
 from pydantic import SecretStr
 
 from gae.opendata.http import DataUnavailable, get_json
-from gae.opendata.mapping import map_epc
+from gae.opendata.mapping import FabricMapping, map_epc
 from gae.opendata.weather import normalise_postcode
 
 BASE_URL = "https://api.get-energy-performance-data.communities.gov.uk"
@@ -95,6 +95,11 @@ class EPCClient:
         raise DataUnavailable("Too many EPC pages; couldn't safely select the latest records.")
 
     def certificate(self, certificate_id: str) -> dict:
+        raw_summary, mapping = self.mapped(certificate_id)
+        return {"certificate_id": certificate_id, "raw_summary": raw_summary, **asdict(mapping)}
+
+    def mapped(self, certificate_id: str) -> tuple[dict, FabricMapping]:
+        """Allowlisted raw summary and the typed fabric mapping, for callers doing the maths."""
         if not re.fullmatch(CERTIFICATE_PATTERN, certificate_id):
             raise ValueError(
                 "Use a 20-digit certificate number in 0000-0000-0000-0000-0000 format."
@@ -171,15 +176,12 @@ class EPCClient:
             "main_heating",
             "construction_age_band",
         )
-        return {
-            "certificate_id": certificate_id,
-            "raw_summary": {key: data[key] for key in fields if key in data},
-            **asdict(
-                map_epc(
-                    data,
-                    age_label=age_label,
-                    property_label=property_label,
-                    built_form_label=built_form_label,
-                )
+        return (
+            {key: data[key] for key in fields if key in data},
+            map_epc(
+                data,
+                age_label=age_label,
+                property_label=property_label,
+                built_form_label=built_form_label,
             ),
-        }
+        )

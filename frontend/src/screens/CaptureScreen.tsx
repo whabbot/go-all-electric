@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api } from '../api'
+import { api, isMockMode } from '../api'
 import { ImageCoverUp } from '../components/ImageCoverUp'
-import { VerificationLogPanel } from '../components/VerificationLog'
 import { useSession } from '../context/SessionContext'
 import { prepareImageFile } from '../lib/imagePrepare'
 import { coverUpGuidance, coverUpTitle } from '../lib/photoGuidance'
@@ -15,7 +14,7 @@ type PendingCoverUp = {
 }
 
 export function CaptureScreen() {
-  const { photos, setPhotoResult, address } = useSession()
+  const { photos, setPhoto, placeLabel, address } = useSession()
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [pending, setPending] = useState<PendingCoverUp | null>(null)
   const [prepareError, setPrepareError] = useState<string | null>(null)
@@ -48,27 +47,31 @@ export function CaptureScreen() {
     const { kind } = pending
     closePending()
     setBusy((b) => ({ ...b, [kind]: true }))
-    setPhotoResult(kind, null, redacted.name)
+    // Only the redacted, re-encoded file is kept (in memory) and later sent for analysis.
+    setPhoto(kind, redacted, null)
     try {
       const result = await api.checkPhoto(kind, redacted)
-      setPhotoResult(kind, result, redacted.name)
+      setPhoto(kind, redacted, result)
     } catch {
-      setPhotoResult(kind, null, redacted.name)
+      setPhoto(kind, redacted, null)
     } finally {
       setBusy((b) => ({ ...b, [kind]: false }))
     }
   }
 
-  const readyCount = photos.filter((p) => p.result?.legible).length
-  const showLog = readyCount >= 2
+  const anyBusy = Object.values(busy).some(Boolean)
+  const noBill = !photos.find((p) => p.kind === 'gas_bill')?.fileName
 
   return (
     <section className="screen capture-screen">
       <h1>Capture</h1>
-      {address ? (
-        <p className="subhead">{address.address}</p>
+      {placeLabel ? (
+        <p className="place-label">{placeLabel}</p>
       ) : (
-        <p className="warning">Pick an address on Start — using demo home for now.</p>
+        <p className="warning">
+          Pick a house on <Link to="/">Start</Link>
+          {isMockMode() ? ' — using the demo home for now.' : ' first.'}
+        </p>
       )}
 
       <p className="lede">
@@ -90,10 +93,22 @@ export function CaptureScreen() {
               />
               {busy[slot.kind] ? 'Checking…' : 'Take photo or upload'}
             </label>
-            {slot.fileName && <p className="file-name">{slot.fileName}</p>}
+            {slot.fileName && <p className="file-name">Redacted photo ready</p>}
             {slot.result && (
               <div className={`check-result ${slot.result.legible ? 'ok' : 'warn'}`}>
-                <p>{slot.result.summary}</p>
+                <p>
+                  {slot.result.summary}{' '}
+                  <span className="subtle">
+                    ({slot.result.model}, {(slot.result.elapsed_ms / 1000).toFixed(1)}s)
+                  </span>
+                </p>
+                {!slot.result.matches_expected && (
+                  <p className="retake">
+                    {slot.result.kind === 'other'
+                      ? `This doesn't look like a ${slot.label.replace(' (optional)', '').toLowerCase()}.`
+                      : `This looks like a ${slot.result.kind.replaceAll('_', ' ')}.`}
+                  </p>
+                )}
                 {slot.result.retake_hint && <p className="retake">{slot.result.retake_hint}</p>}
                 {slot.result.privacy_warning && (
                   <p className="privacy-warn">{slot.result.privacy_warning}</p>
@@ -118,12 +133,22 @@ export function CaptureScreen() {
         />
       )}
 
-      <VerificationLogPanel visible={showLog} />
+      {noBill && (
+        <p className="subtle">
+          No gas bill yet: you&apos;ll get the fabric estimate only, and we&apos;ll say what we can&apos;t compare.
+        </p>
+      )}
 
       <p className="cta-row">
-        <Link className="btn primary" to="/estimates">
-          Run estimates
-        </Link>
+        {address || isMockMode() ? (
+          <Link className={`btn primary${anyBusy ? ' disabled' : ''}`} to="/estimates">
+            Run estimates
+          </Link>
+        ) : (
+          <Link className="btn" to="/">
+            Pick a house first
+          </Link>
+        )}
       </p>
     </section>
   )

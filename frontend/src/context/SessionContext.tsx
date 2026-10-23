@@ -1,5 +1,16 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
-import type { AnalysisBundle, EpcAddress, PhotoCheckResult, PhotoKind } from '../api'
+import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  api,
+  type AnalysisResult,
+  type EpcAddress,
+  type PhotoCheckResult,
+  type PhotoKind,
+  type QuoteCheckResult,
+  type QuoteUploadGroup,
+  type ReviewQuote,
+  type ReviewResult,
+} from '../api'
+import { outwardCode, quoteId } from '../lib/labels'
 
 type PhotoSlot = {
   kind: PhotoKind
@@ -12,72 +23,141 @@ const PHOTO_SLOTS: { kind: PhotoKind; label: string }[] = [
   { kind: 'boiler_plate', label: 'Boiler data plate' },
   { kind: 'radiators', label: 'Radiators' },
   { kind: 'fuse_cutout', label: 'Fuse cutout' },
-  { kind: 'outdoor_space', label: 'Outdoor unit spot' },
+  { kind: 'outdoor_space', label: 'Outdoor unit spot (optional)' },
   { kind: 'gas_bill', label: 'Gas bill' },
 ]
+
+export type CheckedQuote = { group: QuoteUploadGroup; result: QuoteCheckResult | null }
+
+export type ReviewState =
+  | { status: 'idle' }
+  | { status: 'running'; startedAt: number }
+  | { status: 'done'; result: ReviewResult; elapsedMs: number; quoteCount: number }
+  | { status: 'failed'; message: string }
 
 type Session = {
   address: EpcAddress | null
   setAddress: (a: EpcAddress | null) => void
+  /** "house in N10": the only location shown once an address is picked. */
+  placeLabel: string | null
   photos: PhotoSlot[]
-  setPhotoResult: (kind: PhotoKind, result: PhotoCheckResult | null, fileName: string | null) => void
-  analysis: AnalysisBundle | null
-  setAnalysis: (a: AnalysisBundle | null) => void
+  /** Files stay in memory for this tab only; they are never written to storage. */
+  files: Partial<Record<PhotoKind, File>>
+  setPhoto: (kind: PhotoKind, file: File | null, result: PhotoCheckResult | null) => void
+  analysis: AnalysisResult | null
+  setAnalysis: (a: AnalysisResult | null) => void
+  quotes: CheckedQuote[]
+  setQuotes: (q: CheckedQuote[]) => void
+  review: ReviewState
+  startReview: () => void
 }
 
 const SessionContext = createContext<Session | null>(null)
 
+const STORAGE_KEY = 'gae-analysis-v2'
+
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [address, setAddress] = useState<EpcAddress | null>(null)
-  const [analysis, setAnalysisState] = useState<AnalysisBundle | null>(() => {
+  const [address, setAddressState] = useState<EpcAddress | null>(null)
+  const [analysis, setAnalysisState] = useState<AnalysisResult | null>(() => {
     try {
-      const raw = sessionStorage.getItem('gae-analysis')
-      return raw ? (JSON.parse(raw) as AnalysisBundle) : null
+      const raw = sessionStorage.getItem(STORAGE_KEY)
+      return raw ? (JSON.parse(raw) as AnalysisResult) : null
     } catch {
       return null
     }
   })
+  const [files, setFiles] = useState<Partial<Record<PhotoKind, File>>>({})
+  const [checks, setChecks] = useState<Partial<Record<PhotoKind, PhotoCheckResult | null>>>({})
+  const [quotes, setQuotesState] = useState<CheckedQuote[]>([])
+  const [review, setReview] = useState<ReviewState>({ status: 'idle' })
+  const reviewRun = useRef(0)
 
-  const setAnalysis = (a: AnalysisBundle | null) => {
+  const setAnalysis = useCallback((a: AnalysisResult | null) => {
     setAnalysisState(a)
+    reviewRun.current += 1
+    setReview({ status: 'idle' })
     try {
-      if (a) sessionStorage.setItem('gae-analysis', JSON.stringify(a))
-      else sessionStorage.removeItem('gae-analysis')
+      // The result carries the postcode district only, never the address.
+      if (a) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(a))
+      else sessionStorage.removeItem(STORAGE_KEY)
     } catch {
       /* private mode / storage full */
     }
-  }
-  const [photoState, setPhotoState] = useState<Record<PhotoKind, { result: PhotoCheckResult | null; fileName: string | null }>>(
-    () =>
-      Object.fromEntries(
-        PHOTO_SLOTS.map((s) => [s.kind, { result: null, fileName: null }]),
-      ) as Record<PhotoKind, { result: PhotoCheckResult | null; fileName: string | null }>,
+  }, [])
+
+  const setAddress = useCallback(
+    (a: EpcAddress | null) => {
+      setAddressState(a)
+      setAnalysis(null)
+    },
+    [setAnalysis],
   )
 
-  const setPhotoResult = (kind: PhotoKind, result: PhotoCheckResult | null, fileName: string | null) => {
-    setPhotoState((prev) => ({ ...prev, [kind]: { result, fileName } }))
-  }
+  const setPhoto = useCallback((kind: PhotoKind, file: File | null, result: PhotoCheckResult | null) => {
+    setFiles((prev) => {
+      const next = { ...prev }
+      if (file) next[kind] = file
+      else delete next[kind]
+      return next
+    })
+    setChecks((prev) => ({ ...prev, [kind]: result }))
+  }, [])
+
+  const setQuotes = useCallback((q: CheckedQuote[]) => {
+    setQuotesState(q)
+  }, [])
+
+  const startReview = useCallback(() => {
+    if (!analysis) return
+    const run = ++reviewRun.current
+    const startedAt = Date.now()
+    setReview({ status: 'running', startedAt })
+    const reviewQuotes: ReviewQuote[] = quotes.map((q, i) => ({
+      quote_id: quoteId(i, q.result),
+      pages: q.group.pages,
+      reading: q.result?.verified.reading ?? null,
+    }))
+    api
+      .reviewAnalysis(analysis, files, reviewQuotes)
+      .then((result) => {
+        if (run === reviewRun.current)
+          setReview({ status: 'done', result, elapsedMs: Date.now() - startedAt, quoteCount: reviewQuotes.length })
+      })
+      .catch((e: unknown) => {
+        if (run === reviewRun.current)
+          setReview({ status: 'failed', message: e instanceof Error ? e.message : 'Review failed' })
+      })
+  }, [analysis, files, quotes])
 
   const photos = useMemo(
     () =>
       PHOTO_SLOTS.map((s) => ({
         ...s,
-        result: photoState[s.kind].result,
-        fileName: photoState[s.kind].fileName,
+        result: checks[s.kind] ?? null,
+        fileName: files[s.kind]?.name ?? null,
       })),
-    [photoState],
+    [checks, files],
   )
+
+  const district = address ? outwardCode(address.postcode) : analysis?.postcode_district
+  const placeLabel = district ? `house in ${district}` : null
 
   const value = useMemo(
     () => ({
       address,
       setAddress,
+      placeLabel,
       photos,
-      setPhotoResult,
+      files,
+      setPhoto,
       analysis,
       setAnalysis,
+      quotes,
+      setQuotes,
+      review,
+      startReview,
     }),
-    [address, photos, analysis],
+    [address, setAddress, placeLabel, photos, files, setPhoto, analysis, setAnalysis, quotes, setQuotes, review, startReview],
   )
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

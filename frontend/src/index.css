@@ -108,6 +108,24 @@ body {
   font-size: 0.95rem;
 }
 
+.subtle {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.ratio-central {
+  font-size: 1.25rem;
+}
+
+.couldnt-tell {
+  color: var(--color-warn);
+}
+
+.btn.disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 .lede.subtle {
   font-size: 0.85rem;
 }
@@ -365,23 +383,97 @@ button.primary {
 
 .verification-log ol {
   margin: 0;
-  padding-left: 1.1rem;
+  padding: 0;
+  list-style: none;
+  max-height: 22rem;
+  overflow-y: auto;
 }
 
-.verification-log li {
-  margin-bottom: 0.35rem;
+.log-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.log-head h3 {
+  margin: 0;
+}
+
+.log-counts {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.log-fail-count {
+  color: var(--color-danger);
+}
+
+/* Step | input | model on the first line, then the check and the action, each spaced. */
+.log-row {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
+  column-gap: 0.6rem;
+  row-gap: 0.1rem;
+  padding: 0.4rem 0.5rem;
+  border-left: 3px solid var(--color-ok);
+  border-bottom: 1px solid var(--border);
+}
+
+.log-row.log-fail {
+  border-left-color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 8%, transparent);
+}
+
+.log-row.log-step-reread {
+  border-left-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
 }
 
 .log-step {
   text-transform: uppercase;
   font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
   color: var(--color-accent);
-  margin-right: 0.35rem;
+  align-self: center;
+}
+
+.log-fail .log-step {
+  color: var(--color-danger);
+}
+
+.log-input {
+  font-weight: 600;
+  text-transform: capitalize;
 }
 
 .log-model {
   color: var(--text-muted);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: right;
+}
+
+.log-check,
+.log-action {
+  grid-column: 2 / -1;
+  overflow-wrap: anywhere;
+}
+
+.log-action {
+  color: var(--text-muted);
+}
+
+.log-fail .log-mark {
+  color: var(--color-danger);
+}
+
+.log-pass .log-mark {
+  color: var(--color-ok);
 }
 
 .hero-tagline {
@@ -399,7 +491,7 @@ button.primary {
   background: color-mix(in srgb, var(--color-warn) 12%, var(--surface));
 }
 
-.verdict-banner strong {
+.verdict-banner > strong {
   font-size: 1.1rem;
   display: block;
   margin-bottom: 0.35rem;
@@ -427,8 +519,11 @@ button.primary {
   margin: 0.5rem 0;
 }
 
+/* Keep "low – central – high unit" on one line; the whole range wraps as one unit. */
 .range-value {
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  display: inline-block;
 }
 
 .range-low,
@@ -673,4 +768,131 @@ button.primary {
   .estimate-card {
     flex: 1;
   }
+}
+
+.mock-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-warn);
+  color: var(--color-warn);
+  margin-left: 0.5rem;
+}
+
+.place-label {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0 0 0.75rem;
+}
+
+.progress-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 1rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.progress-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.progress-list .running {
+  color: var(--color-accent);
+}
+
+.progress-list .done {
+  color: var(--color-ok);
+}
+
+.gap-list,
+.default-list,
+.reading-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.gap-list li {
+  border-left: 3px solid var(--color-warn);
+  padding: 0.4rem 0.6rem;
+  background: color-mix(in srgb, var(--color-warn) 10%, transparent);
+  border-radius: 0 6px 6px 0;
+}
+
+.gap-list .provide {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0.2rem 0 0;
+}
+
+.default-list li,
+.reading-list li {
+  font-size: 0.85rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.reading-status {
+  display: inline-block;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  margin-left: 0.4rem;
+}
+
+.reading-status.verified {
+  background: color-mix(in srgb, var(--color-ok) 25%, transparent);
+}
+
+.reading-status.verified_with_warnings {
+  background: color-mix(in srgb, var(--color-warn) 25%, transparent);
+}
+
+.reading-status.couldnt_tell {
+  background: color-mix(in srgb, var(--color-danger) 25%, transparent);
+}
+
+.reading-status.not_provided {
+  background: var(--border);
+}
+
+.review-panel .progress-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+  margin: 0.5rem 0;
+}
+
+.review-panel .progress-bar span {
+  display: block;
+  height: 100%;
+  background: var(--color-accent);
+  transition: width 1s linear;
+}
+
+.stripped-list li {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--color-danger);
+}
+
+.cannot-compare {
+  padding: 1rem;
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+  border: 2px dashed var(--color-warn);
 }

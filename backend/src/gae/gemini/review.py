@@ -29,6 +29,37 @@ from gae.gemini.schemas import (
 # Digits not glued to a preceding letter, so model codes like "R290" or "WZ50VAA" are skipped.
 NUMBER = re.compile(r"(?<![A-Za-z0-9.])\d[\d,]*(?:\.\d+)?")
 SENTENCE = re.compile(r"(?<=[.!?])\s+")
+# A UK postcode, full or outward code with a space, anywhere in a string.
+POSTCODE = re.compile(r"\b[A-Z]{1,2}[0-9][A-Z0-9]?\s*[0-9][A-Z]{2}\b", re.IGNORECASE)
+
+# The only EPC fields Gemini sees: the building, never where it is or whose it is.
+EPC_BUILDING_FIELDS = (
+    "schema_type",
+    "assessment_type",
+    "total_floor_area",
+    "floor_area_m2",
+    "dwelling_type",
+    "property_type",
+    "built_form",
+    "construction_age_band",
+    "age_band",
+    "year_built",
+    "walls",
+    "roofs",
+    "floors",
+    "window",
+    "windows",
+    "glazing",
+    "wall_type",
+    "loft_insulation_mm",
+    "main_heating",
+    "main_heating_fuel",
+    "current_energy_efficiency_band",
+    "current_energy_efficiency_rating",
+    "potential_energy_efficiency_band",
+    "potential_energy_efficiency_rating",
+)
+_IDENTIFYING_KEY_PARTS = ("address", "postcode", "uprn", "certificate", "lmk", "name", "town")
 
 INSTRUCTIONS = """\
 You are giving a homeowner a second opinion on going from a gas boiler to a heat pump.
@@ -124,7 +155,7 @@ def _context(req: ReviewRequest, sheets: list[Datasheet]) -> dict[str, Any]:
     """Everything numeric the model may cite, as one JSON document."""
     return {
         "MATHS": tidy(req.maths.model_dump(mode="json")),
-        "EPC": req.epc_record,
+        "EPC": building_fields(req.epc_record),
         "READINGS": {
             "boiler": req.boiler.model_dump(mode="json") if req.boiler else None,
             "gas_bill": req.bill_reading.model_dump(mode="json") if req.bill_reading else None,
@@ -140,6 +171,25 @@ def _context(req: ReviewRequest, sheets: list[Datasheet]) -> dict[str, Any]:
     }
 
 
+def building_fields(record: dict[str, Any]) -> dict[str, Any]:
+    """Allowlisted building fields only; nested identifying keys and postcodes are dropped."""
+
+    def scrub(node: Any) -> Any:
+        if isinstance(node, dict):
+            return {
+                k: scrub(v)
+                for k, v in node.items()
+                if not any(part in str(k).lower() for part in _IDENTIFYING_KEY_PARTS)
+            }
+        if isinstance(node, list):
+            return [scrub(v) for v in node]
+        if isinstance(node, str) and POSTCODE.search(node):
+            return None
+        return node
+
+    return {key: scrub(record[key]) for key in EPC_BUILDING_FIELDS if key in record}
+
+
 def _input(req: ReviewRequest, context: dict[str, Any], sheets: list[Datasheet]) -> list[Block]:
     blocks: list[Block] = [text(INSTRUCTIONS), text(json.dumps(context, indent=1))]
     for sheet in sheets:
@@ -153,9 +203,8 @@ def _input(req: ReviewRequest, context: dict[str, Any], sheets: list[Datasheet])
     for quote in req.quotes:
         if quote.document:
             blocks.append(text(f"QUOTE {quote.quote_id}:"))
-            blocks.append(
-                media(base64.b64decode(quote.document.data_base64), quote.document.mime_type)
-            )
+            for page in (quote.document, *quote.pages):
+                blocks.append(media(base64.b64decode(page.data_base64), page.mime_type))
     return blocks
 
 

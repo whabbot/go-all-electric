@@ -179,7 +179,7 @@ def test_survey_crud_preserves_id_creation_time_and_confidence():
     collection = MagicMock()
     repo = SurveyRepository(collection)
     value = SurveyInput(
-        postcode="ZZ1 1ZZ",
+        postcode_district="ZZ1",
         extracted_readings={
             "gas_kwh": {"value": 12000, "unit": "kWh", "confidence": "low"},
         },
@@ -218,6 +218,12 @@ def test_survey_crud_preserves_id_creation_time_and_confidence():
         },
         {"verification_log": [{"raw_bill": "private"}]},
         {"cost": {"value": float("nan")}},
+        {"address": "1 Example Street"},
+        {"postcode": "ZZ1 1ZZ"},
+        {"postcode_district": "ZZ1 1ZZ"},
+        {"epc_snapshot": {"address_line_1": "1 Example Street"}},
+        {"epc_snapshot": {"uprn": "100000000000"}},
+        {"epc_snapshot": {"certificate_id": "0000-0000-0000-0000-0000"}},
     ],
 )
 def test_surveys_reject_images_unsafe_fields_and_nonfinite_values(payload):
@@ -237,7 +243,7 @@ def api():
 
 def test_api_survey_lifecycle_and_validation(api):
     client, db = api
-    response = client.post("/api/surveys", json={"postcode": "ZZ1 1ZZ"})
+    response = client.post("/api/surveys", json={"postcode_district": "ZZ1"})
     assert response.status_code == 201
     survey = response.json()
     identifier = survey["id"]

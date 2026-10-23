@@ -14,7 +14,7 @@ import { useSession } from '../context/SessionContext'
 import { RangeValue } from '../components/RangeValue'
 
 export function CostScreen() {
-  const { analysis } = useSession()
+  const { analysis, placeLabel } = useSession()
   if (!analysis) {
     return (
       <p className="warning">
@@ -22,8 +22,25 @@ export function CostScreen() {
       </p>
     )
   }
+  if (analysis.bundle.costs_by_flow_temp.length === 0) {
+    const gap = analysis.gaps.find((g) => g.input === 'gas_bill')
+    return (
+      <section className="screen cost-screen">
+        <h1>Will it be cheaper?</h1>
+        <div className="cannot-compare">
+          <strong>Couldn&apos;t tell without a usable gas bill</strong>
+          <p>Running costs compare against what you actually spend on gas, so we need your bill.</p>
+          {gap && <p className="subtle">What to provide: {gap.provide}</p>}
+        </div>
+        <p className="cta-row">
+          <Link className="btn" to="/capture">Add a bill</Link>
+          <Link className="btn primary" to="/spec">Target installation</Link>
+        </p>
+      </section>
+    )
+  }
 
-  const costs = analysis.costs_by_flow_temp
+  const costs = analysis.bundle.costs_by_flow_temp
   const breakEven = costs[0]?.break_even_flow_temp_c.central ?? 48
   const chartData = costs.map((c) => ({
     flow: c.design_flow_temp_c,
@@ -36,6 +53,7 @@ export function CostScreen() {
   return (
     <section className="screen cost-screen">
       <h1>Will it be cheaper?</h1>
+      {placeLabel && <p className="place-label">{placeLabel}</p>}
       <p className="lede">
         Annual saving vs gas at the price cap — every bar is a range; central value shown.
       </p>

@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, isMockMode, type QuoteCheckResult, type QuoteUploadGroup } from '../api'
+import { api, isMockMode, type QuoteCheckResult, type QuoteSizeContext, type QuoteUploadGroup } from '../api'
 import { ImageCoverUp } from '../components/ImageCoverUp'
+import { ReviewPanel } from '../components/ReviewPanel'
+import { VerificationLogPanel } from '../components/VerificationLog'
+import { useSession } from '../context/SessionContext'
+import { quoteId } from '../lib/labels'
 import { prepareImageFile } from '../lib/imagePrepare'
 import { pdfFileToPageImages } from '../lib/pdfToImages'
 import { QUOTE_PAGE_GUIDANCE } from '../lib/photoGuidance'
@@ -24,6 +28,8 @@ async function buildRedactQueue(files: File[]): Promise<QuoteQueueItem[]> {
   const queue: QuoteQueueItem[] = []
   for (let quoteIndex = 0; quoteIndex < files.length; quoteIndex += 1) {
     const file = files[quoteIndex]
+    // The file name stays on this device: it can carry a name or address.
+    const quoteName = quoteId(quoteIndex, null)
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
     if (isPdf) {
       const pages = await pdfFileToPageImages(file)
@@ -33,7 +39,7 @@ async function buildRedactQueue(files: File[]): Promise<QuoteQueueItem[]> {
           url: URL.createObjectURL(prepared),
           fileName: prepared.name,
           sourceLabel: `${file.name} page ${i + 1}`,
-          quoteName: file.name,
+          quoteName,
           quoteIndex,
         })
       }
@@ -43,7 +49,7 @@ async function buildRedactQueue(files: File[]): Promise<QuoteQueueItem[]> {
         url: URL.createObjectURL(prepared),
         fileName: prepared.name,
         sourceLabel: file.name,
-        quoteName: file.name,
+        quoteName,
         quoteIndex,
       })
     }
@@ -66,9 +72,25 @@ function groupRedactedPages(pages: RedactedPage[]): QuoteUploadGroup[] {
     .map(([, group]) => group)
 }
 
+/** Size range and design load from the analysis; none without a bill (no measured basis). */
+function sizeContext(analysis: ReturnType<typeof useSession>['analysis']): QuoteSizeContext | null {
+  if (!analysis?.bundle.measured || analysis.size_basis !== 'measured') return null
+  const size = analysis.bundle.target_spec.size_kw
+  return {
+    size_low_kw: size.low,
+    size_high_kw: size.high,
+    design_load_kw: analysis.bundle.measured.design_load_kw.central,
+  }
+}
+
 export function QuotesScreen() {
+  const { analysis, quotes, setQuotes, placeLabel } = useSession()
   const [redactedPages, setRedactedPages] = useState<RedactedPage[]>([])
-  const [results, setResults] = useState<QuoteCheckResult[] | null>(null)
+  const [results, setResults] = useState<QuoteCheckResult[] | null>(() =>
+    quotes.length && quotes.every((q) => q.result) ? quotes.map((q) => q.result as QuoteCheckResult) : null,
+  )
+  const [checkError, setCheckError] = useState<string | null>(null)
+  const size = sizeContext(analysis)
   const [loading, setLoading] = useState(false)
   const [importing, setImporting] = useState(false)
   const [stack, setStack] = useState<QuoteQueueItem[]>([])
@@ -87,9 +109,13 @@ export function QuotesScreen() {
   const runCheck = async (groups: QuoteUploadGroup[]) => {
     if (groups.length === 0) return
     setLoading(true)
+    setCheckError(null)
     try {
-      const out = await api.checkQuotes(groups)
+      const out = await api.checkQuotes(groups, size)
       setResults(out)
+      setQuotes(groups.map((group, i) => ({ group, result: out[i] ?? null })))
+    } catch (e) {
+      setCheckError(e instanceof Error ? e.message : 'Quote check failed')
     } finally {
       setLoading(false)
     }
@@ -154,7 +180,7 @@ export function QuotesScreen() {
   const allPagesReady = redactedPages.length > 0 && !current && stack.length === 0
 
   const loadSamDemoQuotes = () => {
-    const names = ['installer-a-9kw.pdf', 'installer-b-12kw.pdf', 'installer-c-6kw.pdf']
+    const names = ['Quote A', 'Quote B', 'Quote C']
     const groups = names.map(
       (name) => ({
         quoteName: name,
@@ -174,6 +200,7 @@ export function QuotesScreen() {
   return (
     <section className="screen quotes-screen">
       <h1>Quote checker</h1>
+      {placeLabel && <p className="place-label">{placeLabel}</p>}
       <p className="lede">
         Upload up to three installer quotes (PDF or photo). Each page is redacted on your device
         before anything is sent. Flags are prompts for questions — not sent to anyone.
@@ -229,11 +256,28 @@ export function QuotesScreen() {
         />
       )}
 
+      {size ? (
+        <p className="subtle">
+          Checked against your target size {size.size_low_kw}–{size.size_high_kw} kW (bills say about{' '}
+          {size.design_load_kw?.toFixed(1)} kW).
+        </p>
+      ) : (
+        <p className="subtle">
+          {analysis
+            ? 'No measured estimate (no usable bill), so quotes are not size-checked; flow, buffer and grant are.'
+            : 'Run the estimates first to check quote sizes against your bills.'}
+        </p>
+      )}
+      {checkError && <p className="error">{checkError}</p>}
+
       {results && (
         <div className="quote-results">
           {results.map((q) => (
             <article key={q.filename} className="card quote-card">
               <h2>{q.filename}</h2>
+              {q.verified.status === 'couldnt_tell' && (
+                <p className="warning">Couldn&apos;t read this quote reliably.</p>
+              )}
               {q.quoted_kw != null && <p>Quoted size: {q.quoted_kw} kW</p>}
               {q.design_flow_temp_c != null && <p>Design flow: {q.design_flow_temp_c} °C</p>}
               <ul className="flags">
@@ -254,6 +298,15 @@ export function QuotesScreen() {
           ))}
         </div>
       )}
+
+      {results && (
+        <VerificationLogPanel
+          title="Quote reading log"
+          entries={results.flatMap((q, i) => q.verified.log.map((e) => ({ ...e, id: `q${i}-${e.id}` })))}
+        />
+      )}
+
+      <ReviewPanel />
 
       <p className="cta-row">
         <Link className="btn" to="/plan">See full plan</Link>
