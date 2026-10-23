@@ -73,12 +73,62 @@ def test_quotes_check_flags_each_upload(gemini) -> None:
     gemini.replies.append(quote())
     response = client.post(
         "/api/quotes/check",
-        data={"size_low_kw": "5", "size_high_kw": "7", "design_load_kw": "4.7"},
+        data={
+            "quote_index": "0",
+            "quote_name": "quote-9kw.pdf",
+            "size_low_kw": "5",
+            "size_high_kw": "7",
+            "design_load_kw": "4.7",
+        },
         files=[("quotes", ("quote-9kw.pdf", PDF, "application/pdf"))],
     )
     (result,) = response.json()
     assert result["filename"] == "quote-9kw.pdf" and result["quoted_kw"] == 9.0
     assert any(f["message"].endswith("oversized") for f in result["flags"])
+
+
+def test_quotes_check_groups_pages_into_one_quote(gemini) -> None:
+    gemini.replies.append(quote())
+    files = [("quotes", (f"page-{i}.jpg", JPEG, "image/jpeg")) for i in range(3)]
+    response = client.post(
+        "/api/quotes/check",
+        data={
+            "quote_index": ["0", "0", "0"],
+            "quote_name": ["installer-a.pdf", "installer-a.pdf", "installer-a.pdf"],
+        },
+        files=files,
+    )
+    assert response.status_code == 200
+    (result,) = response.json()
+    assert result["filename"] == "installer-a.pdf"
+    (call,) = gemini.calls
+    assert call.media_types.count("image") == 3
+
+
+def test_three_three_page_quotes_return_three_results(gemini) -> None:
+    gemini.replies.extend([quote(), quote(), quote()])
+    files = []
+    quote_index = []
+    quote_name = []
+    for q in range(3):
+        for p in range(3):
+            files.append(("quotes", (f"q{q}-p{p}.jpg", JPEG, "image/jpeg")))
+            quote_index.append(str(q))
+            quote_name.append(f"quote-{q}.pdf")
+    response = client.post(
+        "/api/quotes/check",
+        data={"quote_index": quote_index, "quote_name": quote_name},
+        files=files,
+    )
+    assert response.status_code == 200
+    results = response.json()
+    assert len(results) == 3
+    assert {r["filename"] for r in results} == {
+        "quote-0.pdf",
+        "quote-1.pdf",
+        "quote-2.pdf",
+    }
+    assert len(gemini.calls) == 3
 
 
 def test_review_route(gemini, sam_maths) -> None:

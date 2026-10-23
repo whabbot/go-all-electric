@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, isMockMode, type QuoteCheckResult } from '../api'
+import { api, isMockMode, type QuoteCheckResult, type QuoteUploadGroup } from '../api'
 import { ImageCoverUp } from '../components/ImageCoverUp'
 import { prepareImageFile } from '../lib/imagePrepare'
 import { pdfFileToPageImages } from '../lib/pdfToImages'
@@ -10,11 +10,20 @@ type QuoteQueueItem = {
   url: string
   fileName: string
   sourceLabel: string
+  quoteName: string
+  quoteIndex: number
+}
+
+type RedactedPage = {
+  quoteIndex: number
+  quoteName: string
+  file: File
 }
 
 async function buildRedactQueue(files: File[]): Promise<QuoteQueueItem[]> {
   const queue: QuoteQueueItem[] = []
-  for (const file of files) {
+  for (let quoteIndex = 0; quoteIndex < files.length; quoteIndex += 1) {
+    const file = files[quoteIndex]
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
     if (isPdf) {
       const pages = await pdfFileToPageImages(file)
@@ -24,6 +33,8 @@ async function buildRedactQueue(files: File[]): Promise<QuoteQueueItem[]> {
           url: URL.createObjectURL(prepared),
           fileName: prepared.name,
           sourceLabel: `${file.name} page ${i + 1}`,
+          quoteName: file.name,
+          quoteIndex,
         })
       }
     } else if (file.type.startsWith('image/')) {
@@ -32,20 +43,39 @@ async function buildRedactQueue(files: File[]): Promise<QuoteQueueItem[]> {
         url: URL.createObjectURL(prepared),
         fileName: prepared.name,
         sourceLabel: file.name,
+        quoteName: file.name,
+        quoteIndex,
       })
     }
   }
   return queue
 }
 
+function groupRedactedPages(pages: RedactedPage[]): QuoteUploadGroup[] {
+  const byIndex = new Map<number, QuoteUploadGroup>()
+  for (const page of pages) {
+    let group = byIndex.get(page.quoteIndex)
+    if (!group) {
+      group = { quoteName: page.quoteName, pages: [] }
+      byIndex.set(page.quoteIndex, group)
+    }
+    group.pages.push(page.file)
+  }
+  return [...byIndex.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, group]) => group)
+}
+
 export function QuotesScreen() {
-  const [redactedFiles, setRedactedFiles] = useState<File[]>([])
+  const [redactedPages, setRedactedPages] = useState<RedactedPage[]>([])
   const [results, setResults] = useState<QuoteCheckResult[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [importing, setImporting] = useState(false)
   const [stack, setStack] = useState<QuoteQueueItem[]>([])
   const [current, setCurrent] = useState<QuoteQueueItem | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
+
+  const quoteGroups = useMemo(() => groupRedactedPages(redactedPages), [redactedPages])
 
   useEffect(() => {
     return () => {
@@ -54,11 +84,11 @@ export function QuotesScreen() {
     }
   }, [stack, current])
 
-  const runCheck = async (picked: File[]) => {
-    if (picked.length === 0) return
+  const runCheck = async (groups: QuoteUploadGroup[]) => {
+    if (groups.length === 0) return
     setLoading(true)
     try {
-      const out = await api.checkQuotes(picked)
+      const out = await api.checkQuotes(groups)
       setResults(out)
     } finally {
       setLoading(false)
@@ -68,7 +98,7 @@ export function QuotesScreen() {
   const startRedactFlow = async (picked: File[]) => {
     setImportError(null)
     setResults(null)
-    setRedactedFiles([])
+    setRedactedPages([])
     if (current?.url) URL.revokeObjectURL(current.url)
     for (const item of stack) URL.revokeObjectURL(item.url)
     setCurrent(null)
@@ -97,7 +127,12 @@ export function QuotesScreen() {
   }
 
   const finishPage = (redacted: File) => {
-    setRedactedFiles((prev) => [...prev, redacted])
+    if (current) {
+      setRedactedPages((prev) => [
+        ...prev,
+        { quoteIndex: current.quoteIndex, quoteName: current.quoteName, file: redacted },
+      ])
+    }
     if (current?.url) URL.revokeObjectURL(current.url)
     if (stack.length === 0) {
       setCurrent(null)
@@ -113,17 +148,27 @@ export function QuotesScreen() {
     for (const item of stack) URL.revokeObjectURL(item.url)
     setCurrent(null)
     setStack([])
-    setRedactedFiles([])
+    setRedactedPages([])
   }
 
-  const allPagesReady = redactedFiles.length > 0 && !current && stack.length === 0
+  const allPagesReady = redactedPages.length > 0 && !current && stack.length === 0
 
   const loadSamDemoQuotes = () => {
-    const demo = ['installer-a-9kw.pdf', 'installer-b-12kw.pdf', 'installer-c-6kw.pdf'].map(
-      (name) => new File(['%PDF-1.4'], name, { type: 'application/pdf' }),
+    const names = ['installer-a-9kw.pdf', 'installer-b-12kw.pdf', 'installer-c-6kw.pdf']
+    const groups = names.map(
+      (name) => ({
+        quoteName: name,
+        pages: [new File(['%PDF-1.4'], name, { type: 'application/pdf' })],
+      }),
     )
-    setRedactedFiles(demo)
-    void runCheck(demo)
+    setRedactedPages(
+      groups.map((g, quoteIndex) => ({
+        quoteIndex,
+        quoteName: g.quoteName,
+        file: g.pages[0],
+      })),
+    )
+    void runCheck(groups)
   }
 
   return (
@@ -147,10 +192,13 @@ export function QuotesScreen() {
       {importing && <p className="subhead">Preparing pages for redaction…</p>}
       {importError && <p className="warning">{importError}</p>}
 
-      {redactedFiles.length > 0 && (
+      {quoteGroups.length > 0 && (
         <ul className="file-list">
-          {redactedFiles.map((f) => (
-            <li key={`${f.name}-${f.lastModified}`}>{f.name}</li>
+          {quoteGroups.map((g) => (
+            <li key={g.quoteName}>
+              {g.quoteName}
+              {g.pages.length > 1 ? ` (${g.pages.length} redacted pages)` : ''}
+            </li>
           ))}
         </ul>
       )}
@@ -159,7 +207,7 @@ export function QuotesScreen() {
         type="button"
         className="btn primary"
         disabled={!allPagesReady || loading}
-        onClick={() => void runCheck(redactedFiles)}
+        onClick={() => void runCheck(quoteGroups)}
       >
         {loading ? 'Checking…' : 'Check quotes'}
       </button>

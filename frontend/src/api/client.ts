@@ -11,6 +11,7 @@ import type {
   PhotoCheckResult,
   PhotoKind,
   QuoteCheckResult,
+  QuoteUploadGroup,
   VerificationLogEntry,
 } from './types'
 
@@ -78,16 +79,22 @@ export async function fetchAnalysis(_lmkKey: string): Promise<AnalysisBundle> {
   return res.json() as Promise<AnalysisBundle>
 }
 
-export async function checkQuotes(files: File[]): Promise<QuoteCheckResult[]> {
+export async function checkQuotes(groups: QuoteUploadGroup[]): Promise<QuoteCheckResult[]> {
   if (isMockMode()) {
     await mockDelay(1000, 1800)
-    return files.map((f, i) => {
+    return groups.map((g, i) => {
       const base = SAM_QUOTE_CHECKS[i % SAM_QUOTE_CHECKS.length]
-      return { ...base, filename: f.name || base.filename }
+      return { ...base, filename: g.quoteName || base.filename }
     })
   }
   const form = new FormData()
-  for (const file of files) form.append('quotes', file)
+  groups.forEach((group, quoteIndex) => {
+    for (const file of group.pages) {
+      form.append('quotes', file)
+      form.append('quote_index', String(quoteIndex))
+      form.append('quote_name', group.quoteName)
+    }
+  })
   const res = await fetch('/api/quotes/check', { method: 'POST', body: form })
   if (!res.ok) throw new Error(`Quote check failed: ${res.status}`)
   return res.json() as Promise<QuoteCheckResult[]>

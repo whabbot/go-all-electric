@@ -241,10 +241,15 @@ def extract(
     kind: str,
     data: bytes,
     mime_type: str,
+    *,
+    media_parts: list[tuple[bytes, str]] | None = None,
 ) -> VerifiedReading:
     """Read, check, re-read once on failure, then verify or give up with a retake hint."""
     spec = SPECS[kind]
-    block = media(data, mime_type)
+    parts = [(data, mime_type)]
+    if media_parts:
+        parts.extend(media_parts)
+    blocks = [media(part[0], part[1]) for part in parts]
     log = VerificationLog()
     reading: Reading | None = None
     outcome: checks.Outcome | None = None
@@ -254,9 +259,14 @@ def extract(
         model = gemini.lead_model if (spec.lead_first or not first) else gemini.fast_model
         thinking: ThinkingLevel = spec.thinking if first else "high"
         prompt = spec.prompt if first else _reread_prompt(spec, reading, failed)
+        if first and kind == "quote" and len(parts) > 1:
+            prompt = (
+                f"{prompt}\n\nThese {len(parts)} images are sequential pages of one installer "
+                "quote. Read them together as a single document."
+            )
         reading = gemini.generate(
             model=model,
-            input=[text(prompt), block],
+            input=[text(prompt), *blocks],
             schema=spec.schema,
             thinking_level=thinking,
             system_instruction=SYSTEM,

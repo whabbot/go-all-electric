@@ -140,8 +140,9 @@ needs a paid-tier key). Uploads are multipart, held in memory for the request an
 - `POST /api/photos/extract` (`kind`, `file`) runs the verification loop and returns a typed
   reading, its status (`verified`, `verified_with_warnings` or `couldnt_tell` with what to
   photograph instead) and the step-by-step verification log for the UI.
-- `POST /api/quotes/check` (`quotes` files, optional `size_low_kw`, `size_high_kw`,
-  `design_load_kw` from the maths core) reads each quote through the same loop and flags it in code:
+- `POST /api/quotes/check` (`quotes` page images, parallel `quote_index` and `quote_name` per
+  page so multi-page PDFs stay one quote; optional `size_low_kw`, `size_high_kw`, `design_load_kw`
+  from the maths core) reads each quote through the same loop and flags it in code:
   oversized, high design flow, buffer tank, grant not deducted, kW not matching the datasheet.
 - `POST /api/review` (JSON) sends photos, bill, EPC record, full matched datasheets, every quote and
   the maths-core outputs to one Gemini 4 Argon interaction, then removes any statement whose
