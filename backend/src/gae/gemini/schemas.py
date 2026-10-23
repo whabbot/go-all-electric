@@ -63,6 +63,13 @@ class PhotoGlance(BaseModel):
     )
     face_visible: bool
     number_plate_visible: bool
+    house_or_street_visible: bool = Field(
+        description="House number, door, or street name/sign visible."
+    )
+    mail_or_envelope_visible: bool = Field(description="Letter, envelope or postal item visible.")
+    name_address_or_meter_visible: bool = Field(
+        description="Personal name, home address, supplier account or meter number visible."
+    )
 
 
 class PhotoCheckResult(BaseModel):

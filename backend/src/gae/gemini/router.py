@@ -20,6 +20,7 @@ from gae.gemini.datasheets import InMemoryDatasheetLookup
 from gae.gemini.extract import extract, glance
 from gae.gemini.quotes import SizeContext, flag_quote
 from gae.gemini.review import review
+from gae.gemini.sanitize import sanitize_image
 from gae.gemini.schemas import (
     PhotoCheckResult,
     PhotoKind,
@@ -32,6 +33,8 @@ from gae.settings import Settings, get_settings
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 MAX_REVIEW_BYTES = 18 * 1024 * 1024
+MAX_QUOTES_PER_REQUEST = 5
+MAX_QUOTE_PAGES = 8
 # Starlette spools uploads over 1 MB to a temp file; keep them in memory up to the cap instead.
 MultiPartParser.spool_max_size = MAX_UPLOAD_BYTES
 
@@ -98,6 +101,8 @@ def _read(upload: UploadFile) -> tuple[bytes, str]:
         raise HTTPException(413, "File too large: 15 MB maximum")
     if not data:
         raise HTTPException(422, "Empty file")
+    if mime.startswith("image/"):
+        data, mime = sanitize_image(data, mime)
     return data, mime
 
 
@@ -136,23 +141,44 @@ def check_quotes(
     gemini: Gemini,
     datasheets: Datasheets,
     quotes: Annotated[list[UploadFile], File()],
+    quote_index: Annotated[list[int], Form()],
+    quote_name: Annotated[list[str], Form()],
     size_low_kw: Annotated[float | None, Form()] = None,
     size_high_kw: Annotated[float | None, Form()] = None,
     design_load_kw: Annotated[float | None, Form()] = None,
 ) -> list[QuoteCheckResult]:
-    if len(quotes) > 5:
+    if len(quotes) != len(quote_index) or len(quotes) != len(quote_name):
+        raise HTTPException(422, "Each page needs a quote_index and quote_name")
+    grouped: dict[int, list[tuple[bytes, str]]] = {}
+    names: dict[int, str] = {}
+    for upload, idx, name in zip(quotes, quote_index, quote_name, strict=True):
+        data, mime = _read(upload)
+        grouped.setdefault(idx, []).append((data, mime))
+        names[idx] = name.strip() or upload.filename or "quote"
+    if len(grouped) > MAX_QUOTES_PER_REQUEST:
         raise HTTPException(422, "Five quotes at most")
+    for pages in grouped.values():
+        if len(pages) > MAX_QUOTE_PAGES:
+            raise HTTPException(422, "Eight pages per quote at most")
     size = None
     if size_low_kw is not None and size_high_kw is not None:
         size = SizeContext(size_low_kw, size_high_kw, design_load_kw)
     results = []
-    for upload in quotes:
-        data, mime = _read(upload)
+    for idx in sorted(grouped):
+        pages = grouped[idx]
+        first, *rest = pages
         try:
-            verified = extract(gemini, datasheets, "quote", data, mime)
+            verified = extract(
+                gemini,
+                datasheets,
+                "quote",
+                first[0],
+                first[1],
+                media_parts=rest or None,
+            )
         except GeminiError:
             raise _gemini_failed() from None
-        results.append(flag_quote(upload.filename or "quote", verified, size))
+        results.append(flag_quote(names[idx], verified, size))
     return results
 
 

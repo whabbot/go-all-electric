@@ -266,6 +266,84 @@ button.primary {
   color: var(--text-muted);
 }
 
+.cover-up-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0.5rem;
+}
+
+.cover-up-panel {
+  width: 100%;
+  max-width: var(--max-width);
+  max-height: 96dvh;
+  overflow-y: auto;
+  padding: 0.85rem;
+}
+
+.cover-up-panel h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+}
+
+.cover-up-sent-label {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-accent);
+}
+
+.cover-up-guidance {
+  margin: 0 0 0.65rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.cover-up-canvas-wrap {
+  position: relative;
+  width: 100%;
+  background: var(--surface-2);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  touch-action: none;
+  user-select: none;
+}
+
+.cover-up-image {
+  position: absolute;
+  pointer-events: none;
+}
+
+.cover-up-svg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.cover-up-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.65rem 0 0.35rem;
+}
+
+.cover-up-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.cover-up-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
 .file-name {
   font-size: 0.8rem;
   color: var(--text-muted);

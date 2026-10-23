@@ -1,22 +1,59 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
+import { ImageCoverUp } from '../components/ImageCoverUp'
 import { VerificationLogPanel } from '../components/VerificationLog'
 import { useSession } from '../context/SessionContext'
+import { prepareImageFile } from '../lib/imagePrepare'
+import { coverUpGuidance, coverUpTitle } from '../lib/photoGuidance'
+import type { PhotoKind } from '../api'
+
+type PendingCoverUp = {
+  kind: PhotoKind
+  url: string
+  fileName: string
+}
 
 export function CaptureScreen() {
   const { photos, setPhotoResult, address } = useSession()
   const [busy, setBusy] = useState<Record<string, boolean>>({})
+  const [pending, setPending] = useState<PendingCoverUp | null>(null)
+  const [prepareError, setPrepareError] = useState<string | null>(null)
 
-  const onFile = async (kind: typeof photos[number]['kind'], file: File | null) => {
+  useEffect(() => {
+    return () => {
+      if (pending?.url) URL.revokeObjectURL(pending.url)
+    }
+  }, [pending])
+
+  const onFile = async (kind: PhotoKind, file: File | null) => {
     if (!file) return
-    setBusy((b) => ({ ...b, [kind]: true }))
-    setPhotoResult(kind, null, file.name)
+    setPrepareError(null)
     try {
-      const result = await api.checkPhoto(kind, file)
-      setPhotoResult(kind, result, file.name)
+      const prepared = await prepareImageFile(file)
+      const url = URL.createObjectURL(prepared)
+      setPending({ kind, url, fileName: file.name })
     } catch {
-      setPhotoResult(kind, null, file.name)
+      setPrepareError('Could not prepare that image. Try another photo.')
+    }
+  }
+
+  const closePending = () => {
+    if (pending?.url) URL.revokeObjectURL(pending.url)
+    setPending(null)
+  }
+
+  const onCoverUpConfirm = async (redacted: File) => {
+    if (!pending) return
+    const { kind } = pending
+    closePending()
+    setBusy((b) => ({ ...b, [kind]: true }))
+    setPhotoResult(kind, null, redacted.name)
+    try {
+      const result = await api.checkPhoto(kind, redacted)
+      setPhotoResult(kind, result, redacted.name)
+    } catch {
+      setPhotoResult(kind, null, redacted.name)
     } finally {
       setBusy((b) => ({ ...b, [kind]: false }))
     }
@@ -34,7 +71,11 @@ export function CaptureScreen() {
         <p className="warning">Pick an address on Start — using demo home for now.</p>
       )}
 
-      <p className="lede">Use your camera or upload. Each photo is checked immediately.</p>
+      <p className="lede">
+        Use your camera or upload. Each photo is stripped of hidden metadata, you redact anything
+        identifying, then we check it.
+      </p>
+      {prepareError && <p className="warning">{prepareError}</p>}
 
       <div className="photo-grid">
         {photos.map((slot) => (
@@ -58,13 +99,24 @@ export function CaptureScreen() {
                   <p className="privacy-warn">{slot.result.privacy_warning}</p>
                 )}
                 {!slot.result.privacy_warning && slot.result.legible && (
-                  <p className="privacy-ok">No faces or number plates stored.</p>
+                  <p className="privacy-ok">Redacted image only — no metadata stored.</p>
                 )}
               </div>
             )}
           </div>
         ))}
       </div>
+
+      {pending && (
+        <ImageCoverUp
+          imageUrl={pending.url}
+          title={coverUpTitle(pending.kind)}
+          guidance={coverUpGuidance(pending.kind)}
+          fileName={pending.fileName}
+          onConfirm={(f) => void onCoverUpConfirm(f)}
+          onCancel={closePending}
+        />
+      )}
 
       <VerificationLogPanel visible={showLog} />
 

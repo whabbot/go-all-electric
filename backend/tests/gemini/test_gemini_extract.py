@@ -19,6 +19,9 @@ def glance_reply(**overrides) -> PhotoGlance:
         retake_hint=None,
         face_visible=False,
         number_plate_visible=False,
+        house_or_street_visible=False,
+        mail_or_envelope_visible=False,
+        name_address_or_meter_visible=False,
     )
     return PhotoGlance(**{**values, **overrides})
 

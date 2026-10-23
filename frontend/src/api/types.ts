@@ -175,6 +175,11 @@ export type QuoteFlag = {
   evidence: string
 }
 
+export type QuoteUploadGroup = {
+  quoteName: string
+  pages: File[]
+}
+
 export type QuoteCheckResult = {
   filename: string
   quoted_kw: number | null
