@@ -36,6 +36,7 @@ function PlanView({ plan }: { plan: AllElectricPlan }) {
       </p>
 
       <p className="cta-row">
+        <Link className="btn primary" to="/pack">Your pack</Link>
         <Link className="btn" to="/estimates">Back to estimates</Link>
         <Link className="btn" to="/">Start over</Link>
       </p>

@@ -8,6 +8,7 @@ const STEPS = [
   { to: '/spec', label: 'Spec' },
   { to: '/quotes', label: 'Quotes' },
   { to: '/plan', label: 'Plan' },
+  { to: '/pack', label: 'Pack' },
 ] as const
 
 export function DemoNav() {
