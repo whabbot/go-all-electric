@@ -1,0 +1,2 @@
+# ReportLab's ASCII-compatible PDFs are documents, not text diffs.
+quotes/*.pdf binary
