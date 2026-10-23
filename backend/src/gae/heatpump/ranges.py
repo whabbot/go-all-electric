@@ -23,12 +23,12 @@ class Range:
             raise ValueError(f"Range must satisfy low <= central <= high, got {self}")
 
     @classmethod
-    def around(cls, central: float, minus: float, plus: float | None = None) -> "Range":
+    def around(cls, central: float, minus: float, plus: float | None = None) -> Range:
         """Range spanning central * (1 - minus) to central * (1 + plus); plus defaults to minus."""
         plus = minus if plus is None else plus
         return cls(central * (1 - minus), central, central * (1 + plus))
 
-    def scale(self, factor: float) -> "Range":
+    def scale(self, factor: float) -> Range:
         """Multiply every bound by a non-negative factor."""
         if factor < 0:
             raise ValueError("factor must be non-negative")

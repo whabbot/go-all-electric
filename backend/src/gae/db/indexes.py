@@ -56,7 +56,7 @@ def main() -> None:
     try:
         with database() as db:
             ensure_indexes(db)
-    except (PyMongoError, DatabaseUnavailable):
+    except PyMongoError, DatabaseUnavailable:
         raise SystemExit("Index setup failed: check database access and feature support.") from None
     print("Index definitions submitted; wait for both Search indexes to become queryable.")
 

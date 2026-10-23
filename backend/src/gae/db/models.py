@@ -34,7 +34,7 @@ class SurveyInput(StrictModel):
     verification_log: list[dict[str, JsonValue]] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def extracted_data_only(self) -> "SurveyInput":
+    def extracted_data_only(self) -> SurveyInput:
         # Defense in depth for structured sections whose shape belongs to other workers.
         # This is not a face/plate detector: upstream must discard photos after extraction.
         forbidden = {

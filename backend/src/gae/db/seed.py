@@ -30,7 +30,7 @@ def main() -> None:
     try:
         with database() as db:
             count = seed(db["datasheets"])
-    except (PyMongoError, DatabaseUnavailable):
+    except PyMongoError, DatabaseUnavailable:
         raise SystemExit("Seed failed: check server configuration and database access.") from None
     print(f"Seeded {count} public datasheets (existing IDs updated).")
 

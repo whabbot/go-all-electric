@@ -58,7 +58,7 @@ def degree_days_from_daily(postcode: str, start: date, end: date, daily: dict) -
     for stamp, temperature in zip(times, temperatures, strict=False):
         try:
             day = date.fromisoformat(stamp)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
         if not start <= day <= end:
             continue

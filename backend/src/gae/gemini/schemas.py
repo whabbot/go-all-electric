@@ -324,7 +324,7 @@ class MathsBundle(BaseModel):
         cross_check: CrossCheck,
         costs_by_flow_temp: list[CostComparison],
         target_spec: TargetSpec,
-    ) -> "MathsBundle":
+    ) -> MathsBundle:
         return cls(
             measured=_jsonable(measured),
             fabric=_jsonable(fabric),

@@ -29,6 +29,6 @@ def get_json(client: httpx.Client, url: str, *, params=None, headers=None) -> di
         if not isinstance(payload, dict):
             raise ValueError
         return payload
-    except (httpx.HTTPError, ValueError):
+    except httpx.HTTPError, ValueError:
         # Never forward upstream error bodies, URLs, request objects or auth headers.
         raise DataUnavailable("Couldn't read the data provider; try again later.") from None
