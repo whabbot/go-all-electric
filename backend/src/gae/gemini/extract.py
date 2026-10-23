@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from gae.db.datasheets import DatasheetLookup
 from gae.gemini import checks
 from gae.gemini.client import Block, StructuredModel, ThinkingLevel, document, image, text
+from gae.gemini.sanitize import sanitize_image
 from gae.gemini.schemas import (
     BoilerPlateReading,
     FuseCutoutReading,
@@ -34,9 +35,10 @@ from gae.gemini.schemas import (
 
 SYSTEM = (
     "You read homeowner photos and documents for a UK heat-pump survey. Report only what is "
-    "visible. Use null for anything you cannot read and never guess a number. Do not "
-    "transcribe or describe people, faces, vehicle number plates, names, addresses or account "
-    "numbers."
+    "visible. Use null for anything you cannot read and never guess a number. Never transcribe "
+    "or describe people, faces, vehicle number plates, house numbers, street names or signs, "
+    "postal mail or envelopes, personal names, home addresses, supplier account numbers or "
+    "gas or electricity meter numbers — even if they are clearly visible."
 )
 
 
@@ -156,6 +158,7 @@ def media(data: bytes, mime_type: str) -> Block:
     if mime_type == "application/pdf":
         return document(data)
     if mime_type.startswith("image/"):
+        data, mime_type = sanitize_image(data, mime_type)
         return image(data, mime_type)
     raise ValueError("Upload a photo (JPEG, PNG, HEIC, WebP) or a PDF")
 
@@ -172,8 +175,10 @@ def glance(
                 f"The homeowner says this is a photo of: {kind.value.replace('_', ' ')}. "
                 f"Say what it actually shows, whether the key details are legible, and list "
                 f"only key fields you can already read ({GLANCE_HINTS[kind]}). If it is not "
-                f"usable give one short retake instruction. Flag any visible face or vehicle "
-                f"number plate."
+                f"usable give one short retake instruction. Flag any visible face, vehicle "
+                f"number plate, house number, street name or sign, letter or envelope, or any "
+                f"personal name, home address, account number or meter number (do not transcribe "
+                f"those into key_fields)."
             ),
             media(data, mime_type),
         ],
@@ -188,16 +193,22 @@ def glance(
     if not usable and not hint:
         hint = f"Retake: photograph {SPECS[kind].photograph_instead}."
     privacy = None
-    if result.face_visible or result.number_plate_visible:
-        seen = " and ".join(
-            what
-            for what, flag in (
-                ("a face", result.face_visible),
-                ("a number plate", result.number_plate_visible),
-            )
-            if flag
+    flags = (
+        ("a face", result.face_visible),
+        ("a vehicle number plate", result.number_plate_visible),
+        ("a house number or street sign", result.house_or_street_visible),
+        ("post or an envelope", result.mail_or_envelope_visible),
+        (
+            "a name, address, account number or meter number",
+            result.name_address_or_meter_visible,
+        ),
+    )
+    if any(f for _, f in flags):
+        seen = " and ".join(what for what, flag in flags if flag)
+        privacy = (
+            f"This photo may show {seen}. Cover it and resend; only the redacted image "
+            f"is sent to Gemini and we never store photos."
         )
-        privacy = f"This photo shows {seen}. Crop it out or retake; we never store photos."
     return PhotoCheckResult(
         kind=result.detected_kind,
         expected_kind=kind,

@@ -41,6 +41,9 @@ def test_photo_check_matches_frontend_shape(gemini) -> None:
             retake_hint=None,
             face_visible=False,
             number_plate_visible=False,
+            house_or_street_visible=False,
+            mail_or_envelope_visible=False,
+            name_address_or_meter_visible=False,
         )
     )
     body = client.post("/api/photos/check", **photo()).json()

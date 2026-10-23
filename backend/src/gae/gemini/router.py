@@ -20,6 +20,7 @@ from gae.gemini.datasheets import InMemoryDatasheetLookup
 from gae.gemini.extract import extract, glance
 from gae.gemini.quotes import SizeContext, flag_quote
 from gae.gemini.review import review
+from gae.gemini.sanitize import sanitize_image
 from gae.gemini.schemas import (
     PhotoCheckResult,
     PhotoKind,
@@ -98,6 +99,8 @@ def _read(upload: UploadFile) -> tuple[bytes, str]:
         raise HTTPException(413, "File too large: 15 MB maximum")
     if not data:
         raise HTTPException(422, "Empty file")
+    if mime.startswith("image/"):
+        data, mime = sanitize_image(data, mime)
     return data, mime
 
 

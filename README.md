@@ -162,10 +162,22 @@ in a `VITE_*` variable, because Vite bundles those into the browser build.
 
 ## Privacy and honesty
 
-- Photos are for reading data plates, radiators and fuse cutouts. Faces, number plates and street
-  views are not needed: Gemini is told not to transcribe people, plates, names, addresses or account
-  numbers, the instant check warns when a face or number plate is visible, and uploads stay in
-  memory for the request. Gemini calls use `store=False`, so interactions are not retained.
+- **On your device before upload:** every photo and bill image is re-encoded in the browser (canvas
+  → JPEG) so EXIF, GPS, device and timestamp metadata never leave your phone. You then crop and
+  drag opaque black boxes over anything identifying (house numbers, street signs, faces, cars, names,
+  post, account or meter numbers). Installer quote PDFs are rendered to images in the browser
+  (pdf.js) and go through the same redaction step per page; the server receives redacted JPEGs, not
+  the original PDF. Nothing is sent until you confirm the labelled preview (“exactly what will be
+  sent”).
+- **What reaches Gemini:** only the redacted JPEG bytes from that step, over HTTPS to our backend,
+  which strips any remaining image metadata in memory (Pillow) before the paid Gemini API call.
+  Calls use `store=False`, so Google does not retain your uploads as stored interactions.
+- **What we store:** no upload files, no raw photos, and no bill or quote documents. The API keeps
+  uploads in RAM for the request only. Survey persistence (when wired) holds extracted numbers and
+  text fields, not images.
+- Photos are for reading data plates, radiators and fuse cutouts. Gemini is told never to transcribe
+  people, plates, names, addresses or meter numbers; the instant check warns when identifying
+  detail may still be visible and asks you to cover it and resend.
 - Every Gemini reading is checked in code (bill period about a year, kWh plausible, plate model
   in the datasheet library and within its catalogue output, quote line items add up). A failed
   check gets one more careful look; if that fails too the answer is "couldn't tell" plus what to
