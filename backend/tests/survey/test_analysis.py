@@ -22,6 +22,8 @@ from gae.gemini.schemas import (
     FuseCutoutReading,
     OutdoorSpaceReading,
     RadiatorReading,
+    RadiatorVideoReading,
+    VideoRadiator,
 )
 from gae.main import app
 from gae.opendata.mapping import map_epc
@@ -30,6 +32,7 @@ from gae.survey.analysis import Services
 from gae.survey.router import get_services
 from tests.gemini.conftest import JPEG, PDF, SYNTHETIC_SHEETS, bill, boiler
 from tests.gemini.conftest import InMemoryDatasheetLookup as Lookup
+from tests.gemini.test_gemini_video import _synthetic_mp4
 
 CERTIFICATE = "0000-1111-2222-3333-4444"
 STREET = "1 Synthetic Street"
@@ -401,3 +404,68 @@ def test_review_gets_building_fields_only_and_quotes(harness) -> None:
     assert call.media_types.count("image") == 2 and call.media_types.count("document") == 1
     for private in (STREET, POSTCODE, "ZZ1", CERTIFICATE, "100000000001"):
         assert private not in call.prompt
+
+
+def test_analysis_with_radiator_video_feeds_spec_check_and_gaps(harness) -> None:
+    harness["gemini"].replies["RadiatorVideoReading"] = [
+        RadiatorVideoReading(
+            legible=True,
+            confidence="high",
+            notes="",
+            radiator_count=2,
+            radiators=[
+                VideoRadiator(
+                    legible=True,
+                    confidence="high",
+                    notes="",
+                    first_seen="0:03",
+                    last_seen="0:07",
+                    room="Dining room",
+                    radiator_type="K2",
+                    panels=2,
+                    fin_rows=2,
+                    height_mm=600,
+                    width_mm=2000,
+                    could_not_judge=[],
+                ),
+                VideoRadiator(
+                    legible=True,
+                    confidence="low",
+                    notes="",
+                    first_seen="0:14",
+                    last_seen="0:17",
+                    room="Box room",
+                    radiator_type="single_panel",
+                    panels=1,
+                    fin_rows=0,
+                    height_mm=500,
+                    width_mm=600,
+                    could_not_judge=["behind desk; fin rows unclear"],
+                ),
+            ],
+            could_not_judge=[],
+        )
+    ]
+    files = [
+        ("boiler_plate", ("boiler.jpg", JPEG, "image/jpeg")),
+        ("gas_bill", ("bill.jpg", JPEG, "image/jpeg")),
+        ("radiator_video", ("walkthrough.mp4", _synthetic_mp4(), "video/mp4")),
+    ]
+    response = client.post("/api/analysis", data={"certificate_id": CERTIFICATE}, files=files)
+    assert response.status_code == 200
+    events = [json.loads(line) for line in response.text.splitlines()]
+    result = result_of(events)
+
+    video = result["radiator_video"]
+    assert video is not None
+    assert video["status"] == "verified_with_warnings"
+    assert video["radiator_count"] == 2
+    assert video["radiators"][0]["room"] == "Dining room"
+    assert video["radiators"][0]["upsize_status"] == "ok"
+    assert video["radiators"][1]["upsize_status"] == "couldnt_tell"
+    assert video["photo_requests"] == ["couldn't tell: photograph the radiator seen at 0:14"]
+
+    spec_radiators = result["bundle"]["target_spec"]["radiators"]
+    assert [r["room"] for r in spec_radiators] == ["Dining room"]
+    assert any(g["input"] == "radiators" and "0:14" in g["message"] for g in result["gaps"])
+    assert any(d["name"] == "radiator_rating_from_video" for d in result["defaults"])

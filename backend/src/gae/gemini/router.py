@@ -26,9 +26,16 @@ from gae.gemini.schemas import (
     PhotoCheckResult,
     PhotoKind,
     QuoteCheckResult,
+    RadiatorVideoResult,
     ReviewRequest,
     ReviewResult,
     VerifiedReading,
+)
+from gae.gemini.video import (
+    ALLOWED_VIDEO_MIMES,
+    MAX_VIDEO_BYTES,
+    extract_radiator_video,
+    sanitize_video,
 )
 from gae.settings import Settings, get_settings
 
@@ -37,7 +44,7 @@ MAX_REVIEW_BYTES = 18 * 1024 * 1024
 MAX_QUOTES_PER_REQUEST = 5
 MAX_QUOTE_PAGES = 8
 # Starlette spools uploads over 1 MB to a temp file; keep them in memory up to the cap instead.
-MultiPartParser.spool_max_size = MAX_UPLOAD_BYTES
+MultiPartParser.spool_max_size = MAX_VIDEO_BYTES
 
 router = APIRouter(prefix="/api", tags=["Gemini"])
 
@@ -107,6 +114,26 @@ def _read(upload: UploadFile) -> tuple[bytes, str]:
     return data, mime
 
 
+def _read_video(upload: UploadFile) -> tuple[bytes, str]:
+    mime = (upload.content_type or "").split(";", 1)[0].strip().lower()
+    if mime in ("video/x-m4v", "video/mp4v-es"):
+        mime = "video/mp4"
+    elif mime == "video/mov":
+        mime = "video/quicktime"
+    if mime not in ALLOWED_VIDEO_MIMES:
+        raise HTTPException(415, "Upload an MP4, MOV or WebM video clip")
+    data = upload.file.read(MAX_VIDEO_BYTES + 1)
+    if len(data) > MAX_VIDEO_BYTES:
+        raise HTTPException(413, "Video too large: 100 MB maximum")
+    if not data:
+        raise HTTPException(422, "Empty video file")
+    try:
+        clean_data, norm_mime, _ = sanitize_video(data, mime)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    return clean_data, norm_mime
+
+
 def _gemini_failed() -> HTTPException:
     # No upstream detail: it can echo request content.
     return HTTPException(502, "Gemini couldn't read this right now; please try again")
@@ -133,6 +160,21 @@ def extract_photo(
     data, mime = _read(file)
     try:
         return extract(gemini, datasheets, kind, data, mime)
+    except GeminiError:
+        raise _gemini_failed() from None
+
+
+@router.post("/radiators/video", response_model=RadiatorVideoResult)
+def check_radiator_video_route(
+    gemini: Gemini,
+    file: Annotated[UploadFile, File()],
+    design_load_kw: Annotated[float | None, Form()] = None,
+) -> RadiatorVideoResult:
+    data, mime = _read_video(file)
+    try:
+        return extract_radiator_video(gemini, data, mime, design_load_kw=design_load_kw)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
     except GeminiError:
         raise _gemini_failed() from None
 

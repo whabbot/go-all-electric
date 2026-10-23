@@ -31,10 +31,12 @@ from gae.gemini.schemas import (
     GasBillReading,
     PhotoKind,
     RadiatorReading,
+    RadiatorVideoResult,
     VerificationLog,
     VerificationLogEntry,
     VerifiedReading,
 )
+from gae.gemini.video import apply_radiator_spec_checks, extract_radiator_video
 from gae.heatpump import constants as c
 from gae.heatpump.constants import HeatingFuel
 from gae.heatpump.costs import compare_running_costs
@@ -111,6 +113,7 @@ def run_analysis(
     certificate_id: str,
     files: dict[PhotoKind, tuple[bytes, str]],
     emit: Emit = lambda event: None,
+    radiator_video: tuple[bytes, str] | None = None,
 ) -> AnalysisResult:
     started = time.monotonic()
     timings: dict[str, int] = {}
@@ -147,18 +150,47 @@ def run_analysis(
             )
             return None
 
-    with ThreadPoolExecutor(max_workers=1 + len(files)) as pool:
+    def read_video(data: bytes, mime: str) -> RadiatorVideoResult | None:
+        try:
+            return extract_radiator_video(
+                services.gemini, data, mime, log=LiveLog("radiator_video", record)
+            )
+        except GeminiError:
+            code_log.add(
+                "fail",
+                "radiator_video",
+                "code",
+                "Gemini call failed",
+                False,
+                "couldn't tell: try again",
+            )
+            return None
+
+    workers = 1 + len(files) + (1 if radiator_video is not None else 0)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         epc_future = pool.submit(timed, "epc", services.epc, certificate_id)
         futures: dict[PhotoKind, Future] = {
             kind: pool.submit(timed, f"read_{kind.value}", read, kind, data, mime)
             for kind, (data, mime) in files.items()
         }
+        video_future: Future[RadiatorVideoResult | None] | None = (
+            pool.submit(
+                timed,
+                "read_radiator_video",
+                read_video,
+                radiator_video[0],
+                radiator_video[1],
+            )
+            if radiator_video is not None
+            else None
+        )
         try:
             raw, mapping = epc_future.result()
         except Exception:
             pool.shutdown(wait=False, cancel_futures=True)
             raise
         verified = {kind: future.result() for kind, future in futures.items()}
+        video_result = video_future.result() if video_future is not None else None
 
     if mapping.estimate is None:
         code_log.add("fail", "epc", "code", "EPC maps to the house heat-loss model", False, "stop")
@@ -312,6 +344,54 @@ def run_analysis(
                 provide="The radiator's make and model label, or its rated output in watts.",
             )
         )
+    if radiator_video is not None and video_result is None:
+        gaps.append(
+            Gap(
+                input="radiators",
+                message="Couldn't tell from the radiator video right now.",
+                provide="Photograph each radiator straight-on showing its full width, height "
+                "and top grille.",
+            )
+        )
+    elif video_result is not None:
+        video_rooms = apply_radiator_spec_checks(
+            video_result.radiators,
+            design_load_kw=basis.central,
+            flow_temp_c=c.TARGET_FLOW_TEMP_C,
+        )
+        rooms.extend(video_rooms)
+        if video_rooms:
+            share = c.PHOTOGRAPHED_ROOM_SHARE_OF_HEAT_LOSS
+            loss = basis.central * 1000 * share
+            defaults.append(
+                NamedDefault(
+                    input="radiators",
+                    name="radiator_rating_from_video",
+                    value=f"{len(video_rooms)} radiator(s) rated at ΔT50",
+                    note="Radiator types and dimensions estimated from the walk-through video, "
+                    f"each checked against {share:.0%} of {basis.central:.1f} kW ({loss:,.0f} W) "
+                    f"at {c.TARGET_FLOW_TEMP_C:g}°C flow.",
+                    confidence="low",
+                )
+            )
+        for req in video_result.photo_requests:
+            gaps.append(
+                Gap(
+                    input="radiators",
+                    message=req,
+                    provide="Photograph that radiator straight-on showing its full width, height "
+                    "and top grille.",
+                )
+            )
+        if video_result.status == "couldnt_tell" and not video_result.photo_requests:
+            gaps.append(
+                Gap(
+                    input="radiators",
+                    message="Couldn't tell from the radiator walk-through video.",
+                    provide="Photograph each radiator straight-on showing its full width, height "
+                    "and top grille.",
+                )
+            )
     check = cross_check(fabric, measured) if measured else None
     costs = (
         [
@@ -405,6 +485,7 @@ def run_analysis(
         bundle=bundle,
         size_basis="measured" if measured else "fabric",
         readings=readings,
+        radiator_video=video_result,
         gaps=gaps,
         defaults=defaults,
         plan=plan,

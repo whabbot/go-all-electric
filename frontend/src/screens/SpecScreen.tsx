@@ -1,9 +1,10 @@
 import { Link } from 'react-router-dom'
 import { useSession } from '../context/SessionContext'
+import { RadiatorVideoResults } from '../components/RadiatorVideoResults'
 import { ExactValue, RangeValue } from '../components/RangeValue'
 
 export function SpecScreen() {
-  const { analysis, placeLabel } = useSession()
+  const { analysis, radiatorVideoResult, placeLabel } = useSession()
   if (!analysis) {
     return (
       <p className="warning">
@@ -14,6 +15,7 @@ export function SpecScreen() {
 
   const spec = analysis.bundle.target_spec
   const fromBills = analysis.size_basis === 'measured'
+  const videoResult = analysis.radiator_video ?? radiatorVideoResult
 
   return (
     <section className="screen spec-screen">
@@ -47,9 +49,10 @@ export function SpecScreen() {
 
       <div className="card">
         <h2>Radiators</h2>
-        {spec.radiators.length === 0 && (
+        {spec.radiators.length === 0 && !videoResult && (
           <p className="subtle">
-            Couldn&apos;t check radiators: add a clear radiator photo with a tape measure across it.
+            Couldn&apos;t check radiators: add a clear radiator photo with a tape measure across it,
+            or film your radiators.
           </p>
         )}
         <ul className="radiator-list">
@@ -69,6 +72,7 @@ export function SpecScreen() {
             </li>
           ))}
         </ul>
+        {videoResult && <RadiatorVideoResults result={videoResult} />}
       </div>
 
       <div className="card grant-card">

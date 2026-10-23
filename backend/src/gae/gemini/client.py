@@ -12,6 +12,8 @@ sends the image again rather than chaining turns.
 """
 
 import base64
+import contextlib
+import io
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -25,6 +27,9 @@ Block = dict[str, Any]
 
 # Past this many output tokens Gemini 4 Argon needs background execution.
 LONG_DECODE_TOKENS = 65_536
+# Inline request payloads must stay under the 20 MB API limit; larger clips use Files API
+# upload and are deleted immediately in a `finally` block.
+INLINE_VIDEO_MAX_BYTES = 18 * 1024 * 1024
 
 
 class GeminiError(RuntimeError):
@@ -52,6 +57,15 @@ def document(data: bytes, mime_type: str = "application/pdf") -> Block:
     }
 
 
+def video(data: bytes, mime_type: str = "video/mp4") -> Block:
+    """Inline video, kept in memory for this request only."""
+    return {
+        "type": "video",
+        "data": base64.b64encode(data).decode("ascii"),
+        "mime_type": mime_type,
+    }
+
+
 def gemini_schema(model: type[BaseModel]) -> dict[str, Any]:
     """Pydantic JSON schema with `$ref`s inlined and `default`s dropped.
 
@@ -67,7 +81,10 @@ def gemini_schema(model: type[BaseModel]) -> dict[str, Any]:
                 target = defs[node["$ref"].rsplit("/", 1)[-1]]
                 extra = {k: v for k, v in node.items() if k != "$ref"}
                 return inline({**target, **extra})
-            return {k: inline(v) for k, v in node.items() if k != "default"}
+            out = {k: inline(v) for k, v in node.items() if k != "default"}
+            if isinstance(out.get("properties"), dict):
+                out["required"] = list(out["properties"].keys())
+            return out
         if isinstance(node, list):
             return [inline(item) for item in node]
         return node
@@ -143,7 +160,9 @@ class GeminiClient:
             kwargs["background"] = True
         if system_instruction:
             kwargs["system_instruction"] = system_instruction
+        uploaded_names: list[str] = []
         try:
+            kwargs["input"] = self._prepare_inputs(input, uploaded_names, timeout_s)
             interaction = self._client.interactions.create(**kwargs)
             if long_decode:
                 interaction = self._wait(interaction, timeout_s)
@@ -152,6 +171,10 @@ class GeminiClient:
         except Exception as exc:
             # The SDK's message can echo request fields; keep only the type.
             raise GeminiError(f"Gemini call to {model} failed ({type(exc).__name__})") from None
+        finally:
+            for name in uploaded_names:
+                with contextlib.suppress(Exception):
+                    self._client.files.delete(name=name)
         reply = _output_text(interaction)
         if not reply:
             raise GeminiError(f"{model} returned no text")
@@ -159,6 +182,46 @@ class GeminiClient:
             return schema.model_validate_json(reply)
         except ValidationError:
             raise GeminiError(f"{model} reply did not match {schema.__name__}") from None
+
+    def _prepare_inputs(
+        self, input: Sequence[Block], uploaded_names: list[str], timeout_s: float
+    ) -> list[Block]:
+        """Keep video inline under 18 MB; use Files API above that and record for deletion."""
+        prepared: list[Block] = []
+        max_b64_len = (INLINE_VIDEO_MAX_BYTES * 4) // 3
+        for block in input:
+            if (
+                block.get("type") == "video"
+                and isinstance(block.get("data"), str)
+                and len(block["data"]) > max_b64_len
+            ):
+                raw = base64.b64decode(block["data"])
+                mime_type = str(block.get("mime_type") or "video/mp4")
+                uploaded = self._client.files.upload(
+                    file=io.BytesIO(raw),
+                    config={"mime_type": mime_type},
+                )
+                name = getattr(uploaded, "name", None)
+                if not name:
+                    raise GeminiError("Files API upload returned no file name")
+                uploaded_names.append(str(name))
+                deadline = time.monotonic() + timeout_s
+                state = _file_state(uploaded)
+                while "PROCESSING" in state:
+                    if time.monotonic() > deadline:
+                        raise GeminiError("Uploaded video processing timed out")
+                    time.sleep(1.0)
+                    uploaded = self._client.files.get(name=name)
+                    state = _file_state(uploaded)
+                if "FAILED" in state:
+                    raise GeminiError(f"Uploaded video processing ended {state}")
+                uri = getattr(uploaded, "uri", None)
+                if not uri:
+                    raise GeminiError("Files API upload returned no URI")
+                prepared.append({"type": "video", "uri": str(uri), "mime_type": mime_type})
+            else:
+                prepared.append(block)
+        return prepared
 
     def _wait(self, interaction: Any, timeout_s: float) -> Any:
         deadline = time.monotonic() + timeout_s
@@ -170,6 +233,12 @@ class GeminiClient:
         if interaction.status != "completed":
             raise GeminiError(f"Background interaction ended {interaction.status}")
         return interaction
+
+
+def _file_state(uploaded: Any) -> str:
+    state = getattr(uploaded, "state", None)
+    name = getattr(state, "name", None)
+    return str(name or state or "").upper()
 
 
 def _output_text(interaction: Any) -> str:

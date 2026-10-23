@@ -7,6 +7,7 @@ import {
   type PhotoKind,
   type QuoteCheckResult,
   type QuoteUploadGroup,
+  type RadiatorVideoResult,
   type ReviewQuote,
   type ReviewResult,
 } from '../api'
@@ -44,6 +45,9 @@ type Session = {
   /** Files stay in memory for this tab only; they are never written to storage. */
   files: Partial<Record<PhotoKind, File>>
   setPhoto: (kind: PhotoKind, file: File | null, result: PhotoCheckResult | null) => void
+  radiatorVideo: File | null
+  radiatorVideoResult: RadiatorVideoResult | null
+  setRadiatorVideo: (file: File | null, result: RadiatorVideoResult | null) => void
   analysis: AnalysisResult | null
   setAnalysis: (a: AnalysisResult | null) => void
   quotes: CheckedQuote[]
@@ -68,6 +72,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   })
   const [files, setFiles] = useState<Partial<Record<PhotoKind, File>>>({})
   const [checks, setChecks] = useState<Partial<Record<PhotoKind, PhotoCheckResult | null>>>({})
+  const [radiatorVideo, setRadiatorVideoFile] = useState<File | null>(null)
+  const [radiatorVideoResult, setRadiatorVideoResult] = useState<RadiatorVideoResult | null>(null)
   const [quotes, setQuotesState] = useState<CheckedQuote[]>([])
   const [review, setReview] = useState<ReviewState>({ status: 'idle' })
   const reviewRun = useRef(0)
@@ -101,6 +107,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       return next
     })
     setChecks((prev) => ({ ...prev, [kind]: result }))
+  }, [])
+
+  const setRadiatorVideo = useCallback((file: File | null, result: RadiatorVideoResult | null) => {
+    setRadiatorVideoFile(file)
+    setRadiatorVideoResult(result)
   }, [])
 
   const setQuotes = useCallback((q: CheckedQuote[]) => {
@@ -150,6 +161,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       photos,
       files,
       setPhoto,
+      radiatorVideo,
+      radiatorVideoResult,
+      setRadiatorVideo,
       analysis,
       setAnalysis,
       quotes,
@@ -157,7 +171,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       review,
       startReview,
     }),
-    [address, setAddress, placeLabel, photos, files, setPhoto, analysis, setAnalysis, quotes, setQuotes, review, startReview],
+    [
+      address,
+      setAddress,
+      placeLabel,
+      photos,
+      files,
+      setPhoto,
+      radiatorVideo,
+      radiatorVideoResult,
+      setRadiatorVideo,
+      analysis,
+      setAnalysis,
+      quotes,
+      setQuotes,
+      review,
+      startReview,
+    ],
   )
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

@@ -688,6 +688,64 @@ button.primary {
 .status-upsize {
   background: color-mix(in srgb, var(--color-danger) 30%, transparent);
 }
+.status-couldnt_tell {
+  background: color-mix(in srgb, var(--color-warn) 30%, transparent);
+}
+
+.video-capture-option {
+  margin-top: 0.9rem;
+  padding-top: 0.85rem;
+  border-top: 1px dashed var(--border);
+}
+
+.video-capture-option h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.35rem;
+}
+
+.video-capture-option .privacy-warn {
+  margin: 0 0 0.35rem;
+}
+
+.video-capture-option .subtle {
+  margin: 0 0 0.65rem;
+}
+
+.video-result-summary {
+  margin: 0 0 0.5rem;
+}
+
+.video-rad-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.video-rad-time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--color-accent);
+}
+
+.video-rad-spec {
+  margin: 0.25rem 0;
+  font-size: 0.85rem;
+}
+
+.video-photo-requests {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.video-photo-requests ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+}
 
 .grant-amount {
   font-size: 1.5rem;

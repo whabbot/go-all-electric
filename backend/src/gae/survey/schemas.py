@@ -15,6 +15,7 @@ from gae.gemini.schemas import (
     GasBillReading,
     PhotoKind,
     QuoteReading,
+    RadiatorVideoResult,
     VerificationLogEntry,
 )
 from gae.plan.schemas import AllElectricPlan
@@ -87,6 +88,7 @@ class AnalysisResult(BaseModel):
     bundle: AnalysisBundle
     size_basis: Literal["measured", "fabric"]
     readings: list[InputReading]
+    radiator_video: RadiatorVideoResult | None = None
     gaps: list[Gap]
     defaults: list[NamedDefault]
     plan: AllElectricPlan
