@@ -23,7 +23,8 @@ the hackathon; open-source libraries and starter templates are credited below.
 | Heat-pump maths core (`backend/src/gae/heatpump/`) | Built, unit-tested |
 | FastAPI backend with health endpoint | Built |
 | React frontend | Mobile-first demo UI with typed mock API (`VITE_USE_MOCKS`) |
-| Gemini photo and bill reading, EPC lookup, degree days, MongoDB Atlas | Planned |
+| EPC lookup and exact-period heating degree days | Built, mocked HTTP tests |
+| Gemini photo and bill reading, MongoDB Atlas | Planned |
 | Quote checker, solar, EV charging, sequenced plan | Planned |
 
 ## How the maths works
@@ -101,10 +102,30 @@ frontend lint and build, then a gitleaks scan of the full history.
 | --- | --- | --- |
 | `VITE_USE_MOCKS` | Frontend: mock Sam demo vs live `/api` (never put secrets in `VITE_*`) | Built |
 | `GEMINI_API_KEY` | Gemini 4 Argon photo and bill reading | Planned |
-| `EPC_API_EMAIL` | EPC Open Data API (basic-auth user) | Planned |
-| `EPC_API_KEY` | EPC Open Data API (basic-auth key) | Planned |
+| `EPC_API_TOKEN` | GOV.UK EPC replacement API bearer token, issued after GOV.UK One Login | Required for EPC lookup |
+| `EPC_API_EMAIL`, `EPC_API_KEY` | Retained legacy configuration; retired API Basic auth is no longer used | Deprecated |
 | `MONGODB_URI` | MongoDB Atlas connection string | Planned |
 | `GOOGLE_SOLAR_API_KEY` | Google Solar API roof potential | Planned |
+
+### Open-data endpoints
+
+Create a GOV.UK One Login account via the [EPC API guidance](https://get-energy-performance-data.communities.gov.uk/guidance/energy-certificate-data-apis),
+then set `EPC_API_TOKEN` to the bearer token on your account page. The legacy EPC service retired
+in May 2026; old email/key credentials are not a substitute. Weather needs no credentials.
+
+- `GET /api/epc/search?postcode=...` returns matching addresses and their latest certificate IDs.
+- `GET /api/epc/{certificate_id}` returns an allowlisted raw summary, mapped fabric inputs,
+  field confidence/defaults and a fabric estimate (or a clear reason it cannot be calculated).
+- `GET /api/weather/degree-days?postcode=...&start=YYYY-MM-DD&end=YYYY-MM-DD` returns degree days,
+  inclusive coverage, missing-day count and the explicitly low-confidence -2C London design default.
+
+The bill adapter `gae.opendata.bill.measured_from_bill` accepts any complete 12-month window,
+including leap years, using injected weather access; missing days return `couldnt_tell`, never
+substituted weather. `measured_from_degree_days` is the pure calculation counterpart.
+See the [explicit EPC mapping table and integration contract](backend/src/gae/opendata/MAPPING.md)
+for defaults, unsupported flats, monthly-bill requirements and weather uncertainty. Display its
+field caveats alongside the fabric result. These clients do not persist addresses or coordinates;
+responses disable caching. Disable query-string logging in deployment to keep postcodes private.
 
 ## Secrets
 
@@ -132,8 +153,9 @@ in a `VITE_*` variable, because Vite bundles those into the browser build.
 | Source | Use | Status |
 | --- | --- | --- |
 | Gemini 4 Argon (`gemini-4-argon`) via the Interactions API, `google-genai>=2.3.0` | Read boiler data plates, radiators, fuse cutouts and gas bills from photos | Planned (dependency declared) |
-| [EPC Open Data API](https://epc.opendatacommunities.org/) (DLUHC) | Floor area, property type, age, walls, glazing, heating for an address | Planned |
-| [Open-Meteo](https://open-meteo.com/) historical weather | Heating degree days for the bill period | Planned |
+| [Get energy performance of buildings data](https://get-energy-performance-data.communities.gov.uk/guidance/energy-certificate-data-apis) (MHCLG, England/Wales) | Latest EPC per matching address, floor area, dwelling form, age band, fabric and heating descriptions | Built; 2026 replacement API, bearer auth |
+| [postcodes.io](https://postcodes.io/docs/api/lookup-postcode/) | Postcode centroid for weather requests; no exact home coordinates stored | Built; no key |
+| [Open-Meteo](https://open-meteo.com/en/docs/historical-weather-api) historical reanalysis | Daily mean temperatures at postcode centroid; heating degree days at 15.5C base for exact inclusive bill dates | Built; no key; attribution Open-Meteo, weather data CC BY 4.0 |
 | [Google Solar API](https://developers.google.com/maps/documentation/solar) / [PVGIS](https://joint-research-centre.ec.europa.eu/pvgis-online-tool_en) | Roof solar potential | Planned |
 | MongoDB Atlas | Core data store (homes, estimates, quotes) | Planned (dependency declared) |
 | Ofgem price cap, Oct-Dec 2026 | Unit rates in the cost answer | Built (constants) |

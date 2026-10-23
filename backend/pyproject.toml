@@ -7,6 +7,7 @@ license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.161.1",
+    "httpx>=0.28.1",
     # Declared for the Gemini integration task; not wired yet.
     "google-genai>=2.3.0",
     "pydantic>=2.14.1",
