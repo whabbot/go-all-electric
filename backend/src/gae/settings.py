@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     epc_api_key: SecretStr | None = None
     mongodb_uri: SecretStr | None = None
     google_solar_api_key: SecretStr | None = None
+    # Model ids are not secrets; override to swap models without a code change.
+    gemini_lead_model: str = "gemini-4-argon"
+    gemini_fast_model: str = "gemini-3.8-flash"
 
     def configured(self) -> dict[str, bool]:
         """Which integrations have credentials, without revealing any value."""
