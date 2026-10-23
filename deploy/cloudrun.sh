@@ -33,7 +33,39 @@ if missing:
 PYCODE
 
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
-  artifactregistry.googleapis.com secretmanager.googleapis.com iam.googleapis.com logging.googleapis.com \
+  artifactregistry.googleapis.com secretmanager.googleapis.com iam.googleapis.com logging.googleapis.com compute.googleapis.com \
+  --project "$PROJECT" --quiet
+
+# Direct VPC egress and Cloud NAT give Atlas one stable allowlist address.
+NETWORK=gae-network
+SUBNET=gae-egress
+ROUTER=gae-router
+NAT=gae-nat
+if ! gcloud compute networks describe "$NETWORK" --project "$PROJECT" >/dev/null 2>&1; then
+  gcloud compute networks create "$NETWORK" --subnet-mode=custom --project "$PROJECT" --quiet
+fi
+if ! gcloud compute networks subnets describe "$SUBNET" --region "$REGION" \
+  --project "$PROJECT" >/dev/null 2>&1; then
+  gcloud compute networks subnets create "$SUBNET" --network "$NETWORK" \
+    --range 10.42.0.0/24 --region "$REGION" --project "$PROJECT" --quiet
+fi
+if ! gcloud compute routers describe "$ROUTER" --region "$REGION" \
+  --project "$PROJECT" >/dev/null 2>&1; then
+  gcloud compute routers create "$ROUTER" --network "$NETWORK" \
+    --region "$REGION" --project "$PROJECT" --quiet
+fi
+if ! gcloud compute addresses describe gae-egress-ip --region "$REGION" \
+  --project "$PROJECT" >/dev/null 2>&1; then
+  gcloud compute addresses create gae-egress-ip --region "$REGION" --project "$PROJECT" --quiet
+fi
+if gcloud compute routers nats describe "$NAT" --router "$ROUTER" --region "$REGION" \
+  --project "$PROJECT" >/dev/null 2>&1; then
+  NAT_ACTION=update
+else
+  NAT_ACTION=create
+fi
+gcloud compute routers nats "$NAT_ACTION" "$NAT" --router "$ROUTER" --region "$REGION" \
+  --nat-external-ip-pool=gae-egress-ip --nat-custom-subnet-ip-ranges="$SUBNET" \
   --project "$PROJECT" --quiet
 
 for ACCOUNT in gae-runtime gae-build; do
@@ -95,14 +127,19 @@ log_filter = (f'resource.type="cloud_run_revision" AND resource.labels.service_n
 exists = any(item['name'] == name for item in sink.get('exclusions', []))
 flag = '--update-exclusion' if exists else '--add-exclusion'
 subprocess.run(['gcloud', 'logging', 'sinks', 'update', '_Default', '--project', project,
-                flag, f'name={name},filter={log_filter}' + (',disabled' if exists else ''), '--quiet'],
+                flag, f'name={name},filter={log_filter}', '--quiet'],
                check=True, stdout=subprocess.DEVNULL)
 PYCODE
 
 gcloud run deploy "$SERVICE" --source "$DEPLOY_ROOT" --project "$PROJECT" \
   --region "$REGION" --max-instances 2 --min-instances 0 --timeout 900s \
   --memory 2Gi --cpu 1 --concurrency 8 --allow-unauthenticated \
+  --network "$NETWORK" --subnet "$SUBNET" --vpc-egress=all-traffic \
   --service-account "$RUNTIME" \
   --build-service-account "projects/$PROJECT/serviceAccounts/$BUILD" \
   --set-secrets 'GEMINI_API_KEY=GEMINI_API_KEY:latest,MONGODB_URI=MONGODB_URI:latest,EPC_API_TOKEN=EPC_API_TOKEN:latest,ACCESS_CODE=ACCESS_CODE:latest' \
-  --set-env-vars 'GEMINI_REQUESTS_PER_IP=30,GEMINI_LIMIT_WINDOW_SECONDS=3600' --quiet
+  --set-env-vars "GEMINI_REQUESTS_PER_IP=${GEMINI_REQUESTS_PER_IP:-300},GEMINI_LIMIT_WINDOW_SECONDS=${GEMINI_LIMIT_WINDOW_SECONDS:-3600}" --quiet
+
+EGRESS_IP="$(gcloud compute addresses describe gae-egress-ip --region "$REGION" \
+  --project "$PROJECT" --format='value(address)')"
+printf 'Atlas network access: add exactly %s/32 to the allowlist.\n' "$EGRESS_IP"
