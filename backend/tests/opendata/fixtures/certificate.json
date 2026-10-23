@@ -1,0 +1,17 @@
+{
+  "data": {
+    "schema_type": "RdSAP-Schema-21.0.1",
+    "postcode": "ZZ1 1ZZ",
+    "address_line_1": "1 Synthetic Example Lane",
+    "dwelling_type": "Semi-detached house",
+    "built_form": 2,
+    "property_type": 0,
+    "total_floor_area": 90,
+    "sap_building_parts": [{"construction_age_band": "C"}],
+    "walls": [{"description": {"value": "Cavity wall, as built, no insulation (assumed)", "language": "1"}}],
+    "roofs": [{"description": {"value": "Pitched, 100 mm loft insulation", "language": "1"}}],
+    "floors": [{"description": {"value": "Suspended, no insulation (assumed)", "language": "1"}}],
+    "window": {"description": {"value": "Fully double glazed", "language": "1"}},
+    "main_heating": [{"description": {"value": "Boiler and radiators, mains gas", "language": "1"}}]
+  }
+}

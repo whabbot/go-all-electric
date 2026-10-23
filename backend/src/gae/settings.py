@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     )
 
     gemini_api_key: SecretStr | None = None
+    epc_api_token: SecretStr | None = None
     epc_api_email: SecretStr | None = None
     epc_api_key: SecretStr | None = None
     mongodb_uri: SecretStr | None = None
@@ -27,7 +28,7 @@ class Settings(BaseSettings):
         """Which integrations have credentials, without revealing any value."""
         return {
             "gemini": self.gemini_api_key is not None,
-            "epc": self.epc_api_email is not None and self.epc_api_key is not None,
+            "epc": bool(self.epc_api_token and self.epc_api_token.get_secret_value().strip()),
             "mongodb": self.mongodb_uri is not None,
             "google_solar": self.google_solar_api_key is not None,
         }

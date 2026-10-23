@@ -5,9 +5,11 @@ from typing import Annotated
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 
+from gae.opendata.router import router as opendata_router
 from gae.settings import Settings, get_settings
 
 app = FastAPI(title="Go All-Electric", version="0.1.0")
+app.include_router(opendata_router)
 
 
 class Health(BaseModel):
