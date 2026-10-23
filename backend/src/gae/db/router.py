@@ -20,7 +20,7 @@ def get_database() -> Iterator[Database]:
     try:
         with database() as db:
             yield db
-    except (PyMongoError, DatabaseUnavailable):
+    except PyMongoError, DatabaseUnavailable:
         # Never include driver errors: they may include credentials, hosts or query content.
         raise HTTPException(
             503, "Data service unavailable; check server configuration and indexes"

@@ -50,7 +50,7 @@ def positive_area(value: Any) -> float | None:
     try:
         area = float(value) if not isinstance(value, bool) else 0
         return area if math.isfinite(area) and area > 0 else None
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 

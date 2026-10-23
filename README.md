@@ -61,7 +61,7 @@ about 4.7kW (3.7-5.7kW), the fabric calc says about 8.7kW, and the target is a 5
 
 ## Setup
 
-You need Python 3.12+ with [uv](https://docs.astral.sh/uv/), and Node 20+ with npm.
+You need Python 3.14+ with [uv](https://docs.astral.sh/uv/), and Node 20+ with npm.
 
 ```bash
 cp .env.example .env        # then fill in the keys you have; .env is git-ignored
