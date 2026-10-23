@@ -9,8 +9,10 @@ from pymongo.errors import OperationFailure, ServerSelectionTimeoutError
 
 from gae.db.datasheets import (
     AtlasDatasheetLookup,
+    exact_model_match,
     fuse,
     hybrid_pipeline,
+    infer_kind,
     text_pipeline,
     vector_pipeline,
 )
@@ -282,3 +284,115 @@ def test_actual_database_dependency_sanitizes_errors(monkeypatch):
     response = client.post("/api/surveys", json={})
     assert response.status_code == 503
     assert "secret" not in response.text and "private" not in response.text
+
+
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        ("Vaillant aro THERM plus 7kw", "heat_pump"),
+        ("AROTHERM", "heat_pump"),
+        ("Ecodan", "heat_pump"),
+        ("Altherma", "heat_pump"),
+        ("heat pump", "heat_pump"),
+        ("combi", "gas_boiler"),
+        ("ecoTEC", "gas_boiler"),
+        ("Greenstar", "gas_boiler"),
+        ("Greenstr 30i", None),
+        ("Vaillant 7kw", None),
+        ("notecotec", None),
+        ("heat pump combi", None),
+        ("", None),
+    ],
+)
+def test_kind_inference_is_conservative(query, expected):
+    assert infer_kind(query) == expected
+
+
+@pytest.mark.parametrize(
+    "kind, values",
+    [
+        ("heat_pump", ["heat_pump"]),
+        ("gas_boiler", ["gas_combi", "gas_system"]),
+    ],
+)
+def test_kind_prefilters_both_channels_and_indexes(kind, values):
+    pipelines = hybrid_pipeline("Vaillant", 20, 5, kind)[0]["$rankFusion"]["input"]["pipelines"]
+    search = pipelines["atlas_search"][0]["$search"]
+    assert search["compound"]["filter"] == [{"in": {"path": "kind", "value": values}}]
+    assert search["compound"]["must"][0]["text"]["query"] == "Vaillant"
+    vector = pipelines["vector_search"][0]["$vectorSearch"]
+    assert vector["filter"] == {"kind": {"$in": values}}
+    assert TEXT_DEFINITION["mappings"]["fields"]["kind"] == {"type": "token"}
+    assert {"type": "filter", "path": "kind"} in VECTOR_DEFINITION["fields"]
+
+
+@pytest.mark.parametrize("failure", [None, 40324, 27])
+def test_filters_and_match_flags_survive_native_and_fallback_paths(failure):
+    collection = MagicMock()
+    query = sheet()["model"]
+    if failure is None:
+        collection.aggregate.return_value = [native_sheet()]
+    else:
+        collection.aggregate.side_effect = [
+            OperationFailure("unavailable", code=failure),
+            [sheet()],
+            [sheet()] if failure == 40324 else OperationFailure("missing", code=27),
+        ]
+    lookup = AtlasDatasheetLookup(collection)
+    result = lookup.search(query, kind="gas_boiler")  # explicit overrides inferred heat pump
+    assert result.matches[0].exact_model_match is True
+    calls = collection.aggregate.call_args_list
+    assert calls[0].args[0] == hybrid_pipeline(query, 20, 5, "gas_boiler")
+    if failure:
+        assert calls[1].args[0] == text_pipeline(query, 20, "gas_boiler")
+        assert calls[2].args[0] == vector_pipeline(query, 20, "gas_boiler")
+
+
+@pytest.mark.parametrize(
+    "query, exact",
+    [
+        ("aroTHERM plus VWL 55/6 230V", True),
+        (" vaillant  AROTHERM plus VWL 55/6 230V ", True),
+        ("aroTHERM", False),
+        ("aroTHERM plus VWL 55/6", False),
+        ("Vaillant aro THERM plus 7kw", False),
+        ("Greenstr 30i", False),
+        ("aroTHERM plus VWL 55/6 230", False),
+    ],
+)
+def test_exact_flag_requires_complete_model_text(query, exact):
+    assert exact_model_match(query, load_seed()[0]) is exact
+    collection = MagicMock()
+    collection.aggregate.return_value = [native_sheet()]
+    lookup = AtlasDatasheetLookup(collection)
+    assert lookup.search(query).matches[0].exact_model_match is exact
+    identified = lookup.find_by_make_model(query, 5, "heat_pump")[0]
+    assert identified.id == sheet()["id"]
+    assert identified.exact_model_match is exact
+
+
+def test_api_kind_validation_and_exact_flag(api):
+    client, db = api
+    db["datasheets"].aggregate.return_value = [native_sheet()]
+    response = client.get(
+        "/api/datasheets/search",
+        params={
+            "q": sheet()["model"],
+            "kind": "heat_pump",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["matches"][0]["exact_model_match"] is True
+    assert client.get("/api/datasheets/search?q=Vaillant&kind=oil_boiler").status_code == 422
+    assert db["datasheets"].aggregate.call_count == 1
+
+
+def test_search_infers_kind_but_leaves_ambiguous_queries_open():
+    collection = MagicMock()
+    collection.aggregate.return_value = []
+    lookup = AtlasDatasheetLookup(collection)
+    for query, kind in [("aro THERM", "heat_pump"), ("Greenstr 30i", None)]:
+        lookup.search(query)
+        assert collection.aggregate.call_args.args[0] == hybrid_pipeline(query, 20, 5, kind)
+    with pytest.raises(ValueError):
+        lookup.search("Vaillant", kind="oil_boiler")

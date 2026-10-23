@@ -92,7 +92,12 @@ class Datasheet(StrictModel):
     text: str
 
 
+class DatasheetIdentification(Datasheet):
+    exact_model_match: bool = False
+
+
 class SearchMatch(StrictModel):
+    exact_model_match: bool = False
     datasheet: Datasheet
     score: float
     produced_by: list[str]

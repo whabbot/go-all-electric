@@ -15,6 +15,7 @@ TEXT_DEFINITION = {
     "mappings": {
         "dynamic": False,
         "fields": {
+            "kind": {"type": "token"},
             "make": {"type": "string"},
             "model": {"type": "string"},
             "text": {"type": "string"},

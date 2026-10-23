@@ -33,7 +33,17 @@ def test_real_fuzzy_vector_and_hybrid_search(monkeypatch):
             pytest.fail("ATLAS_LOCAL_URI must point to a loopback Atlas Local instance")
         collection = client["go_all_electric_test"][f"datasheets_{uuid4().hex}"]
         try:
-            docs = [row.model_dump(mode="json") for row in load_seed()[:2]]
+            docs = [
+                row.model_dump(mode="json")
+                for row in [
+                    *load_seed()[:2],
+                    next(
+                        row
+                        for row in load_seed()
+                        if row.kind == "gas_combi" and row.make == "Vaillant"
+                    ),
+                ]
+            ]
             for index, doc in enumerate(docs):
                 doc["_id"] = doc["id"]
                 doc["test_vector"] = [1.0, float(index), 0.0]
@@ -55,7 +65,8 @@ def test_real_fuzzy_vector_and_hybrid_search(monkeypatch):
                                 "path": "test_vector",
                                 "numDimensions": 3,
                                 "similarity": "cosine",
-                            }
+                            },
+                            {"type": "filter", "path": "kind"},
                         ]
                     },
                 )
@@ -69,7 +80,9 @@ def test_real_fuzzy_vector_and_hybrid_search(monkeypatch):
             else:
                 pytest.fail("Atlas Local search indexes did not become queryable in 120s")
 
-            def local_vector(query, limit):
+            def local_vector(query, limit, kind=None):
+                from gae.db.datasheets import kind_values
+
                 return [
                     {
                         "$vectorSearch": {
@@ -78,6 +91,7 @@ def test_real_fuzzy_vector_and_hybrid_search(monkeypatch):
                             "queryVector": [1.0, 0.0, 0.0],
                             "numCandidates": 100,
                             "limit": limit,
+                            **({"filter": {"kind": {"$in": kind_values(kind)}}} if kind else {}),
                         }
                     }
                 ]
@@ -92,5 +106,18 @@ def test_real_fuzzy_vector_and_hybrid_search(monkeypatch):
             )
             assert result.matches[0].datasheet.id == docs[0]["id"]
             assert result.matches[0].score > 0
+            assert all(match.datasheet.kind == "heat_pump" for match in result.matches)
+            for query, kind, expected in [
+                ("Vaillant", None, 3),
+                ("Vaillant", "heat_pump", 2),
+                ("Vaillant", "gas_boiler", 1),
+            ]:
+                filtered = AtlasDatasheetLookup(collection).search(query, kind=kind)
+                assert filtered.fusion == "native_rank_fusion"
+                assert len(filtered.matches) == expected
+                assert all(len(match.produced_by) == 2 for match in filtered.matches)
+                if kind == "gas_boiler":
+                    assert filtered.matches[0].datasheet.kind == "gas_combi"
+
         finally:
             collection.drop()

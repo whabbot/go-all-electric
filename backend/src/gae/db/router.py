@@ -9,7 +9,7 @@ from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
 from gae.db.connection import DatabaseUnavailable, database
-from gae.db.datasheets import AtlasDatasheetLookup
+from gae.db.datasheets import AtlasDatasheetLookup, EquipmentKind
 from gae.db.models import SearchResults, Survey, SurveyInput
 from gae.db.surveys import SurveyRepository
 
@@ -35,10 +35,11 @@ def search_datasheets(
     db: DB,
     q: Annotated[str, Query(min_length=2, max_length=300)],
     limit: Annotated[int, Query(ge=1, le=20)] = 5,
+    kind: EquipmentKind | None = None,
 ) -> SearchResults:
     if not q.strip():
         raise HTTPException(422, "Enter a make or model")
-    return AtlasDatasheetLookup(db["datasheets"]).search(q.strip(), limit)
+    return AtlasDatasheetLookup(db["datasheets"]).search(q.strip(), limit, kind)
 
 
 @router.post("/surveys", response_model=Survey, status_code=201)
