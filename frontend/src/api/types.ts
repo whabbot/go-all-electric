@@ -279,6 +279,61 @@ export type Gap = {
   provide: string
 }
 
+export type PlanStepStatus = 'ok' | 'flagged' | 'couldnt_tell' | 'info'
+
+export type PlanSupply = {
+  status: 'ok' | 'flagged' | 'couldnt_tell'
+  fuse_rating_a: number | null
+  heat_pump_thermal_kw: number
+  heat_pump_running_a: number
+  heat_pump_peak_a: number
+  ev_charger_kw: number
+  ev_draw_a: number
+  household_a: number
+  headroom_a: number | null
+  message: string
+}
+
+export type PlanHeatPump = {
+  size_kw_low: number
+  size_kw_high: number
+  max_flow_temp_c: number
+  grant_gbp: number
+  grant_note: string
+  message: string
+}
+
+export type PlanSolar = {
+  status: 'ok' | 'couldnt_fetch'
+  annual_yield_kwh: number | null
+  payback_years: number | null
+  array_kwp: number
+  message: string
+}
+
+export type PlanEv = {
+  status: PlanStepStatus
+  message: string
+}
+
+export type PlanStep = {
+  id: 'supply' | 'heat_pump' | 'solar' | 'ev'
+  title: string
+  order_reason: string
+  status: PlanStepStatus
+  headline: string
+  detail?: string | null
+}
+
+export type AllElectricPlan = {
+  steps: PlanStep[]
+  supply: PlanSupply
+  heat_pump: PlanHeatPump
+  solar: PlanSolar
+  ev: PlanEv
+  defaults: NamedDefault[]
+}
+
 export type AnalysisResult = {
   survey_id: string | null
   saved: boolean
@@ -290,6 +345,7 @@ export type AnalysisResult = {
   readings: InputReading[]
   gaps: Gap[]
   defaults: NamedDefault[]
+  plan: AllElectricPlan
   log: VerificationLogEntry[]
   timings_ms: Record<string, number>
 }
