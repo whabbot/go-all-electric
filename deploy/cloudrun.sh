@@ -95,7 +95,7 @@ log_filter = (f'resource.type="cloud_run_revision" AND resource.labels.service_n
 exists = any(item['name'] == name for item in sink.get('exclusions', []))
 flag = '--update-exclusion' if exists else '--add-exclusion'
 subprocess.run(['gcloud', 'logging', 'sinks', 'update', '_Default', '--project', project,
-                flag, f'name={name},filter={log_filter}' + (',disabled' if exists else ''), '--quiet'],
+                flag, f'name={name},filter={log_filter}', '--quiet'],
                check=True, stdout=subprocess.DEVNULL)
 PYCODE
 
@@ -105,4 +105,4 @@ gcloud run deploy "$SERVICE" --source "$DEPLOY_ROOT" --project "$PROJECT" \
   --service-account "$RUNTIME" \
   --build-service-account "projects/$PROJECT/serviceAccounts/$BUILD" \
   --set-secrets 'GEMINI_API_KEY=GEMINI_API_KEY:latest,MONGODB_URI=MONGODB_URI:latest,EPC_API_TOKEN=EPC_API_TOKEN:latest,ACCESS_CODE=ACCESS_CODE:latest' \
-  --set-env-vars 'GEMINI_REQUESTS_PER_IP=30,GEMINI_LIMIT_WINDOW_SECONDS=3600' --quiet
+  --set-env-vars "GEMINI_REQUESTS_PER_IP=${GEMINI_REQUESTS_PER_IP:-300},GEMINI_LIMIT_WINDOW_SECONDS=${GEMINI_LIMIT_WINDOW_SECONDS:-3600}" --quiet

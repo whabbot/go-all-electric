@@ -403,8 +403,17 @@ and redeploys. Do not run with shell tracing. Credentials are runtime environmen
 The first visit shows **Enter access code**. A verified code is remembered in localStorage
 on that device and sent in `X-Access-Code`. Rotating the code invalidates saved codes.
 When `ACCESS_CODE` is unset, local development retains its existing open behavior.
-With a code set, Gemini endpoints share a default limit of 30 POST requests per IP per
-3600 seconds. Set `GEMINI_REQUESTS_PER_IP` and `GEMINI_LIMIT_WINDOW_SECONDS` to tune it
+Cloud Run deployments default to 300 Gemini POST requests per IP per 3600 seconds,
+so judges and visitors sharing the venue Wi-Fi have a larger shared allowance. Set
+`GEMINI_REQUESTS_PER_IP` (default 300) and `GEMINI_LIMIT_WINDOW_SECONDS` (default 3600)
+in the environment when running `deploy/cloudrun.sh` to tune it, for example:
+
+```sh
+GOOGLE_CLOUD_PROJECT=your-project-id GEMINI_REQUESTS_PER_IP=600 GEMINI_LIMIT_WINDOW_SECONDS=1800 ./deploy/cloudrun.sh
+```
+
+Local development with a code set defaults to 30 requests per IP per 3600 seconds.
+Both settings also apply when supplied directly to the application
 (`GEMINI_REQUESTS_PER_IP=0` disables the limit). A 429 response explains the limit in the UI
 and supplies `Retry-After`. Rejected access codes do not consume the allowance.
 
