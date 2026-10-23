@@ -44,13 +44,15 @@ from gae.heatpump.spec import Room, target_spec
 from gae.opendata.bill import DegreeDayProvider, measured_from_bill
 from gae.opendata.mapping import FabricMapping, descriptions
 from gae.opendata.weather import normalise_postcode
+from gae.plan.build import build_all_electric_plan
+from gae.plan.solar import SolarYieldProvider
+from gae.survey.fields import NamedDefault
 from gae.survey.schemas import (
     AnalysisBundle,
     AnalysisResult,
     EpcSummary,
     Gap,
     InputReading,
-    NamedDefault,
     jsonable,
 )
 
@@ -83,6 +85,7 @@ class Services:
     weather: DegreeDayProvider
     datasheets: DatasheetLookup
     save: Callable[[SurveyInput], str]
+    solar: SolarYieldProvider
 
 
 class LiveLog(VerificationLog):
@@ -365,6 +368,18 @@ def run_analysis(
     )
     epc = _epc_summary(raw, mapping, fuel)
 
+    t0 = time.monotonic()
+    step("plan", "running")
+    plan = build_all_electric_plan(
+        postcode_district=district,
+        readings=readings,
+        bundle=bundle.model_dump(mode="json"),
+        solar=services.solar,
+    )
+    defaults.extend(plan.defaults)
+    timings["plan"] = round((time.monotonic() - t0) * 1000)
+    step("plan", "done")
+
     # --- Save (postcode district only) ---------------------------------------------------------
     survey_id = None
     note = None
@@ -392,6 +407,7 @@ def run_analysis(
         readings=readings,
         gaps=gaps,
         defaults=defaults,
+        plan=plan,
         log=sorted(entries, key=lambda e: e.at),
         timings_ms=timings,
     )

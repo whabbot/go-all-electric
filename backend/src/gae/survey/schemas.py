@@ -17,7 +17,8 @@ from gae.gemini.schemas import (
     QuoteReading,
     VerificationLogEntry,
 )
-from gae.heatpump.ranges import Confidence
+from gae.plan.schemas import AllElectricPlan
+from gae.survey.fields import NamedDefault
 
 
 def jsonable(value: Any) -> Any:
@@ -69,14 +70,6 @@ class InputReading(BaseModel):
     used_for: str
 
 
-class NamedDefault(BaseModel):
-    input: str
-    name: str
-    value: str
-    note: str
-    confidence: Confidence
-
-
 class Gap(BaseModel):
     """Something we couldn't tell, what it means for the answer, and what to provide instead."""
 
@@ -96,6 +89,7 @@ class AnalysisResult(BaseModel):
     readings: list[InputReading]
     gaps: list[Gap]
     defaults: list[NamedDefault]
+    plan: AllElectricPlan
     log: list[VerificationLogEntry]
     timings_ms: dict[str, int]
 

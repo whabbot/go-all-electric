@@ -1,5 +1,6 @@
 /** Offline demo data: Sam's invented 1930s semi. The UI labels mock mode wherever it is shown. */
 import type {
+  AllElectricPlan,
   AnalysisBundle,
   AnalysisEvent,
   AnalysisResult,
@@ -218,8 +219,8 @@ const PHOTO_MOCKS: Record<PhotoKind, PhotoMock> = {
   fuse_cutout: {
     kind: 'fuse_cutout',
     legible: true,
-    summary: 'Legible — 100 A main fuse, single-phase',
-    key_fields: { rating_a: '100', phases: '1' },
+    summary: 'Legible — 60 A main fuse, single-phase',
+    key_fields: { rating_a: '60', phases: '1' },
     confidence: 'high',
     retake_hint: null,
     privacy_warning: null,
@@ -295,7 +296,89 @@ function mockLog(): VerificationLogEntry[] {
 const READ_STATUS: Partial<Record<PhotoKind, InputReading['status']>> = {
   boiler_plate: 'verified',
   radiators: 'verified',
+  fuse_cutout: 'verified',
   gas_bill: 'verified',
+}
+
+/** Offline plan: same numbers as backend `build_all_electric_plan` for Sam (60 A, 5-7 kW). */
+export const SAM_PLAN: AllElectricPlan = {
+  steps: [
+    {
+      id: 'supply',
+      title: 'Electricity supply',
+      order_reason:
+        'Heat pumps and EV chargers both draw on the same main fuse; check headroom first.',
+      status: 'flagged',
+      headline:
+        'A 60 A fuse is usually enough for a 7 kW heat pump (~15 A plus ~30 A household), but a 7.4 kW EV charger (~32 A) on the same fuse likely needs a supply upgrade. Ask your network operator before booking the charger. Your installer must notify the network operator of a heat pump install; this app does not contact them.',
+      detail:
+        'Heat pump ~15.2 A running (+15 A start allowance) · household ~30 A · EV charger 7.4 kW (~32.2 A)',
+    },
+    {
+      id: 'heat_pump',
+      title: 'Heat pump + grant',
+      order_reason:
+        'Size and flow temperature come from your house; the grant depends on your current fuel.',
+      status: 'info',
+      headline:
+        'Target 5-7 kW at up to 45C flow, with a BUS grant of £7,500 (Boiler Upgrade Scheme grant when replacing a gas boiler (illustrative eligibility).).',
+    },
+    {
+      id: 'solar',
+      title: 'Solar',
+      order_reason: 'Once heating is sized, generation offsets the higher electricity bill.',
+      status: 'ok',
+      headline:
+        "About 3,584 kWh/year from a 3.5 kWp south-facing array at the N10 district centroid; simple payback about 5.2 years at today's electricity price (not a quote).",
+    },
+    {
+      id: 'ev',
+      title: 'EV charging',
+      order_reason:
+        'A home charger comes last, only if the supply still has room after the heat pump.',
+      status: 'flagged',
+      headline:
+        'A 7.4 kW home charger (~32.2 A) on the same fuse as the heat pump likely needs a supply upgrade; ask your network operator before booking the charger.',
+    },
+  ],
+  supply: {
+    status: 'flagged',
+    fuse_rating_a: 60,
+    heat_pump_thermal_kw: 7,
+    heat_pump_running_a: 15.2,
+    heat_pump_peak_a: 30.2,
+    ev_charger_kw: 7.4,
+    ev_draw_a: 32.2,
+    household_a: 30,
+    headroom_a: 14.8,
+    heat_pump_fits: true,
+    ev_fits_with_heat_pump: false,
+    message:
+      'A 60 A fuse is usually enough for a 7 kW heat pump (~15 A plus ~30 A household), but a 7.4 kW EV charger (~32 A) on the same fuse likely needs a supply upgrade. Ask your network operator before booking the charger. Your installer must notify the network operator of a heat pump install; this app does not contact them.',
+  },
+  heat_pump: {
+    size_kw_low: 5,
+    size_kw_high: 7,
+    max_flow_temp_c: 45,
+    grant_gbp: 7500,
+    grant_note: 'Boiler Upgrade Scheme grant when replacing a gas boiler (illustrative eligibility).',
+    message:
+      'Target 5-7 kW at up to 45C flow, with a BUS grant of £7,500 (Boiler Upgrade Scheme grant when replacing a gas boiler (illustrative eligibility).).',
+  },
+  solar: {
+    status: 'ok',
+    annual_yield_kwh: 3584.4,
+    payback_years: 5.2,
+    array_kwp: 3.5,
+    message:
+      "About 3,584 kWh/year from a 3.5 kWp south-facing array at the N10 district centroid; simple payback about 5.2 years at today's electricity price (not a quote).",
+  },
+  ev: {
+    status: 'flagged',
+    message:
+      'A 7.4 kW home charger (~32.2 A) on the same fuse as the heat pump likely needs a supply upgrade; ask your network operator before booking the charger.',
+  },
+  defaults: [],
 }
 
 export function mockAnalysisResult(kinds: PhotoKind[]): AnalysisResult {
@@ -324,15 +407,23 @@ export function mockAnalysisResult(kinds: PhotoKind[]): AnalysisResult {
     },
     bundle: SAM_ANALYSIS,
     size_basis: 'measured',
-    readings: all.map((kind) => ({
-      kind,
-      status: kinds.includes(kind) ? (READ_STATUS[kind] ?? 'verified') : 'not_provided',
-      attempts: kind === 'radiators' ? 2 : 1,
-      reading: null,
-      warnings: [],
-      photograph_instead: null,
-      used_for: '',
-    })),
+    readings: all.map((kind) => {
+      const active = kinds.includes(kind)
+      const status = active ? (READ_STATUS[kind] ?? 'verified') : 'not_provided'
+      const reading =
+        kind === 'fuse_cutout' && active
+          ? { rating_a: 60, legible: true, confidence: 'high', notes: '' }
+          : null
+      return {
+        kind,
+        status,
+        attempts: kind === 'radiators' ? 2 : 1,
+        reading,
+        warnings: [],
+        photograph_instead: null,
+        used_for: '',
+      }
+    }),
     gaps: [],
     defaults: [
       {
@@ -343,6 +434,7 @@ export function mockAnalysisResult(kinds: PhotoKind[]): AnalysisResult {
         confidence: 'low',
       },
     ],
+    plan: SAM_PLAN,
     log: mockLog(),
     timings_ms: {},
   }

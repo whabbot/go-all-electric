@@ -66,6 +66,11 @@ class FakeEpc:
         return allowed, map_epc(self.data)
 
 
+class FakeSolar:
+    def annual_kwh(self, outcode: str) -> float:
+        return 3_500.0
+
+
 class FakeWeather:
     """A constant 10.57C every day: about 1,800 degree days over a year at the 15.5C base."""
 
@@ -184,6 +189,7 @@ def harness():
             weather=state["weather"],
             datasheets=Lookup(SYNTHETIC_SHEETS),
             save=state.get("save", save),
+            solar=FakeSolar(),
         )
 
     app.dependency_overrides[get_services] = lambda: factory

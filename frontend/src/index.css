@@ -752,6 +752,25 @@ button.primary {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
 
+.plan-flagged .plan-marker {
+  background: var(--color-danger);
+}
+
+.plan-couldnt-tell .plan-marker {
+  background: var(--color-warn);
+}
+
+.plan-order-reason {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0.15rem 0 0.5rem;
+}
+
+.plan-headline {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
 .advice-quote {
   margin: 1.5rem 0;
   font-size: 1.15rem;

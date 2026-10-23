@@ -28,7 +28,7 @@ the hackathon; open-source libraries and starter templates are credited below.
 | MongoDB Atlas persistence and datasheet retrieval | Built; managed embeddings require Atlas setup |
 | Gemini photo checks, verified extraction and one-context review | Built, fake-client tests plus a live smoke test |
 | Quote checker (flags in code from verified quote readings) | Built |
-| Solar, EV charging, sequenced plan | Planned |
+| Solar, EV charging, sequenced plan | Built (`gae/plan/`, Plan screen) |
 
 ## How the maths works
 
@@ -247,7 +247,9 @@ in a `VITE_*` variable, because Vite bundles those into the browser build.
 | [Get energy performance of buildings data](https://get-energy-performance-data.communities.gov.uk/guidance/energy-certificate-data-apis) (MHCLG, England/Wales) | Latest EPC per matching address, floor area, dwelling form, age band, fabric and heating descriptions | Built; 2026 replacement API, bearer auth |
 | [postcodes.io](https://postcodes.io/docs/api/lookup-postcode/) | Postcode centroid for weather requests; no exact home coordinates stored | Built; no key |
 | [Open-Meteo](https://open-meteo.com/en/docs/historical-weather-api) historical reanalysis | Daily mean temperatures at postcode centroid; heating degree days at 15.5C base for exact inclusive bill dates | Built; no key; attribution Open-Meteo, weather data CC BY 4.0 |
-| [Google Solar API](https://developers.google.com/maps/documentation/solar) / [PVGIS](https://joint-research-centre.ec.europa.eu/pvgis-online-tool_en) | Roof solar potential | Planned |
+| [postcodes.io](https://postcodes.io/docs/api/outward-code/) outward code | Postcode-district centroid for PVGIS (never a full postcode) | Built; no key |
+| [PVGIS](https://joint-research-centre.ec.europa.eu/pvgis-online-tool_en) PVcalc v5.2 | Typical annual yield for a named default array at the district centroid | Built; no key |
+| [Google Solar API](https://developers.google.com/maps/documentation/solar) | Site-specific roof modelling | Out of scope for hackathon demo |
 | MongoDB Atlas | Core survey store, fuzzy Search, Vector Search, hybrid datasheet matching | Built (`gae/db`) |
 | Voyage `voyage-4-lite` through Atlas Automated Embedding | Managed embeddings of public manufacturer datasheet text and model queries | Built; requires supported Atlas cluster and queryable index |
 | Manufacturer UK product pages and technical brochures | 15 heat pump / gas boiler variants; per-entry source URLs in `gae/db/datasheets.json` | Curated seed; unverified values are null |

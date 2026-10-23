@@ -40,6 +40,7 @@ from gae.gemini.schemas import ReviewResult as GeminiReviewResult
 from gae.opendata.epc import CERTIFICATE_PATTERN, EPCClient
 from gae.opendata.http import DataUnavailable
 from gae.opendata.weather import WeatherClient
+from gae.plan.solar import LiveSolarYield
 from gae.settings import Settings, get_settings
 from gae.survey.analysis import AnalysisRefused, Services, run_analysis
 from gae.survey.schemas import ReviewContext
@@ -81,6 +82,7 @@ def get_services(
                 weather=WeatherClient(http),
                 datasheets=lookup,
                 save=save_to_atlas,
+                solar=LiveSolarYield(http),
             )
 
     return open_services
