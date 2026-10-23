@@ -1,0 +1,36 @@
+{
+  "data": {
+    "schema_type": "SAP-Schema-12.0",
+    "schema_version": "LIG-12.0",
+    "assessment_type": "RdSAP",
+    "property_type": 2,
+    "built_form": 1,
+    "sap_building_parts": [
+      {
+        "building_part_number": 1,
+        "construction_age_band": "A",
+        "sap_floor_dimensions": [
+          {
+            "floor": 0,
+            "total_floor_area": 63
+          }
+        ]
+      }
+    ],
+    "walls": [
+      {
+        "description": "Solid brick, no insulation (assumed)"
+      }
+    ],
+    "windows": [
+      {
+        "description": "Partial double glazing"
+      }
+    ],
+    "main_heating": [
+      {
+        "description": "Boiler and radiators, mains gas"
+      }
+    ]
+  }
+}

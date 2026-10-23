@@ -102,8 +102,37 @@ class EPCClient:
         data = self._get("/api/certificate", {"certificate_number": certificate_id}).get("data")
         if not isinstance(data, dict):
             raise DataUnavailable("Couldn't read EPC certificate data.")
-        # Decode age by schema via the provider's code table, never by guessed A/B/C meanings.
-        age_label = None
+        # The same schema can contain SAP and RdSAP labels for the same key.
+        schema = data.get("schema_type")
+        assessment = data.get("assessment_type")
+
+        def label_for(name: str, key) -> str | None:
+            if key is None or not isinstance(schema, str) or not isinstance(assessment, str):
+                return None
+            try:
+                codes = self._get(
+                    "/api/codes/info",
+                    {"code": name, "key": str(key), "schemaVersion": schema},
+                ).get("data", [])
+                if not isinstance(codes, list):
+                    return None
+                labels = {
+                    value["value"]
+                    for code in codes
+                    if isinstance(code, dict)
+                    and str(code.get("key")) == str(key)
+                    and isinstance(code.get("values"), list)
+                    for value in code["values"]
+                    if isinstance(value, dict)
+                    and value.get("schemaVersion") == schema
+                    and value.get("assessmentType") == assessment
+                    and isinstance(value.get("value"), str)
+                }
+                return next(iter(labels)) if len(labels) == 1 else None
+            except DataUnavailable:
+                # Undecodable age stays low confidence; unresolved geometry is refused.
+                return None
+
         parts = data.get("sap_building_parts", [])
         bands = (
             {
@@ -114,34 +143,13 @@ class EPCClient:
             if isinstance(parts, list)
             else set()
         )
-        schema = data.get("schema_type")
-        if len(bands) == 1 and isinstance(schema, str):
-            band = next(iter(bands))
-            try:
-                codes = self._get(
-                    "/api/codes/info",
-                    {
-                        "code": "construction_age_band",
-                        "key": band,
-                        "schemaVersion": schema,
-                    },
-                ).get("data", [])
-                if not isinstance(codes, list):
-                    raise DataUnavailable("Couldn't read EPC age code table.")
-                labels = {
-                    value["value"]
-                    for code in codes
-                    if isinstance(code, dict) and str(code.get("key")) == band
-                    for value in code.get("values", [])
-                    if isinstance(value, dict)
-                    and value.get("schemaVersion") == schema
-                    and isinstance(value.get("value"), str)
-                }
-                if len(labels) == 1:
-                    age_label = next(iter(labels))
-            except DataUnavailable:
-                # This is a named low-confidence mapping default, not a substitute certificate.
-                pass
+        age_label = (
+            label_for("construction_age_band", next(iter(bands))) if len(bands) == 1 else None
+        )
+        property_label = built_form_label = None
+        if not data.get("dwelling_type"):
+            property_label = label_for("property_type", data.get("property_type"))
+            built_form_label = label_for("built_form", data.get("built_form"))
         fields = (
             "address_line_1",
             "address_line_2",
@@ -150,6 +158,7 @@ class EPCClient:
             "postcode",
             "registration_date",
             "schema_type",
+            "assessment_type",
             "total_floor_area",
             "dwelling_type",
             "property_type",
@@ -158,11 +167,19 @@ class EPCClient:
             "roofs",
             "floors",
             "window",
+            "windows",
             "main_heating",
             "construction_age_band",
         )
         return {
             "certificate_id": certificate_id,
             "raw_summary": {key: data[key] for key in fields if key in data},
-            **asdict(map_epc(data, age_label=age_label)),
+            **asdict(
+                map_epc(
+                    data,
+                    age_label=age_label,
+                    property_label=property_label,
+                    built_form_label=built_form_label,
+                )
+            ),
         }

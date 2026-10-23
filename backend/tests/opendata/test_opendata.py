@@ -67,6 +67,7 @@ def test_new_epc_schema_feeds_existing_maths_and_never_leaks_token():
                         "values": [
                             {
                                 "value": "1930-1949",
+                                "assessmentType": "RdSAP",
                                 "schemaVersion": "RdSAP-Schema-21.0.1",
                             }
                         ],

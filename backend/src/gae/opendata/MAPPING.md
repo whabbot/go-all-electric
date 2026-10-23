@@ -16,18 +16,19 @@ The source covers England and Wales only. Postcode search returns `addresses: []
 
 `/api/certificate?certificate_number=...` returns `data`, with schema-specific snake_case fields.
 RdSAP 21 descriptions are `{value, language}`; earlier versions use strings. Only English
-(language `1`) descriptions are mapped. We intentionally do not interpret unknown numeric enums.
+(language `1`) descriptions are mapped. Numeric dwelling enums are decoded through the provider
+code table for the exact schema and assessment type; unresolved numeric geometry is refused.
 No full certificate, exact home coordinates, photos or bills are persisted by this package.
 `raw_summary` is an allowlist of relevant EPC fields, not the complete response.
 
 | Source | Maths input | Mapping | Named low-confidence default / limitation |
 | --- | --- | --- | --- |
-| `total_floor_area` (number or value object) | `floor_area_m2` | Positive finite square metres | `floor_area_unavailable`: null and no estimate; ask for measured area |
-| `dwelling_type`; textual `built_form` + `property_type` if absent | `property_type` | Semi-detached, detached, end-terrace, mid-terrace house; bungalow | `semi_detached_geometry`; flats/maisonettes/park homes get no estimate because house geometry is unsupported |
+| `total_floor_area` (number or value object), else `sap_building_parts[].sap_floor_dimensions[].total_floor_area` | `floor_area_m2` | Positive finite square metres; root total takes precedence. Sum distinct part/floor identities, never multiply by storeys; repeated identities must agree; missing/invalid dimensions refuse partial totals | `floor_area_unavailable`: null and no estimate; ask for measured area |
+| `dwelling_type`; `built_form` + `property_type` labels if absent (codes resolved with schema and assessment type) | `property_type` | Semi-detached, detached, end-terrace, mid-terrace house; bungalow | `semi_detached_geometry` for absent textual form; unresolved codes, flats/maisonettes/park homes and unsupported decoded forms get no estimate because house geometry is unsupported |
 | Property form | `storeys` | Bungalow: 1; house: 2 | `assumed_storeys`, always low; these are not measured storeys |
-| Uniform `sap_building_parts[].construction_age_band`, decoded by `/api/codes/info` with `schemaVersion` | `year_built` | First year in textual band; not exact date | `unknown_age_1930` if absent, mixed, undecodable, or code service unavailable; age-band start is a simplification |
+| Uniform `sap_building_parts[].construction_age_band`, decoded by `/api/codes/info` with `schemaVersion` and matching `assessmentType` | `year_built` | Closed bands use their start; open-ended bands expose `(null, upper)` or `(lower, null)` in confidence `value_range` and a representative year for maths only. Before/pre-1900 uses an upper bound and representative year of 1899 | `unknown_age_1930` if absent, mixed, undecodable, or code service unavailable; open-ended bands use `open_ended_age_band`, low confidence; representative years are a simplification |
 | Uniform `walls[].description` | `wall_type` | Solid brick/no insulation → solid_brick; solid brick/insulation → solid_insulated; cavity/no insulation → cavity_unfilled; cavity/insulated or filled cavity → cavity_filled; timber frame → timber_frame | `unknown_wall_cavity_unfilled` for ambiguous, missing or differing walls; cannot area-weight extensions |
-| `window.description` | `glazing` | Fully single → single; fully double → double_unknown_date; fully triple → triple | `unknown_glazing_double_u_2_8`; fully double also low because date/U-value unknown; mixed glazing not represented |
+| `windows[].description` (legacy `window.description`) | `glazing` | Fully single → single; fully double → double_unknown_date; fully triple → triple | `unknown_glazing_double_u_2_8`; fully double also low because date/U-value unknown; mixed glazing not represented |
 | Uniform `roofs[].description` | `loft_insulation_mm` | Pitched, explicit N mm loft insulation → N; pitched/no insulation → 0 | `unknown_roof_zero_loft_depth` for flat, mixed, unknown roofs; this is a model assumption, not observed lack of insulation |
 | Uniform `floors[].description` | `floor_insulated` | No insulation/uninsulated → false; insulated → true | `unknown_floor_uninsulated`; other premises below and differing floors cannot be represented |
 | Uniform `main_heating[].description` | `main_heating_fuel` (metadata) | mains gas, oil, LPG, electric by complete words | `unknown_heating_fuel` → other; fuel is not an argument to `estimate_fabric` |
