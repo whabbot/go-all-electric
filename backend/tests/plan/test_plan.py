@@ -48,11 +48,17 @@ def _bundle(size_high: float = 7.0) -> dict[str, Any]:
     }
 
 
-def test_60a_fuse_flags_supply_100a_does_not() -> None:
-    flagged = assess_supply(60, heat_pump_thermal_kw=7.0, design_flow_temp_c=45.0)
-    assert flagged.status == "flagged"
-    ok = assess_supply(100, heat_pump_thermal_kw=7.0, design_flow_temp_c=45.0)
-    assert ok.status == "ok"
+def test_60a_heat_pump_fits_but_ev_likely_needs_upgrade() -> None:
+    supply = assess_supply(60, heat_pump_thermal_kw=7.0, design_flow_temp_c=45.0)
+    assert supply.heat_pump_fits
+    assert not supply.ev_fits_with_heat_pump
+    assert supply.status == "flagged"
+
+
+def test_100a_heat_pump_and_ev_fit() -> None:
+    supply = assess_supply(100, heat_pump_thermal_kw=7.0, design_flow_temp_c=45.0)
+    assert supply.heat_pump_fits and supply.ev_fits_with_heat_pump
+    assert supply.status == "ok"
 
 
 def test_no_fuse_gives_couldnt_tell() -> None:
@@ -60,7 +66,7 @@ def test_no_fuse_gives_couldnt_tell() -> None:
     assert supply.status == "couldnt_tell"
 
 
-def test_plan_supply_flagged_with_60a_fuse() -> None:
+def test_plan_60a_flags_supply_and_ev_for_charger() -> None:
     readings = [_reading("verified", 60)]
     plan = build_all_electric_plan(
         postcode_district="ZZ1",
@@ -68,8 +74,9 @@ def test_plan_supply_flagged_with_60a_fuse() -> None:
         bundle=_bundle(),
         solar=FakeSolar(3200.0),
     )
+    assert plan.supply.heat_pump_fits and not plan.supply.ev_fits_with_heat_pump
     assert plan.supply.status == "flagged"
-    assert plan.steps[0].id == "supply" and plan.steps[0].status == "flagged"
+    assert plan.steps[0].id == "supply"
     assert plan.ev.status == "flagged"
 
 

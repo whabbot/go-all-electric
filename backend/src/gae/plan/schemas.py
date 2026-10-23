@@ -21,6 +21,8 @@ class PlanSupply(BaseModel):
     ev_draw_a: float
     household_a: float
     headroom_a: float | None
+    heat_pump_fits: bool
+    ev_fits_with_heat_pump: bool
     message: str
 
 

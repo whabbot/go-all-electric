@@ -5,6 +5,11 @@ from typing import Literal
 
 from gae.plan import constants as pc
 
+DNO_HEAT_PUMP_NOTIFY = (
+    "Your installer must notify the network operator of a heat pump install; "
+    "this app does not contact them."
+)
+
 
 @dataclass(frozen=True)
 class SupplyAssessment:
@@ -17,6 +22,8 @@ class SupplyAssessment:
     ev_draw_a: float
     household_a: float
     headroom_a: float | None
+    heat_pump_fits: bool
+    ev_fits_with_heat_pump: bool
     message: str
 
 
@@ -50,25 +57,37 @@ def assess_supply(
             ev_draw_a=round(ev_draw, 1),
             household_a=household,
             headroom_a=None,
+            heat_pump_fits=False,
+            ev_fits_with_heat_pump=False,
             message="Couldn't tell: photograph the main fuse label on the sealed cutout.",
         )
 
     headroom = fuse_rating_a - sustained
-    needs_upgrade = headroom < pc.SUPPLY_HEADROOM_THRESHOLD_A or sustained + ev_draw > fuse_rating_a
-    if needs_upgrade:
+    heat_pump_fits = sustained <= fuse_rating_a
+    ev_fits = sustained + ev_draw <= fuse_rating_a
+
+    if not heat_pump_fits:
         message = (
             f"About {running:.0f} A for a {heat_pump_thermal_kw:.0f} kW heat pump plus "
-            f"{household:.0f} A typical household load on a {fuse_rating_a} A fuse leaves "
-            f"little room for a {pc.EV_CHARGER_KW} kW charger ({ev_draw:.0f} A). "
-            "You may need a supply upgrade; ask your network operator before booking an install."
+            f"{household:.0f} A typical household load may be too much for a {fuse_rating_a} A "
+            f"fuse. Ask your network operator before booking an install. {DNO_HEAT_PUMP_NOTIFY}"
+        )
+        status = "flagged"
+    elif not ev_fits:
+        message = (
+            f"A {fuse_rating_a} A fuse is usually enough for a {heat_pump_thermal_kw:.0f} kW "
+            f"heat pump (~{running:.0f} A plus ~{household:.0f} A household), "
+            f"but a {pc.EV_CHARGER_KW:g} "
+            f"kW EV charger (~{ev_draw:.0f} A) on the same fuse likely needs a supply upgrade. "
+            f"Ask your network operator before booking the charger. {DNO_HEAT_PUMP_NOTIFY}"
         )
         status = "flagged"
     else:
         message = (
             f"A {fuse_rating_a} A fuse looks workable for a {heat_pump_thermal_kw:.0f} kW "
-            f"heat pump (~{running:.0f} A at design output plus ~{household:.0f} A household), "
-            f"with headroom for a {pc.EV_CHARGER_KW} kW charger; "
-            "still confirm with your electrician."
+            f"heat pump "
+            f"(~{running:.0f} A) and a {pc.EV_CHARGER_KW:g} kW charger (~{ev_draw:.0f} A) with "
+            f"typical household load. {DNO_HEAT_PUMP_NOTIFY}"
         )
         status = "ok"
 
@@ -82,5 +101,7 @@ def assess_supply(
         ev_draw_a=round(ev_draw, 1),
         household_a=household,
         headroom_a=round(headroom, 1),
+        heat_pump_fits=heat_pump_fits,
+        ev_fits_with_heat_pump=ev_fits,
         message=message,
     )

@@ -291,6 +291,8 @@ export type PlanSupply = {
   ev_draw_a: number
   household_a: number
   headroom_a: number | null
+  heat_pump_fits: boolean
+  ev_fits_with_heat_pump: boolean
   message: string
 }
 

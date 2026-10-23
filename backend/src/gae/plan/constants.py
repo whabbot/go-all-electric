@@ -30,19 +30,12 @@ HP_STARTUP_NOTE = "Short-lived extra draw on start-up and defrost; not a sustain
 EV_CHARGER_KW = 7.4
 EV_CHARGER_NOTE = "Typical 7.4 kW (32 A) smart charger; faster chargers need more headroom."
 
-# Spare amps we want on the main fuse after household + heat pump running draw.
-SUPPLY_HEADROOM_THRESHOLD_A = 18.0
-SUPPLY_HEADROOM_NOTE = (
-    "Below about 18 A spare after the heat pump and typical household load, "
-    "a 7.4 kW charger may not fit without an upgrade."
-)
-
 # Default rooftop array for the demo plan (not a site survey).
 DEFAULT_ARRAY_KWP = 3.5
 DEFAULT_ARRAY_SLOPE_DEG = 35.0
 DEFAULT_ARRAY_AZIMUTH_DEG = 0.0  # PVGIS: 0 = south
 DEFAULT_ARRAY_NOTE = (
-    "Assumes 3.5 kWp, south-facing, 35° slope at the postcode district centroid — "
+    "Assumes 3.5 kWp, south-facing, 35 degree slope at the postcode district centroid; "
     "not your roof."
 )
 

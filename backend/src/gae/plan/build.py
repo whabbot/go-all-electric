@@ -93,13 +93,6 @@ def build_all_electric_plan(
             note=pc.EV_CHARGER_NOTE,
             confidence="low",
         ),
-        NamedDefault(
-            input="plan_supply",
-            name="supply_headroom_threshold_a",
-            value=f"{pc.SUPPLY_HEADROOM_THRESHOLD_A:g} A",
-            note=pc.SUPPLY_HEADROOM_NOTE,
-            confidence="low",
-        ),
     ]
 
     heat_pump = PlanHeatPump(
@@ -163,13 +156,16 @@ def build_all_electric_plan(
             "Can't judge charger headroom without the main fuse rating; "
             "photograph the fuse label first."
         )
-    elif supply.status == "flagged":
+    elif not supply.ev_fits_with_heat_pump:
         ev_status = "flagged"
         ev_message = (
-            f"A {pc.EV_CHARGER_KW:g} kW charger (~{supply.ev_draw_a:g} A) is tight on this supply "
-            "once the heat pump is allowed for; sort the fuse headroom in step 1 "
-            "before adding EV charging."
+            f"A {pc.EV_CHARGER_KW:g} kW home charger (~{supply.ev_draw_a:g} A) on the same fuse "
+            "as the heat pump likely needs a supply upgrade; ask your network operator before "
+            "booking the charger."
         )
+    elif not supply.heat_pump_fits:
+        ev_status = "flagged"
+        ev_message = "Sort the main fuse headroom for the heat pump before planning a home charger."
     else:
         ev_status = "ok"
         ev_message = (
@@ -236,6 +232,8 @@ def build_all_electric_plan(
             ev_draw_a=supply.ev_draw_a,
             household_a=supply.household_a,
             headroom_a=supply.headroom_a,
+            heat_pump_fits=supply.heat_pump_fits,
+            ev_fits_with_heat_pump=supply.ev_fits_with_heat_pump,
             message=supply.message,
         ),
         heat_pump=heat_pump,

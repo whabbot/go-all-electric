@@ -300,26 +300,28 @@ const READ_STATUS: Partial<Record<PhotoKind, InputReading['status']>> = {
   gas_bill: 'verified',
 }
 
-/** Offline plan aligned with backend defaults: 60 A fuse and 5–7 kW flags supply first. */
+/** Offline plan: same numbers as backend `build_all_electric_plan` for Sam (60 A, 5-7 kW). */
 export const SAM_PLAN: AllElectricPlan = {
   steps: [
     {
       id: 'supply',
       title: 'Electricity supply',
       order_reason:
-        'Heat pumps and EV chargers both draw on the same main fuse — check headroom first.',
+        'Heat pumps and EV chargers both draw on the same main fuse; check headroom first.',
       status: 'flagged',
       headline:
-        'About 15 A for a 7 kW heat pump plus 30 A typical household load on a 60 A fuse leaves little room for a 7.4 kW charger (32 A). You may need a supply upgrade; ask your network operator before booking an install.',
-      detail: 'Heat pump ~15.2 A running (+15 A start allowance) · household ~30 A · EV charger 7.4 kW (~32.2 A)',
+        'A 60 A fuse is usually enough for a 7 kW heat pump (~15 A plus ~30 A household), but a 7.4 kW EV charger (~32 A) on the same fuse likely needs a supply upgrade. Ask your network operator before booking the charger. Your installer must notify the network operator of a heat pump install; this app does not contact them.',
+      detail:
+        'Heat pump ~15.2 A running (+15 A start allowance) · household ~30 A · EV charger 7.4 kW (~32.2 A)',
     },
     {
       id: 'heat_pump',
       title: 'Heat pump + grant',
-      order_reason: 'Size and flow temperature come from your house; the grant depends on your current fuel.',
+      order_reason:
+        'Size and flow temperature come from your house; the grant depends on your current fuel.',
       status: 'info',
       headline:
-        'Target 5–7 kW at up to 45°C flow, with a BUS grant of £7,500 (Boiler Upgrade Scheme grant when replacing a gas boiler (illustrative eligibility).).',
+        'Target 5-7 kW at up to 45C flow, with a BUS grant of £7,500 (Boiler Upgrade Scheme grant when replacing a gas boiler (illustrative eligibility).).',
     },
     {
       id: 'solar',
@@ -327,15 +329,16 @@ export const SAM_PLAN: AllElectricPlan = {
       order_reason: 'Once heating is sized, generation offsets the higher electricity bill.',
       status: 'ok',
       headline:
-        'About 3,570 kWh/year from a 3.5 kWp south-facing array at the N10 district centroid; simple payback about 13.8 years at today\'s electricity price (not a quote).',
+        "About 3,584 kWh/year from a 3.5 kWp south-facing array at the N10 district centroid; simple payback about 5.2 years at today's electricity price (not a quote).",
     },
     {
       id: 'ev',
       title: 'EV charging',
-      order_reason: 'A home charger comes last — only if the supply still has room after the heat pump.',
+      order_reason:
+        'A home charger comes last, only if the supply still has room after the heat pump.',
       status: 'flagged',
       headline:
-        'A 7.4 kW charger (~32 A) is tight on this supply once the heat pump is allowed for; sort the fuse headroom in step 1 before adding EV charging.',
+        'A 7.4 kW home charger (~32.2 A) on the same fuse as the heat pump likely needs a supply upgrade; ask your network operator before booking the charger.',
     },
   ],
   supply: {
@@ -348,8 +351,10 @@ export const SAM_PLAN: AllElectricPlan = {
     ev_draw_a: 32.2,
     household_a: 30,
     headroom_a: 14.8,
+    heat_pump_fits: true,
+    ev_fits_with_heat_pump: false,
     message:
-      'About 15 A for a 7 kW heat pump plus 30 A typical household load on a 60 A fuse leaves little room for a 7.4 kW charger (32 A). You may need a supply upgrade; ask your network operator before booking an install.',
+      'A 60 A fuse is usually enough for a 7 kW heat pump (~15 A plus ~30 A household), but a 7.4 kW EV charger (~32 A) on the same fuse likely needs a supply upgrade. Ask your network operator before booking the charger. Your installer must notify the network operator of a heat pump install; this app does not contact them.',
   },
   heat_pump: {
     size_kw_low: 5,
@@ -358,20 +363,20 @@ export const SAM_PLAN: AllElectricPlan = {
     grant_gbp: 7500,
     grant_note: 'Boiler Upgrade Scheme grant when replacing a gas boiler (illustrative eligibility).',
     message:
-      'Target 5–7 kW at up to 45°C flow, with a BUS grant of £7,500 (Boiler Upgrade Scheme grant when replacing a gas boiler (illustrative eligibility).).',
+      'Target 5-7 kW at up to 45C flow, with a BUS grant of £7,500 (Boiler Upgrade Scheme grant when replacing a gas boiler (illustrative eligibility).).',
   },
   solar: {
     status: 'ok',
-    annual_yield_kwh: 3570,
-    payback_years: 13.8,
+    annual_yield_kwh: 3584.4,
+    payback_years: 5.2,
     array_kwp: 3.5,
     message:
-      'About 3,570 kWh/year from a 3.5 kWp south-facing array at the N10 district centroid; simple payback about 13.8 years at today\'s electricity price (not a quote).',
+      "About 3,584 kWh/year from a 3.5 kWp south-facing array at the N10 district centroid; simple payback about 5.2 years at today's electricity price (not a quote).",
   },
   ev: {
     status: 'flagged',
     message:
-      'A 7.4 kW charger (~32 A) is tight on this supply once the heat pump is allowed for; sort the fuse headroom in step 1 before adding EV charging.',
+      'A 7.4 kW home charger (~32.2 A) on the same fuse as the heat pump likely needs a supply upgrade; ask your network operator before booking the charger.',
   },
   defaults: [],
 }
