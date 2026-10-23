@@ -22,7 +22,7 @@ the hackathon; open-source libraries and starter templates are credited below.
 | --- | --- |
 | Heat-pump maths core (`backend/src/gae/heatpump/`) | Built, unit-tested |
 | FastAPI backend with health endpoint | Built |
-| React frontend | Placeholder page that calls the backend |
+| React frontend | Mobile-first demo UI with typed mock API (`VITE_USE_MOCKS`) |
 | Gemini photo and bill reading, EPC lookup, degree days, MongoDB Atlas | Planned |
 | Quote checker, solar, EV charging, sequenced plan | Planned |
 
@@ -76,10 +76,15 @@ uv run ruff check . && uv run ruff format --check .
 
 ```bash
 cd frontend
+cp .env.example .env                     # VITE_USE_MOCKS=true uses Sam's worked example offline
 npm install
 npm run dev                              # http://localhost:5173, proxies /api to the backend
 npm run build
 ```
+
+With `VITE_USE_MOCKS=true` (default in `.env.example`), the UI runs the full demo flow without a
+backend. Set `VITE_USE_MOCKS=false` when API routes are wired; the browser still calls only `/api`
+via the Vite proxy (no API keys in the frontend).
 
 ### Secret scan on commit
 
@@ -94,6 +99,7 @@ frontend lint and build, then a gitleaks scan of the full history.
 
 | Variable | Used for | Status |
 | --- | --- | --- |
+| `VITE_USE_MOCKS` | Frontend: mock Sam demo vs live `/api` (never put secrets in `VITE_*`) | Built |
 | `GEMINI_API_KEY` | Gemini 4 Argon photo and bill reading | Planned |
 | `EPC_API_EMAIL` | EPC Open Data API (basic-auth user) | Planned |
 | `EPC_API_KEY` | EPC Open Data API (basic-auth key) | Planned |
