@@ -29,6 +29,7 @@ the hackathon; open-source libraries and starter templates are credited below.
 | Gemini photo checks, verified extraction and one-context review | Built, fake-client tests plus a live smoke test |
 | Quote checker (flags in code from verified quote readings) | Built |
 | Solar, EV charging, sequenced plan | Built (`gae/plan/`, Plan screen) |
+| Your pack: installer emails drafted by Gemini 4 Argon, number-checked, template fallback | Built (`gae/pack/`, Pack screen) |
 
 ## How the maths works
 
@@ -128,6 +129,16 @@ verification log appears as it happens, including any failed check and its re-re
 estimates are on screen, **Ask Gemini to review everything** calls `POST /api/analysis/review`
 (the bundle, readings and the same redacted files; 1-2 minutes at high thinking). Checked quotes on
 the Quotes screen are sized against the bundle's target range and measured design load.
+
+On **Your pack**, **Draft with Gemini** calls `POST /api/pack/installer-drafts` with numbers only:
+the target range, flow temperature, measured load, fuse rating, and each checked quote's verified
+fields, flags and questions by label ("Quote C (12 kW)"). The request has no field for an address,
+name, account or meter number, and rejects unknown fields and postcode-like text. Per quote, code
+picks two or three right-sized heat pumps from the datasheet library, Gemini 4 Argon (medium
+thinking, about 6-10 seconds, quotes in parallel) writes the email, and the review's number check
+removes any sentence with a number we did not supply. If more than a third is removed, the email
+names no library model, or Gemini fails, the deterministic template is returned instead. Nothing is
+sent: the homeowner reviews, edits and copies the draft.
 
 ### Secret scan on commit
 

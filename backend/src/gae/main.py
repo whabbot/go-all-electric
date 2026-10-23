@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from gae.db.router import router as db_router
 from gae.gemini.router import router as gemini_router
 from gae.opendata.router import router as opendata_router
+from gae.pack.router import router as pack_router
 from gae.settings import Settings, get_settings
 from gae.survey.router import router as survey_router
 
@@ -16,6 +17,7 @@ app.include_router(opendata_router)
 app.include_router(db_router)
 app.include_router(gemini_router)
 app.include_router(survey_router)
+app.include_router(pack_router)
 
 
 class Health(BaseModel):

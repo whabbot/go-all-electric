@@ -956,3 +956,46 @@ button.primary {
 .pack-actions {
   margin-top: 0.5rem;
 }
+
+.pack-gemini {
+  margin-bottom: 1.25rem;
+}
+
+.pack-gemini .progress-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+  margin: 0.5rem 0;
+}
+
+.pack-gemini .progress-bar span {
+  display: block;
+  height: 100%;
+  background: var(--color-accent);
+  transition: width 0.5s linear;
+}
+
+.pack-provenance .pack-draft-label {
+  margin-top: 0.5rem;
+}
+
+.pack-models {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.9rem;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.pack-models a {
+  color: var(--color-accent);
+}
