@@ -1,0 +1,8 @@
+[project]
+name = "gae-demo-quotes"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["reportlab>=4.4,<5", "pypdf>=6,<7", "pymupdf>=1.26,<2", "pytest>=9,<10"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
