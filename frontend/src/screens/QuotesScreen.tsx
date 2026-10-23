@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, isMockMode, type QuoteCheckResult, type QuoteSizeContext, type QuoteUploadGroup } from '../api'
 import { ImageCoverUp } from '../components/ImageCoverUp'
@@ -99,12 +99,18 @@ export function QuotesScreen() {
 
   const quoteGroups = useMemo(() => groupRedactedPages(redactedPages), [redactedPages])
 
+  // Page URLs are revoked as each page leaves the queue (finish, cancel, new upload). Revoking
+  // on every queue change would also revoke the page that just became current, and the cover-up
+  // would then export the previous page instead.
+  const queueRef = useRef<QuoteQueueItem[]>([])
+  useEffect(() => {
+    queueRef.current = current ? [current, ...stack] : stack
+  }, [stack, current])
   useEffect(() => {
     return () => {
-      for (const item of stack) URL.revokeObjectURL(item.url)
-      if (current?.url) URL.revokeObjectURL(current.url)
+      for (const item of queueRef.current) URL.revokeObjectURL(item.url)
     }
-  }, [stack, current])
+  }, [])
 
   const runCheck = async (groups: QuoteUploadGroup[]) => {
     if (groups.length === 0) return
@@ -247,6 +253,8 @@ export function QuotesScreen() {
 
       {current && (
         <ImageCoverUp
+          // One cover-up per page: boxes, crop and the loaded image never carry to the next page.
+          key={current.url}
           imageUrl={current.url}
           title={`Redact quote page — ${current.sourceLabel}`}
           guidance={QUOTE_PAGE_GUIDANCE}

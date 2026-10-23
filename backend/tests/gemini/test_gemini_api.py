@@ -1,9 +1,11 @@
 """Routes, with Gemini and the datasheet library overridden: no network, no keys, no Atlas."""
 
 import base64
+from io import BytesIO
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image, ImageDraw
 
 from gae.gemini.client import FakeGemini, GeminiError
 from gae.gemini.router import get_datasheets, get_gemini
@@ -103,6 +105,38 @@ def test_quotes_check_groups_pages_into_one_quote(gemini) -> None:
     assert result["filename"] == "installer-a.pdf"
     (call,) = gemini.calls
     assert call.media_types.count("image") == 3
+
+
+def _redacted_page(shade: int) -> bytes:
+    """A synthetic page as the browser cover-up exports it: 892x1262 (A4 at scale 1.5), JPEG 0.9."""
+    im = Image.new("RGB", (892, 1262), color=(255, 255, 255))
+    ImageDraw.Draw(im).rectangle((72, 340, 820, 700), fill=(shade, shade, shade))
+    out = BytesIO()
+    im.save(out, format="JPEG", quality=90)
+    return out.getvalue()
+
+
+def test_quote_pages_reach_the_reader_distinct_in_order_at_browser_size(gemini) -> None:
+    # Regression: the browser once sent page 1 twice, so the price page never reached Gemini
+    # and a readable quote came back "couldn't tell". The route must pass each page through.
+    gemini.replies.append(quote())
+    pages = [_redacted_page(40), _redacted_page(200)]
+    response = client.post(
+        "/api/quotes/check",
+        data={"quote_index": ["0", "0"], "quote_name": ["Quote A", "Quote A"]},
+        files=[("quotes", (f"p{i}.jpg", page, "image/jpeg")) for i, page in enumerate(pages)],
+    )
+    assert response.status_code == 200
+    (call,) = gemini.calls
+    images = [base64.b64decode(b["data"]) for b in call.input if b["type"] == "image"]
+    assert len(images) == 2 and images[0] != images[1]
+    shades = []
+    for data in images:
+        with Image.open(BytesIO(data)) as im:
+            assert im.size == (892, 1262)
+            shades.append(im.convert("L").getpixel((400, 500)))
+    assert shades[0] < 100 < shades[1]
+    assert "These 2 images are sequential pages of one installer quote" in call.prompt
 
 
 def test_three_three_page_quotes_return_three_results(gemini) -> None:
