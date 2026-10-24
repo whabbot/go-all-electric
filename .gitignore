@@ -43,3 +43,6 @@ deploy/tofu/image.auto.tfvars
 deploy/tofu/*.plan
 deploy/tofu/*.tfplan
 !deploy/tofu/example.tfvars
+
+# --- Verification runs (verify-go-all-electric skill): run state and evidence -----------------
+.verify/
