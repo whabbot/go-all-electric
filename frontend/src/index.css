@@ -577,6 +577,13 @@ button.primary {
   font-size: 1.05rem;
 }
 
+.cover-up-progress {
+  margin: 0 0 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 .cover-up-sent-label {
   margin: 0 0 0.5rem;
   font-size: 0.8rem;

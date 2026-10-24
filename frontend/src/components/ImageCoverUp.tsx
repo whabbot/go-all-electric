@@ -1,82 +1,94 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import {
+  clampRect,
+  hitTestCrop,
+  moveCrop,
+  resizeCropByHandle,
+  type CropHandle,
+  type ImageRect,
+} from '../lib/imageCoverUpGeometry'
+import { exportCoverUpImage, rasterizeCropRegion } from '../lib/imageCoverUpExport'
 
-export type ImageRect = { x: number; y: number; w: number; h: number }
+export type { ImageRect }
 
 type Props = {
   imageUrl: string
   title: string
   guidance?: string
   fileName: string
+  /** e.g. "Photo 2 of 3" when several uploads are queued */
+  progressLabel?: string
   onConfirm: (file: File) => void
   onCancel: () => void
 }
 
-type Mode = 'redact' | 'crop'
+type DrawMode = 'crop' | 'redact'
 
-function clampRect(r: ImageRect, maxW: number, maxH: number): ImageRect {
-  const x = Math.max(0, Math.min(r.x, maxW - 1))
-  const y = Math.max(0, Math.min(r.y, maxH - 1))
-  const w = Math.max(4, Math.min(r.w, maxW - x))
-  const h = Math.max(4, Math.min(r.h, maxH - y))
-  return { x, y, w, h }
-}
+type DragState =
+  | { kind: 'new'; originX: number; originY: number }
+  | { kind: 'resize'; handle: CropHandle; startCrop: ImageRect }
+  | { kind: 'move'; startCrop: ImageRect; originX: number; originY: number }
 
-async function exportRedacted(
-  img: HTMLImageElement,
-  redacts: ImageRect[],
-  crop: ImageRect | null,
-  fileName: string,
-): Promise<File> {
-  const source = crop ?? { x: 0, y: 0, w: img.naturalWidth, h: img.naturalHeight }
-  const canvas = document.createElement('canvas')
-  canvas.width = source.w
-  canvas.height = source.h
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Canvas not available')
-  ctx.drawImage(img, source.x, source.y, source.w, source.h, 0, 0, source.w, source.h)
-  ctx.fillStyle = '#000'
-  for (const box of redacts) {
-    const bx = box.x - source.x
-    const by = box.y - source.y
-    if (bx + box.w < 0 || by + box.h < 0 || bx > source.w || by > source.h) continue
-    ctx.fillRect(bx, by, box.w, box.h)
-  }
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new Error('JPEG encode failed'))),
-      'image/jpeg',
-      0.9,
-    )
-  })
-  const safe = fileName.replace(/\.[^.]+$/, '') || 'upload'
-  return new File([blob], `${safe}-redacted.jpg`, { type: 'image/jpeg', lastModified: Date.now() })
-}
-
-export function ImageCoverUp({ imageUrl, title, guidance, fileName, onConfirm, onCancel }: Props) {
+export function ImageCoverUp({
+  imageUrl,
+  title,
+  guidance,
+  fileName,
+  progressLabel,
+  onConfirm,
+  onCancel,
+}: Props) {
+  const maskId = useId().replace(/:/g, '')
   const wrapRef = useRef<HTMLDivElement>(null)
+  const derivedUrlRef = useRef<string | null>(null)
   const [wrapWidth, setWrapWidth] = useState(320)
+  const [displayUrl, setDisplayUrl] = useState(imageUrl)
   const [img, setImg] = useState<HTMLImageElement | null>(null)
-  const [mode, setMode] = useState<Mode>('redact')
+  const [cropApplied, setCropApplied] = useState(false)
+  const [drawMode, setDrawMode] = useState<DrawMode>('crop')
+  const [cropSelection, setCropSelection] = useState<ImageRect | null>(null)
   const [redacts, setRedacts] = useState<ImageRect[]>([])
-  const [crop, setCrop] = useState<ImageRect | null>(null)
   const [draft, setDraft] = useState<ImageRect | null>(null)
+  const [drag, setDrag] = useState<DragState | null>(null)
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    setDisplayUrl(imageUrl)
+    setCropApplied(false)
+    setCropSelection(null)
+    setRedacts([])
+    setDraft(null)
+    setDrag(null)
+    setDrawMode('crop')
+  }, [imageUrl])
 
   useEffect(() => {
     const el = new Image()
     el.onload = () => setImg(el)
-    el.src = imageUrl
+    el.src = displayUrl
     return () => {
       el.onload = null
     }
-  }, [imageUrl])
+  }, [displayUrl])
+
+  useEffect(() => {
+    return () => {
+      if (derivedUrlRef.current) {
+        URL.revokeObjectURL(derivedUrlRef.current)
+        derivedUrlRef.current = null
+      }
+    }
+  }, [])
 
   useEffect(() => {
     const el = wrapRef.current
     if (!el) return
-    const ro = new ResizeObserver(() => setWrapWidth(el.clientWidth))
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth
+      if (w > 0) setWrapWidth(w)
+    })
     ro.observe(el)
-    setWrapWidth(el.clientWidth)
+    if (el.clientWidth > 0) setWrapWidth(el.clientWidth)
     return () => ro.disconnect()
   }, [])
 
@@ -105,43 +117,139 @@ export function ImageCoverUp({ imageUrl, title, guidance, fileName, onConfirm, o
   }
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (!img) return
+    if (!img || busy) return
     const pt = toImageCoords(e.clientX, e.clientY)
     if (!pt) return
     e.currentTarget.setPointerCapture(e.pointerId)
+
+    if (drawMode === 'redact') {
+      setDraft({ x: pt.x, y: pt.y, w: 0, h: 0 })
+      setDrag({ kind: 'new', originX: pt.x, originY: pt.y })
+      return
+    }
+
+    if (cropApplied) return
+
+    if (cropSelection) {
+      const hit = hitTestCrop(cropSelection, pt.x, pt.y, img.naturalWidth, img.naturalHeight)
+      if (hit === 'move') {
+        setDrag({ kind: 'move', startCrop: cropSelection, originX: pt.x, originY: pt.y })
+        return
+      }
+      if (hit !== 'new') {
+        setDrag({ kind: 'resize', handle: hit, startCrop: cropSelection })
+        return
+      }
+    }
+
     setDraft({ x: pt.x, y: pt.y, w: 0, h: 0 })
+    setDrag({ kind: 'new', originX: pt.x, originY: pt.y })
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!draft || !img) return
+    if (!drag || !img) return
     const pt = toImageCoords(e.clientX, e.clientY)
     if (!pt) return
-    const x = Math.min(draft.x, pt.x)
-    const y = Math.min(draft.y, pt.y)
-    const w = Math.abs(pt.x - draft.x)
-    const h = Math.abs(pt.y - draft.y)
-    setDraft(clampRect({ x, y, w, h }, img.naturalWidth, img.naturalHeight))
+
+    if (drag.kind === 'new' && draft) {
+      const x = Math.min(drag.originX, pt.x)
+      const y = Math.min(drag.originY, pt.y)
+      const w = Math.abs(pt.x - drag.originX)
+      const h = Math.abs(pt.y - drag.originY)
+      const next = clampRect({ x, y, w, h }, img.naturalWidth, img.naturalHeight)
+      if (drawMode === 'redact') {
+        setDraft(next)
+      } else {
+        setCropSelection(next)
+        setDraft(next)
+      }
+      return
+    }
+
+    if (drag.kind === 'resize' && cropSelection) {
+      setCropSelection(
+        resizeCropByHandle(
+          drag.startCrop,
+          drag.handle,
+          pt.x,
+          pt.y,
+          img.naturalWidth,
+          img.naturalHeight,
+        ),
+      )
+      return
+    }
+
+    if (drag.kind === 'move' && cropSelection) {
+      const dx = pt.x - drag.originX
+      const dy = pt.y - drag.originY
+      setCropSelection(
+        moveCrop(drag.startCrop, dx, dy, img.naturalWidth, img.naturalHeight),
+      )
+    }
   }
 
   const onPointerUp = () => {
-    if (!draft || !img) return
-    if (draft.w < 8 || draft.h < 8) {
+    if (!drag || !img) return
+    if (drawMode === 'redact' && draft) {
+      if (draft.w >= 8 && draft.h >= 8) {
+        setRedacts((prev) => [...prev, draft])
+      }
       setDraft(null)
-      return
+    } else if (drawMode === 'crop' && draft) {
+      if (draft.w < 8 || draft.h < 8) {
+        setCropSelection(null)
+      }
+      setDraft(null)
     }
-    if (mode === 'redact') {
-      setRedacts((prev) => [...prev, draft])
-    } else {
-      setCrop(clampRect(draft, img.naturalWidth, img.naturalHeight))
+    setDrag(null)
+  }
+
+  const applyCrop = async () => {
+    if (!img || !cropSelection || cropApplied) return
+    setBusy(true)
+    try {
+      const { url, width, height } = await rasterizeCropRegion(img, cropSelection)
+      if (derivedUrlRef.current) URL.revokeObjectURL(derivedUrlRef.current)
+      derivedUrlRef.current = url
+      setDisplayUrl(url)
+      setCropApplied(true)
+      setCropSelection(null)
+      setRedacts([])
+      setDrawMode('redact')
+      const cropped = new Image()
+      cropped.width = width
+      cropped.height = height
+      await new Promise<void>((resolve, reject) => {
+        cropped.onload = () => resolve()
+        cropped.onerror = () => reject(new Error('Crop preview failed'))
+        cropped.src = url
+      })
+      setImg(cropped)
+    } finally {
+      setBusy(false)
     }
-    setDraft(null)
+  }
+
+  const undoCrop = () => {
+    if (!cropApplied) return
+    if (derivedUrlRef.current) {
+      URL.revokeObjectURL(derivedUrlRef.current)
+      derivedUrlRef.current = null
+    }
+    setDisplayUrl(imageUrl)
+    setCropApplied(false)
+    setCropSelection(null)
+    setRedacts([])
+    setDrawMode('crop')
+    setImg(null)
   }
 
   const confirm = async () => {
     if (!img) return
     setBusy(true)
     try {
-      const file = await exportRedacted(img, redacts, crop, fileName)
+      const file = await exportCoverUpImage(img, redacts, fileName)
       onConfirm(file)
     } finally {
       setBusy(false)
@@ -149,11 +257,15 @@ export function ImageCoverUp({ imageUrl, title, guidance, fileName, onConfirm, o
   }
 
   const L = layout()
+  const canApplyCrop = Boolean(cropSelection && cropSelection.w >= 8 && cropSelection.h >= 8 && !cropApplied)
+
+  const cropOverlay = cropSelection && L && !cropApplied
 
   return (
     <div className="cover-up-overlay" role="dialog" aria-modal="true" aria-labelledby="cover-up-title">
       <div className="cover-up-panel card">
         <h2 id="cover-up-title">{title}</h2>
+        {progressLabel && <p className="cover-up-progress">{progressLabel}</p>}
         <p className="cover-up-sent-label">Preview — exactly what will be sent</p>
         {guidance && <p className="cover-up-guidance">{guidance}</p>}
 
@@ -169,7 +281,7 @@ export function ImageCoverUp({ imageUrl, title, guidance, fileName, onConfirm, o
           {img && L && (
             <>
               <img
-                src={imageUrl}
+                src={displayUrl}
                 alt=""
                 className="cover-up-image"
                 style={{
@@ -181,17 +293,57 @@ export function ImageCoverUp({ imageUrl, title, guidance, fileName, onConfirm, o
                 draggable={false}
               />
               <svg className="cover-up-svg" width={wrapWidth} height={L.ch} aria-hidden>
-                {crop && (
-                  <rect
-                    x={L.ox + crop.x * L.scale}
-                    y={L.oy + crop.y * L.scale}
-                    width={crop.w * L.scale}
-                    height={crop.h * L.scale}
-                    fill="none"
-                    stroke="var(--color-accent)"
-                    strokeWidth={2}
-                    strokeDasharray="6 4"
-                  />
+                {cropOverlay && (
+                  <>
+                    <defs>
+                      <mask id={maskId}>
+                        <rect x={0} y={0} width={wrapWidth} height={L.ch} fill="white" />
+                        <rect
+                          x={L.ox + cropSelection.x * L.scale}
+                          y={L.oy + cropSelection.y * L.scale}
+                          width={cropSelection.w * L.scale}
+                          height={cropSelection.h * L.scale}
+                          fill="black"
+                        />
+                      </mask>
+                    </defs>
+                    <rect
+                      x={0}
+                      y={0}
+                      width={wrapWidth}
+                      height={L.ch}
+                      fill="rgba(0,0,0,0.45)"
+                      mask={`url(#${maskId})`}
+                    />
+                    <rect
+                      x={L.ox + cropSelection.x * L.scale}
+                      y={L.oy + cropSelection.y * L.scale}
+                      width={cropSelection.w * L.scale}
+                      height={cropSelection.h * L.scale}
+                      fill="rgba(0,0,0,0)"
+                      stroke="var(--color-accent)"
+                      strokeWidth={2}
+                    />
+                    {(['nw', 'ne', 'se', 'sw'] as const).map((corner) => {
+                      const cx =
+                        corner.includes('e')
+                          ? L.ox + (cropSelection.x + cropSelection.w) * L.scale
+                          : L.ox + cropSelection.x * L.scale
+                      const cy =
+                        corner.includes('s')
+                          ? L.oy + (cropSelection.y + cropSelection.h) * L.scale
+                          : L.oy + cropSelection.y * L.scale
+                      return (
+                        <circle
+                          key={corner}
+                          cx={cx}
+                          cy={cy}
+                          r={6}
+                          fill="var(--color-accent)"
+                        />
+                      )
+                    })}
+                  </>
                 )}
                 {redacts.map((r, i) => (
                   <rect
@@ -203,16 +355,14 @@ export function ImageCoverUp({ imageUrl, title, guidance, fileName, onConfirm, o
                     fill="#000"
                   />
                 ))}
-                {draft && (
+                {drawMode === 'redact' && draft && (
                   <rect
                     x={L.ox + draft.x * L.scale}
                     y={L.oy + draft.y * L.scale}
                     width={draft.w * L.scale}
                     height={draft.h * L.scale}
-                    fill={mode === 'redact' ? '#000' : 'none'}
-                    stroke={mode === 'crop' ? 'var(--color-accent)' : undefined}
-                    strokeWidth={2}
-                    opacity={mode === 'redact' ? 0.85 : 1}
+                    fill="#000"
+                    opacity={0.85}
                   />
                 )}
               </svg>
@@ -223,17 +373,29 @@ export function ImageCoverUp({ imageUrl, title, guidance, fileName, onConfirm, o
         <div className="cover-up-tools">
           <button
             type="button"
-            className={`btn ${mode === 'redact' ? 'primary' : ''}`}
-            onClick={() => setMode('redact')}
+            className={`btn ${drawMode === 'crop' && !cropApplied ? 'primary' : ''}`}
+            disabled={cropApplied}
+            onClick={() => setDrawMode('crop')}
           >
-            Black out
+            Crop area
           </button>
           <button
             type="button"
-            className={`btn ${mode === 'crop' ? 'primary' : ''}`}
-            onClick={() => setMode('crop')}
+            className="btn"
+            disabled={!canApplyCrop || busy}
+            onClick={() => void applyCrop()}
           >
-            Crop
+            {busy ? 'Cropping…' : 'Crop'}
+          </button>
+          <button type="button" className="btn" disabled={!cropApplied} onClick={undoCrop}>
+            Undo crop
+          </button>
+          <button
+            type="button"
+            className={`btn ${drawMode === 'redact' ? 'primary' : ''}`}
+            onClick={() => setDrawMode('redact')}
+          >
+            Black out
           </button>
           <button
             type="button"
@@ -243,14 +405,14 @@ export function ImageCoverUp({ imageUrl, title, guidance, fileName, onConfirm, o
           >
             Undo box
           </button>
-          <button type="button" className="btn" disabled={!crop} onClick={() => setCrop(null)}>
-            Clear crop
-          </button>
         </div>
 
         <p className="cover-up-hint">
-          Drag on the image to {mode === 'redact' ? 'draw opaque black boxes' : 'select a crop area'}.
-          Touch works on your phone.
+          {cropApplied
+            ? 'Drag to draw black boxes over anything identifying. Touch works on your phone.'
+            : drawMode === 'crop'
+              ? 'Drag to select the area to keep, adjust the corners, then press Crop — the preview will shrink to that region.'
+              : 'Switch to Crop area first, or apply a crop before blacking out.'}
         </p>
 
         <div className="cover-up-actions">
@@ -258,7 +420,7 @@ export function ImageCoverUp({ imageUrl, title, guidance, fileName, onConfirm, o
             Cancel
           </button>
           <button type="button" className="btn primary" onClick={() => void confirm()} disabled={!img || busy}>
-            {busy ? 'Preparing…' : 'Send this image'}
+            {busy ? 'Preparing…' : 'Use photo'}
           </button>
         </div>
       </div>

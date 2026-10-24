@@ -5,6 +5,7 @@ import { ReviewPanel } from '../components/ReviewPanel'
 import { VerificationLogPanel } from '../components/VerificationLog'
 import { useSession } from '../context/SessionContext'
 import { quoteId } from '../lib/labels'
+import { resetFileInput } from '../lib/fileInputReset'
 import { prepareImageFile } from '../lib/imagePrepare'
 import { pdfFileToPageImages } from '../lib/pdfToImages'
 import { CaptureWhyNeedDialog } from '../components/CaptureWhyNeedDialog'
@@ -99,6 +100,7 @@ export function QuotesScreen() {
   const [importError, setImportError] = useState<string | null>(null)
   const [whyNeedOpen, setWhyNeedOpen] = useState(false)
   const whyNeedTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const uploadInputRef = useRef<HTMLInputElement | null>(null)
 
   const quoteGroups = useMemo(() => groupRedactedPages(redactedPages), [redactedPages])
 
@@ -155,9 +157,10 @@ export function QuotesScreen() {
     }
   }
 
-  const onUpload = (list: FileList | null) => {
-    if (!list) return
-    const picked = Array.from(list).slice(0, 3)
+  const onUpload = (list: FileList | null, input: HTMLInputElement) => {
+    const picked = list ? Array.from(list).slice(0, 3) : []
+    resetFileInput(input)
+    if (picked.length === 0) return
     void startRedactFlow(picked)
   }
 
@@ -168,6 +171,7 @@ export function QuotesScreen() {
         { quoteIndex: current.quoteIndex, quoteName: current.quoteName, file: redacted },
       ])
     }
+    resetFileInput(uploadInputRef.current)
     if (current?.url) URL.revokeObjectURL(current.url)
     if (stack.length === 0) {
       setCurrent(null)
@@ -184,6 +188,7 @@ export function QuotesScreen() {
     setCurrent(null)
     setStack([])
     setRedactedPages([])
+    resetFileInput(uploadInputRef.current)
   }
 
   const allPagesReady = redactedPages.length > 0 && !current && stack.length === 0
@@ -225,10 +230,11 @@ export function QuotesScreen() {
 
       <label className="upload-btn card">
         <input
+          ref={uploadInputRef}
           type="file"
           accept=".pdf,application/pdf,image/*"
           multiple
-          onChange={(e) => onUpload(e.target.files)}
+          onChange={(e) => onUpload(e.target.files, e.currentTarget)}
         />
         Choose PDFs or photos (max 3)
       </label>

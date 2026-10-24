@@ -4,6 +4,7 @@ import { api, isMockMode } from '../api'
 import { ImageCoverUp } from '../components/ImageCoverUp'
 import { RadiatorVideoResults } from '../components/RadiatorVideoResults'
 import { useSession } from '../context/SessionContext'
+import { resetFileInput } from '../lib/fileInputReset'
 import { prepareImageFile } from '../lib/imagePrepare'
 import { CaptureExamplesDialog } from '../components/CaptureExamplesDialog'
 import { CaptureGuideSummary } from '../components/CaptureGuideSummary'
@@ -22,6 +23,8 @@ type PendingCoverUp = {
   fileName: string
 }
 
+const MULTI_PHOTO_KINDS: PhotoKind[] = ['radiators']
+
 export function CaptureScreen() {
   const {
     photos,
@@ -32,7 +35,11 @@ export function CaptureScreen() {
     placeLabel,
   } = useSession()
   const [busy, setBusy] = useState<Record<string, boolean>>({})
-  const [pending, setPending] = useState<PendingCoverUp | null>(null)
+  const [coverCurrent, setCoverCurrent] = useState<PendingCoverUp | null>(null)
+  const [coverStack, setCoverStack] = useState<PendingCoverUp[]>([])
+  const [coverBatch, setCoverBatch] = useState<{ index: number; total: number } | null>(null)
+  const fileInputsRef = useRef<Partial<Record<PhotoKind, HTMLInputElement>>>({})
+  const coverQueueRef = useRef<PendingCoverUp[]>([])
   const [photoErrors, setPhotoErrors] = useState<Record<string, string>>({})
   const [prepareError, setPrepareError] = useState<string | null>(null)
   const [videoError, setVideoError] = useState<string | null>(null)
@@ -42,32 +49,82 @@ export function CaptureScreen() {
   const whyNeedTriggerRef = useRef<HTMLButtonElement | null>(null)
 
   useEffect(() => {
-    return () => {
-      if (pending?.url) URL.revokeObjectURL(pending.url)
-    }
-  }, [pending])
+    coverQueueRef.current = coverCurrent ? [coverCurrent, ...coverStack] : coverStack
+  }, [coverCurrent, coverStack])
 
-  const onFile = async (kind: PhotoKind, file: File | null) => {
-    if (!file) return
+  useEffect(() => {
+    return () => {
+      for (const item of coverQueueRef.current) URL.revokeObjectURL(item.url)
+    }
+  }, [])
+
+  const revokeCoverQueue = (current: PendingCoverUp | null, stack: PendingCoverUp[]) => {
+    if (current?.url) URL.revokeObjectURL(current.url)
+    for (const item of stack) URL.revokeObjectURL(item.url)
+  }
+
+  const advanceCoverQueue = () => {
+    if (!coverCurrent) return
+    URL.revokeObjectURL(coverCurrent.url)
+    if (coverStack.length === 0) {
+      setCoverCurrent(null)
+      setCoverBatch(null)
+      return
+    }
+    const [next, ...rest] = coverStack
+    setCoverCurrent(next)
+    setCoverStack(rest)
+    setCoverBatch((b) => (b ? { ...b, index: b.index + 1 } : null))
+  }
+
+  const onFiles = async (kind: PhotoKind, list: FileList | null, input: HTMLInputElement) => {
+    const allowMulti = MULTI_PHOTO_KINDS.includes(kind)
+    const picked = list?.length
+      ? allowMulti
+        ? Array.from(list)
+        : [list[0]]
+      : []
+    resetFileInput(input)
+    if (picked.length === 0) return
     setPrepareError(null)
+    revokeCoverQueue(coverCurrent, coverStack)
+    setCoverCurrent(null)
+    setCoverStack([])
+    setCoverBatch(null)
     try {
-      const prepared = await prepareImageFile(file)
-      const url = URL.createObjectURL(prepared)
-      setPending({ kind, url, fileName: file.name })
+      const queue: PendingCoverUp[] = []
+      for (const file of picked) {
+        const prepared = await prepareImageFile(file)
+        queue.push({ kind, url: URL.createObjectURL(prepared), fileName: file.name })
+      }
+      if (queue.length === 0) return
+      const [first, ...rest] = queue
+      setCoverCurrent(first)
+      setCoverStack(rest)
+      setCoverBatch({ index: 1, total: queue.length })
     } catch {
       setPrepareError('Could not prepare that image. Try another photo.')
     }
   }
 
-  const closePending = () => {
-    if (pending?.url) URL.revokeObjectURL(pending.url)
-    setPending(null)
+  const skipCoverCurrent = () => {
+    if (coverCurrent) resetFileInput(fileInputsRef.current[coverCurrent.kind])
+    advanceCoverQueue()
+  }
+
+  const cancelCoverFlow = () => {
+    revokeCoverQueue(coverCurrent, coverStack)
+    setCoverCurrent(null)
+    setCoverStack([])
+    setCoverBatch(null)
+    if (coverCurrent) resetFileInput(fileInputsRef.current[coverCurrent.kind])
   }
 
   const onCoverUpConfirm = async (redacted: File) => {
-    if (!pending) return
-    const { kind } = pending
-    closePending()
+    if (!coverCurrent) return
+    const { kind } = coverCurrent
+    resetFileInput(fileInputsRef.current[kind])
+    advanceCoverQueue()
     setPhotoErrors((errors) => ({ ...errors, [kind]: '' }))
     setBusy((b) => ({ ...b, [kind]: true }))
     // Only the redacted, re-encoded file is kept (in memory) and later sent for analysis.
@@ -164,10 +221,14 @@ export function CaptureScreen() {
             )}
             <label className="upload-btn">
               <input
+                ref={(el) => {
+                  if (el) fileInputsRef.current[slot.kind] = el
+                }}
                 type="file"
                 accept="image/*"
                 capture="environment"
-                onChange={(e) => void onFile(slot.kind, e.target.files?.[0] ?? null)}
+                multiple={MULTI_PHOTO_KINDS.includes(slot.kind)}
+                onChange={(e) => void onFiles(slot.kind, e.target.files, e.currentTarget)}
               />
               {busy[slot.kind] ? 'Checking…' : 'Take photo or upload'}
             </label>
@@ -254,14 +315,22 @@ export function CaptureScreen() {
         />
       )}
 
-      {pending && (
+      {coverCurrent && (
         <ImageCoverUp
-          imageUrl={pending.url}
-          title={coverUpTitle(pending.kind)}
-          guidance={coverUpGuidance(pending.kind)}
-          fileName={pending.fileName}
+          key={coverCurrent.url}
+          imageUrl={coverCurrent.url}
+          title={coverUpTitle(coverCurrent.kind)}
+          guidance={coverUpGuidance(coverCurrent.kind)}
+          fileName={coverCurrent.fileName}
+          progressLabel={
+            coverBatch && coverBatch.total > 1
+              ? `Photo ${coverBatch.index} of ${coverBatch.total}`
+              : undefined
+          }
           onConfirm={(f) => void onCoverUpConfirm(f)}
-          onCancel={closePending}
+          onCancel={
+            coverBatch && coverBatch.total > 1 ? skipCoverCurrent : cancelCoverFlow
+          }
         />
       )}
 
