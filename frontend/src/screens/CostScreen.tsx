@@ -15,13 +15,7 @@ import { RangeValue } from '../components/RangeValue'
 
 export function CostScreen() {
   const { analysis, placeLabel } = useSession()
-  if (!analysis) {
-    return (
-      <p className="warning">
-        Run <Link to="/estimates">estimates</Link> first.
-      </p>
-    )
-  }
+  if (!analysis) return null
   if (analysis.bundle.costs_by_flow_temp.length === 0) {
     const gap = analysis.gaps.find((g) => g.input === 'gas_bill')
     return (
@@ -34,7 +28,6 @@ export function CostScreen() {
         </div>
         <p className="cta-row">
           <Link className="btn" to="/capture">Add a bill</Link>
-          <Link className="btn primary" to="/spec">Target installation</Link>
         </p>
       </section>
     )
@@ -101,9 +94,6 @@ export function CostScreen() {
         ))}
       </ul>
 
-      <p className="cta-row">
-        <Link className="btn primary" to="/spec">Target installation</Link>
-      </p>
     </section>
   )
 }

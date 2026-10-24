@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { api, isMockMode, type AnalysisResult, type PhotoKind, type VerificationLogEntry } from '../api'
 import { EstimateHero } from '../components/EstimateHero'
 import { RadiatorVideoResults } from '../components/RadiatorVideoResults'
@@ -159,14 +158,6 @@ export function EstimatesScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once when there is no analysis
   }, [analysis, canRun])
 
-  if (!canRun) {
-    return (
-      <p className="warning">
-        Pick a house on <Link to="/">Start</Link> first.
-      </p>
-    )
-  }
-
   if (running || (!analysis && !error)) {
     return (
       <section className="screen estimates-screen">
@@ -220,9 +211,6 @@ export function EstimatesScreen() {
         <button type="button" className="btn" onClick={run}>
           Re-run with current photos
         </button>
-        <Link className="btn primary" to={analysis.bundle.costs_by_flow_temp.length ? '/cost' : '/spec'}>
-          {analysis.bundle.costs_by_flow_temp.length ? 'Running costs' : 'Target spec'}
-        </Link>
       </p>
     </section>
   )

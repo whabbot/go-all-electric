@@ -51,17 +51,7 @@ export function PackScreen() {
       })
   }, [analysis, checkedQuotes])
 
-  if (!analysis) {
-    return (
-      <section className="screen pack-screen">
-        <h1>Your pack</h1>
-        <p className="lede">Run the estimates first — the pack is built from your survey session.</p>
-        <p className="cta-row">
-          <Link className="btn" to="/estimates">Go to estimates</Link>
-        </p>
-      </section>
-    )
-  }
+  if (!analysis) return null
 
   const drafts = drafting.status === 'done' ? drafting.result.drafts : []
 

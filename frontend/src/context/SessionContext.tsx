@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
+import { mockAnalysisResult, SAM_EPC_ADDRESSES } from '../api/samMocks'
 import {
   api,
   type AnalysisResult,
@@ -60,6 +61,8 @@ type Session = {
   /** Confirm/dismiss choices on tested EPC conflicts; kept in session state only. */
   conflictDecisions: Record<string, ConflictDecision>
   setConflictDecision: (key: string, decision: ConflictDecision | null) => void
+  samSampleLoaded: boolean
+  loadSamSample: () => void
 }
 
 const SessionContext = createContext<Session | null>(null)
@@ -83,6 +86,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [quotes, setQuotesState] = useState<CheckedQuote[]>([])
   const [review, setReview] = useState<ReviewState>({ status: 'idle' })
   const [conflictDecisions, setConflictDecisions] = useState<Record<string, ConflictDecision>>({})
+  const [samSampleLoaded, setSamSampleLoaded] = useState(false)
   const reviewRun = useRef(0)
 
   const setAnalysis = useCallback((a: AnalysisResult | null) => {
@@ -106,6 +110,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     },
     [setAnalysis],
   )
+
+  const loadSamSample = useCallback(() => {
+    setSamSampleLoaded(true)
+    setAddressState(SAM_EPC_ADDRESSES[0])
+    setAnalysis(
+      mockAnalysisResult(['boiler_plate', 'radiators', 'fuse_cutout', 'gas_bill'], false),
+    )
+  }, [setAnalysis])
 
   const setPhoto = useCallback((kind: PhotoKind, file: File | null, result: PhotoCheckResult | null) => {
     setFiles((prev) => {
@@ -190,6 +202,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       startReview,
       conflictDecisions,
       setConflictDecision,
+      samSampleLoaded,
+      loadSamSample,
     }),
     [
       address,
@@ -209,6 +223,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       startReview,
       conflictDecisions,
       setConflictDecision,
+      samSampleLoaded,
+      loadSamSample,
     ],
   )
 

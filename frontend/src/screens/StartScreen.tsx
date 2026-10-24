@@ -1,10 +1,9 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { api, isMockMode, type EpcAddress } from '../api'
 import { useSession } from '../context/SessionContext'
 
 export function StartScreen() {
-  const { address, setAddress, placeLabel } = useSession()
+  const { address, setAddress, placeLabel, loadSamSample } = useSession()
   const [postcode, setPostcode] = useState(isMockMode() ? 'N10 2AB' : '')
   const [results, setResults] = useState<EpcAddress[]>([])
   const [loading, setLoading] = useState(false)
@@ -97,11 +96,11 @@ export function StartScreen() {
         )}
       </div>
 
-      {address && (
+      {isMockMode() && (
         <p className="cta-row">
-          <Link className="btn primary" to="/capture">
-            Continue — add photos
-          </Link>
+          <button type="button" className="btn" onClick={loadSamSample}>
+            Load Sam&apos;s sample (demo)
+          </button>
         </p>
       )}
 

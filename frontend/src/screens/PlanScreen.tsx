@@ -1,4 +1,3 @@
-import { Link } from 'react-router-dom'
 import type { AllElectricPlan, PlanStep } from '../api'
 import { useSession } from '../context/SessionContext'
 
@@ -35,11 +34,6 @@ function PlanView({ plan }: { plan: AllElectricPlan }) {
         Nothing is sent to your network operator or installers.
       </p>
 
-      <p className="cta-row">
-        <Link className="btn primary" to="/pack">Your pack</Link>
-        <Link className="btn" to="/estimates">Back to estimates</Link>
-        <Link className="btn" to="/">Start over</Link>
-      </p>
     </section>
   )
 }
@@ -47,17 +41,7 @@ function PlanView({ plan }: { plan: AllElectricPlan }) {
 export function PlanScreen() {
   const { analysis } = useSession()
 
-  if (!analysis?.plan) {
-    return (
-      <section className="screen plan-screen">
-        <h1>Your all-electric plan</h1>
-        <p className="lede">Run the heat-pump estimates first — the plan is built from that survey.</p>
-        <p className="cta-row">
-          <Link className="btn" to="/estimates">Go to estimates</Link>
-        </p>
-      </section>
-    )
-  }
+  if (!analysis?.plan) return null
 
   return <PlanView plan={analysis.plan} />
 }
