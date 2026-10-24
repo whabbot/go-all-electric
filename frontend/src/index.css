@@ -163,6 +163,34 @@ input[type='text'] {
   font-size: 1rem;
 }
 
+.access-code-field {
+  display: flex;
+  align-items: stretch;
+  gap: 0.35rem;
+}
+
+.access-code-field input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.access-code-toggle {
+  flex-shrink: 0;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+
 button,
 .btn {
   font: inherit;
