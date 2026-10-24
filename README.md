@@ -140,6 +140,17 @@ removes any sentence with a number we did not supply. If more than a third is re
 names no library model, or Gemini fails, the deterministic template is returned instead. Nothing is
 sent: the homeowner reviews, edits and copies the draft.
 
+### Verifying changes
+
+Tests are not enough for a UI change: drive the running app the way a homeowner does. The
+[`verify-go-all-electric`](.agents/skills/verify-go-all-electric/SKILL.md) skill starts an isolated
+backend and frontend on free ports (`launch.sh mock` needs no keys; `launch.sh real` calls Gemini
+and EPC), drives the guided flow at phone width with `chrome-devtools-axi`, and saves screenshots,
+ARIA snapshots and network logs to the git-ignored `.verify/evidence/`. Its
+[feature map](.agents/skills/verify-go-all-electric/features/README.md) lists each step's user
+paths, including the edge paths (cancel and re-pick, several photos at once, no photos). Attach
+that evidence to the PR.
+
 ### Secret scan on commit
 
 ```bash
@@ -367,7 +378,8 @@ before semantic queries can work. Optional Voyage reranking is not enabled for t
 
 `.agents/skills/gemini-api-dev` holds Google's Gemini API skill for coding agents. It was installed
 with `npx skills add google-gemini/gemini-skills --skill gemini-api-dev` and is symlinked for
-Claude Code under `.claude/skills/`.
+Claude Code under `.claude/skills/`. `.agents/skills/verify-go-all-electric` is this repo's own
+skill for launching and driving the app to verify a change (see [Verifying changes](#verifying-changes)).
 
 ## Licence
 
