@@ -393,7 +393,7 @@ button.primary {
   grid-row: 1;
 }
 
-.capture-guide-status--required {
+.capture-guide-status--most_important {
   background: color-mix(in srgb, var(--color-accent) 25%, transparent);
   color: var(--text);
 }
@@ -406,6 +406,12 @@ button.primary {
 .capture-guide-status--recommended {
   background: color-mix(in srgb, var(--color-ok) 20%, transparent);
   color: var(--text);
+}
+
+.capture-guide-reason {
+  grid-column: 1 / -1;
+  font-size: 0.85rem;
+  margin: 0;
 }
 
 .capture-guide-meta {

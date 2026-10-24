@@ -14,6 +14,9 @@ export function CaptureGuideSummary() {
             <span className={`capture-guide-status capture-guide-status--${item.status}`}>
               {CAPTURE_STATUS_LABEL[item.status]}
             </span>
+            {item.reason ? (
+              <span className="capture-guide-reason subtle">{item.reason}</span>
+            ) : null}
             <span className="capture-guide-meta">
               {item.photoCount} · {item.timeHint}
             </span>
