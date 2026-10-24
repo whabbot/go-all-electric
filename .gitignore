@@ -39,6 +39,7 @@ build/
 .terraform/
 *.tfstate*
 *.tfvars
+deploy/tofu/image.auto.tfvars
 deploy/tofu/*.plan
 deploy/tofu/*.tfplan
 !deploy/tofu/example.tfvars
