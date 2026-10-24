@@ -370,63 +370,92 @@ refreshing `/capture`, `/quotes`, `/pack` or `/plan` works. No key is used at bu
 or placed in a `VITE_*` variable. `.dockerignore` and `.gcloudignore` exclude private
 inputs, env files, dependencies and test caches from the image and source upload.
 
+Infrastructure lives in `deploy/tofu/` and uses OpenTofu with local state. Helm
+manages Kubernetes; Cloud Run is managed directly through the pinned Google provider.
+Image builds run separately through `deploy/build.sh`.
+
 Before deploying:
 
-1. Install Google Cloud CLI, run `gcloud auth login`, and choose a project with billing.
-   The deployer needs permission to enable APIs, manage service accounts and their IAM
-   policies, describe Secret Manager secrets and manage their IAM bindings, update Cloud
-   Logging sink exclusions, build sources, and deploy Cloud Run services.
-   The script grants `roles/run.builder` to a dedicated build account and grants the
-   runtime account access only to the four named secrets.
-2. Open [Secret Manager](https://console.cloud.google.com/security/secret-manager) in
-   the selected project and enable the Secret Manager API if prompted. For each exact
-   name `GEMINI_API_KEY`, `MONGODB_URI`, `EPC_API_TOKEN`, and `ACCESS_CODE`, click
-   **Create secret**, enter the name, paste its value into **Secret value**, then click
-   **Create**. Choose a demo access code and share it privately with judges.
-   The script never reads or uploads secret values. It checks that all four secrets
-   exist before making any project changes and stops with their names and a console
-   link if any are missing or unavailable.
-3. **Use a single static Atlas egress IP.** The script creates a custom VPC network
-   (`gae-network`), a `10.42.0.0/24` subnet (`gae-egress`) in `europe-west2`, a Cloud Router
-   (`gae-router`), a reserved regional external IP (`gae-egress-ip`), and Cloud NAT
-   (`gae-nat`) using that address. Cloud Run sends all outbound traffic through Direct
-   VPC egress and that NAT. No default network is required. The deployer also needs
-   Compute Network Admin and permission to reserve external addresses (for example,
-   Compute Public IP Admin). Use a database user with only the needed privileges.
-   After deployment, the script prints the IP: add exactly that address as a `/32` in
-   Atlas network access before using database-backed routes. Do not allow `0.0.0.0/0`.
-4. From the repository, run:
+1. Install OpenTofu 1.13.2 and Google Cloud CLI. Run `gcloud auth login` for builds,
+   then `gcloud auth application-default login` for OpenTofu (alternatively supply
+   `GOOGLE_OAUTH_ACCESS_TOKEN` in the environment). Select a billed project; examples
+   below use `go-all-electric-demo` in `europe-west2`.
+   The deployer needs permissions to enable APIs, manage networking and external IPs,
+   service accounts, project and secret IAM, Artifact Registry, Logging exclusions,
+   Cloud Build and Cloud Run, plus permission to act as `gae-build` and `gae-runtime`.
+   Source upload also requires Cloud Storage access. The build account receives
+   `roles/run.builder`; runtime access is restricted to the four named secrets.
+2. Open [Secret Manager](https://console.cloud.google.com/security/secret-manager?project=go-all-electric-demo)
+   in that project and enable its API if prompted. For each exact name `GEMINI_API_KEY`,
+   `MONGODB_URI`, `EPC_API_TOKEN`, and `ACCESS_CODE`, click **Create secret**, enter the
+   name, paste its value into **Secret value**, then click **Create**. Keep an enabled
+   version for each secret. Choose a demo access code and share it privately with judges.
+   OpenTofu reads secret metadata only: it never reads, creates or uploads secret values.
+   A missing or inaccessible secret fails the plan with its name and the API error;
+   create it in the console or correct metadata permissions before continuing.
+3. Copy `deploy/tofu/example.tfvars` to `deploy/tofu/terraform.tfvars` and adjust the
+   project if needed. Private variable files, state and working data are ignored by Git.
+   Keep local state and its backups safe: subsequent plans and cleanup need that state.
+   There is no remote backend. Run commands below from the repository root.
+
+Deploy in three steps, reviewing each plan before applying it:
+
+1. **Bootstrap infrastructure without a service** (`image = null`):
 
    ```sh
-   GOOGLE_CLOUD_PROJECT=your-project-id ./deploy/cloudrun.sh
+   tofu -chdir=deploy/tofu init
+   tofu -chdir=deploy/tofu plan
+   tofu -chdir=deploy/tofu apply
    ```
 
-The script enables the required APIs, grants the runtime account access to the four
-secrets, and runs `gcloud run deploy --source .` (using the absolute
-repository path). It uses `europe-west2`, 0–2 instances, 2 GiB memory, one CPU, concurrency
-8, and a 900-second timeout. Public invocation is enabled; the application access code
-protects every `/api/*` route except `/api/health`. Re-running redeploys using the latest
-secret versions managed in the console. Do not run with shell tracing. Credentials are
-runtime environment variables.
+   This enables APIs and creates the service accounts, Docker repository, secret IAM,
+   request-log exclusion, and static egress network: `gae-network`, `gae-egress`
+   (`10.42.0.0/24`), `gae-router`, `gae-egress-ip` and `gae-nat`. No default network is
+   required. Add exactly the output `egress_ip` as a **/32** in MongoDB Atlas network
+   access before deploying the service. Do not allow `0.0.0.0/0`.
+2. **Build a committed source tree**, using the dedicated build account:
 
-The VPC, subnet, router, address and NAT are reused on subsequent runs; the NAT
-configuration is updated to use the reserved address and subnet. Cloud NAT and reserved
-IPv4 addresses incur charges. For cleanup, delete the Cloud Run service first, delete
-`gae-nat` from `gae-router`, delete the router, release `gae-egress-ip`, then delete the
-subnet and VPC. Remove the `/32` from Atlas too. Alternatively, delete the dedicated
-Google Cloud project to remove its resources and stop their charges.
+   ```sh
+   GOOGLE_CLOUD_PROJECT=go-all-electric-demo GOOGLE_CLOUD_REGION=europe-west2 ./deploy/build.sh
+   ```
+
+   The helper submits the root Dockerfile to Cloud Build and prints an Artifact Registry
+   image reference tagged with the full Git commit SHA. It handles no secrets. It
+   refuses uncommitted changes so the tag identifies the source. Copy the printed
+   reference for the next step.
+3. **Deploy that image**:
+
+   ```sh
+   tofu -chdir=deploy/tofu plan -var 'image=<printed-image-reference>'
+   tofu -chdir=deploy/tofu apply -var 'image=<printed-image-reference>'
+   ```
+
+   Save the same reference as `image` in your private `terraform.tfvars` immediately
+   afterwards. Leaving it null on a later apply would remove the service. For each
+   update, build a new commit and repeat this step with its reference.
+
+The service URL is an output after deployment. Cloud Run uses 0–2 instances, 2 GiB
+memory, one CPU, concurrency 8, and a 900-second timeout. All outbound traffic uses
+Direct VPC egress and Cloud NAT with the single reserved IP. Public invocation is
+enabled; the application access code protects every `/api/*` route except `/api/health`.
+Secret references use `latest`; manage secret versions in the console and deploy a new
+revision to pick up rotations in environment variables. Do not run with shell tracing.
+
+Cloud NAT and reserved IPv4 addresses incur charges. To clean up, review
+`tofu -chdir=deploy/tofu plan -destroy`, then run `tofu -chdir=deploy/tofu destroy`
+using the same local state and variables. This removes the service and managed
+infrastructure, but retains the console-managed secrets and leaves APIs enabled.
+Remove the Atlas **/32 entry by hand**. Cloud Build source staging objects and build
+history are outside OpenTofu state; remove them separately if needed.
 
 The first visit shows **Enter access code**. A verified code is remembered in localStorage
 on that device and sent in `X-Access-Code`. Rotating the code invalidates saved codes.
 When `ACCESS_CODE` is unset, local development retains its existing open behavior.
 Cloud Run deployments default to 300 Gemini POST requests per IP per 3600 seconds,
 so judges and visitors sharing the venue Wi-Fi have a larger shared allowance. Set
-`GEMINI_REQUESTS_PER_IP` (default 300) and `GEMINI_LIMIT_WINDOW_SECONDS` (default 3600)
-in the environment when running `deploy/cloudrun.sh` to tune it, for example:
-
-```sh
-GOOGLE_CLOUD_PROJECT=your-project-id GEMINI_REQUESTS_PER_IP=600 GEMINI_LIMIT_WINDOW_SECONDS=1800 ./deploy/cloudrun.sh
-```
+`gemini_requests_per_ip` (default 300) and `gemini_limit_window_seconds` (default 3600)
+in your private `terraform.tfvars`, then review `tofu plan` and apply the change. These
+set the runtime `GEMINI_REQUESTS_PER_IP` and `GEMINI_LIMIT_WINDOW_SECONDS` variables.
 
 Local development with a code set defaults to 30 requests per IP per 3600 seconds.
 Both settings also apply when supplied directly to the application
@@ -441,7 +470,7 @@ credit guard, not a distributed billing cap.
 
 The container disables uvicorn access logs and HTTP client INFO logs so application
 logs do not record query strings or postcodes. Cloud Run's **platform request logs** are
-separate and include request URLs. The script adds or updates an exclusion scoped to
+separate and include request URLs. OpenTofu manages an exclusion scoped to
 this service's `run.googleapis.com/requests` log in the `_Default` sink before deploying;
 application logs remain available, but stored request-level traffic diagnostics do not.
 If the project has additional logging sinks, apply the equivalent exclusion there too.
@@ -467,4 +496,4 @@ Keep combined uploads below Cloud Run's 32 MiB HTTP/1 request limit; its 900-sec
 request timeout does not extend an upstream model's timeout.
 
 See [Google's source deployment permissions](https://docs.cloud.google.com/run/docs/configuring/services/build-service-account)
-for the account roles used by the script.
+for the account roles used by this deployment.

@@ -54,3 +54,16 @@ jobs:
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           tar -xzf gitleaks.tar.gz gitleaks
           ./gitleaks git --redact --verbose .
+
+  deployment:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.13.2
+      - run: python3 -m unittest discover -s deploy -v
+      - run: bash -n deploy/build.sh
+      - run: tofu -chdir=deploy/tofu fmt -check
+      - run: tofu -chdir=deploy/tofu init -backend=false -lockfile=readonly
+      - run: tofu -chdir=deploy/tofu validate
