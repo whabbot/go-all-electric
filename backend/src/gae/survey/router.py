@@ -233,6 +233,6 @@ def review_analysis(
         raise HTTPException(413, "Attachments too large for one review: 18 MB maximum")
     try:
         with datasheet_lookup() as lookup:
-            return review(gemini, lookup, request)
-    except GeminiError:
-        raise _gemini_failed() from None
+            return review(gemini, lookup, request, purpose="/api/analysis/review")
+    except GeminiError as exc:
+        raise _gemini_failed(exc) from None

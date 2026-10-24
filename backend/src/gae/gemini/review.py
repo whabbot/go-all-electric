@@ -142,7 +142,13 @@ Rules:
 """
 
 
-def review(gemini: StructuredModel, lookup: DatasheetLookup, req: ReviewRequest) -> ReviewResult:
+def review(
+    gemini: StructuredModel,
+    lookup: DatasheetLookup,
+    req: ReviewRequest,
+    *,
+    purpose: str = "/api/review",
+) -> ReviewResult:
     log = VerificationLog()
     sheets = _datasheets(lookup, req)
     log.add(
@@ -161,6 +167,7 @@ def review(gemini: StructuredModel, lookup: DatasheetLookup, req: ReviewRequest)
         thinking_level="high",
         system_instruction=SYSTEM,
         timeout_s=600,
+        purpose=purpose,
     )
     log.add("read", "review", gemini.lead_model, "one-context review", True, "check numbers")
     cleaned, stripped, tested_conflicts = verify_numbers(raw, allowed_numbers(context), req, log)

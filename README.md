@@ -506,14 +506,35 @@ the last `X-Forwarded-For` address for the direct Cloud Run URL, ignoring suppli
 Revisit trusted proxy handling if adding another proxy or load balancer. It is a demo
 credit guard, not a distributed billing cap.
 
-The container disables uvicorn access logs and HTTP client INFO logs so application
-logs do not record query strings or postcodes. Cloud Run's **platform request logs** are
-separate and include request URLs. OpenTofu manages an exclusion scoped to
-this service's `run.googleapis.com/requests` log in the `_Default` sink before deploying;
-application logs remain available, but stored request-level traffic diagnostics do not.
-If the project has additional logging sinks, apply the equivalent exclusion there too.
-Do not enable HTTP debug logging. Photos remain request data and are not persisted by
-this deployment; uploads are never included in the image.
+### Logging
+
+Every Gemini call writes one structured JSON line to `stdout` (parsed by Cloud Logging as
+`jsonPayload` with `severity` and `message`):
+
+- **What is logged:** `purpose` (route and photo kind, e.g. `/api/photos/check:radiators`),
+  `model`, `thinking_level`, `latency_ms`, `outcome` (`ok`, `timeout`,
+  `validation_failure`, or exception class), `attempts`, and—for errors only—`error_class`
+  and `upstream_status`. Unhandled `/api/analysis` stream failures also log
+  `analysis failed (<ExcType>)`.
+- **What is never logged:** prompts, model output, file bytes, filenames, postcodes,
+  addresses, UPRNs, certificate IDs, query strings or API keys. The container disables
+  uvicorn access logs and sets `httpx` to `WARNING` so application logs never record
+  query strings or postcodes. Cloud Run's **platform request logs** are separate and
+  include request URLs; OpenTofu manages an exclusion scoped to this service's
+  `run.googleapis.com/requests` log in the `_Default` sink before deploying (apply the
+  equivalent exclusion to any additional logging sinks). Do not enable HTTP debug
+  logging. Photos remain request data and are not persisted by this deployment; uploads
+  are never included in the image.
+
+Read the structured Gemini call logs from Cloud Run with:
+
+```sh
+gcloud logging read \
+  'resource.type="cloud_run_revision" AND resource.labels.service_name="go-all-electric" AND logName=~"/stdout$" AND jsonPayload.purpose:*' \
+  --project=go-all-electric-demo \
+  --limit=50 \
+  --format=json
+```
 
 ### Local container and Android check
 

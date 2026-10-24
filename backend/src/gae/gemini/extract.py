@@ -205,6 +205,7 @@ def glance(
         thinking_level="low",
         system_instruction=SYSTEM,
         timeout_s=15,
+        purpose=f"/api/photos/check:{kind.value}",
     )
     matches = result.detected_kind == kind.value
     usable = matches and result.legible
@@ -263,12 +264,15 @@ def extract(
     *,
     media_parts: list[tuple[bytes, str]] | None = None,
     log: VerificationLog | None = None,
+    purpose: str | None = None,
 ) -> VerifiedReading:
     """Read, check, re-read once on failure, then verify or give up with a retake hint.
 
     Pass `log` to watch entries as they are added (the survey streams them to the UI).
     """
     spec = SPECS[kind]
+    kind_name = getattr(kind, "value", str(kind))
+    call_purpose = purpose or f"/api/photos/extract:{kind_name}"
     parts = [(data, mime_type)]
     if media_parts:
         parts.extend(media_parts)
@@ -294,6 +298,8 @@ def extract(
             thinking_level=thinking,
             system_instruction=SYSTEM,
             timeout_s=90 if spec.lead_first or not first else 30,
+            purpose=call_purpose,
+            attempt=attempt,
         )
         log.add(
             "read" if first else "reread",
