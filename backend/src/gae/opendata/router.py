@@ -6,7 +6,8 @@ from datetime import date
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, Field
 
 from gae.opendata.epc import EPCClient
 from gae.opendata.http import DataUnavailable
@@ -37,31 +38,49 @@ def _run(response: Response, action):
         raise HTTPException(422, str(exc), headers={"Cache-Control": "no-store"}) from None
 
 
-@router.get("/epc/search")
+class EpcSearchRequest(BaseModel):
+    postcode: str = Field(max_length=10)
+
+
+class EpcCertificateRequest(BaseModel):
+    certificate_id: str
+
+
+class DegreeDaysRequest(BaseModel):
+    postcode: str = Field(max_length=10)
+    start: date
+    end: date
+
+
+# Identifying inputs belong in bodies: platform request logs record URLs.
+@router.post("/epc/search")
 def epc_search(
+    request: EpcSearchRequest,
     response: Response,
     client: Client,
     settings: Config,
-    postcode: Annotated[str, Query(max_length=10)],
 ):
     return _run(
-        response, lambda: {"addresses": EPCClient(client, settings.epc_api_token).search(postcode)}
+        response,
+        lambda: {"addresses": EPCClient(client, settings.epc_api_token).search(request.postcode)},
     )
 
 
-@router.get("/epc/{certificate_id}")
-def epc_certificate(certificate_id: str, response: Response, client: Client, settings: Config):
+@router.post("/epc/certificate")
+def epc_certificate(
+    request: EpcCertificateRequest, response: Response, client: Client, settings: Config
+):
     return _run(
-        response, lambda: EPCClient(client, settings.epc_api_token).certificate(certificate_id)
+        response,
+        lambda: EPCClient(client, settings.epc_api_token).certificate(request.certificate_id),
     )
 
 
-@router.get("/weather/degree-days")
-def degree_days(
-    response: Response,
-    client: Client,
-    postcode: Annotated[str, Query(max_length=10)],
-    start: date,
-    end: date,
-):
-    return _run(response, lambda: asdict(WeatherClient(client).degree_days(postcode, start, end)))
+@router.post("/weather/degree-days")
+def degree_days(request: DegreeDaysRequest, response: Response, client: Client):
+    return _run(
+        response,
+        lambda: asdict(
+            WeatherClient(client).degree_days(request.postcode, request.start, request.end)
+        ),
+    )

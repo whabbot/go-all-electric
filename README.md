@@ -166,10 +166,13 @@ Create a GOV.UK One Login account via the [EPC API guidance](https://get-energy-
 then set `EPC_API_TOKEN` to the bearer token on your account page. The app uses the GOV.UK
 “Get energy performance of buildings data” API for EPC lookups. Weather needs no credentials.
 
-- `GET /api/epc/search?postcode=...` returns matching addresses and their latest certificate IDs.
-- `GET /api/epc/{certificate_id}` returns an allowlisted raw summary, mapped fabric inputs,
+Identifying inputs are sent in JSON bodies so platform request URLs contain no postcode or
+certificate ID. Responses are unchanged and remain private/no-store.
+
+- `POST /api/epc/search` (JSON: `postcode`) returns matching addresses and their latest certificate IDs.
+- `POST /api/epc/certificate` (JSON: `certificate_id`) returns an allowlisted raw summary, mapped fabric inputs,
   field confidence/defaults and a fabric estimate (or a clear reason it cannot be calculated).
-- `GET /api/weather/degree-days?postcode=...&start=YYYY-MM-DD&end=YYYY-MM-DD` returns degree days,
+- `POST /api/weather/degree-days` (JSON: `postcode`, `start`, `end`; dates as `YYYY-MM-DD`) returns degree days,
   inclusive coverage, missing-day count and the explicitly low-confidence -2C London design default.
 
 The bill adapter `gae.opendata.bill.measured_from_bill` accepts any complete 12-month window,
@@ -178,7 +181,8 @@ substituted weather. `measured_from_degree_days` is the pure calculation counter
 See the [explicit EPC mapping table and integration contract](backend/src/gae/opendata/MAPPING.md)
 for defaults, unsupported flats, monthly-bill requirements and weather uncertainty. Display its
 field caveats alongside the fabric result. These clients do not persist addresses or coordinates;
-responses disable caching. Disable query-string logging in deployment to keep postcodes private.
+responses disable caching. Keep identifying inputs in request bodies, never in URLs, because
+platform request logs include the full URL.
 
 ### Gemini endpoints
 

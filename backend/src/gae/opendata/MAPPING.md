@@ -10,7 +10,8 @@ token from your GOV.UK One Login account page; the client sends `Authorization: 
 Search uses `/api/domestic/search?postcode=...`, follows `pagination.nextPage`, and selects the
 latest `registrationDate` per UPRN, or normalized full address when UPRN is absent. Ties use
 certificate number for deterministic selection. An address selection supplies `certificate_id`
-to `/api/epc/{certificate_id}`; this fetches that exact certificate, not an arbitrary address match.
+in the JSON body of `POST /api/epc/certificate`; this fetches that exact certificate, not an
+arbitrary address match.
 A certificate fetched directly can be old; its registration date is returned for display.
 The source covers England and Wales only. Postcode search returns `addresses: []` for no records.
 

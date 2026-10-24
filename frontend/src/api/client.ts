@@ -66,7 +66,11 @@ export async function searchEpcAddresses(postcode: string): Promise<EpcAddress[]
       a.postcode.replace(/\s+/g, '').toUpperCase().startsWith(normalised.slice(0, 4)),
     )
   }
-  const res = await apiFetch(`/api/epc/search?postcode=${encodeURIComponent(postcode)}`)
+  const res = await apiFetch('/api/epc/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ postcode }),
+  })
   if (!res.ok) throw await failure(res, 'EPC search')
   const body = (await res.json()) as { addresses: EpcAddress[] }
   return body.addresses
