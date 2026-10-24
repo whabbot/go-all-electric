@@ -31,6 +31,7 @@ export function FlowStepActions() {
 
   let skipTarget: FlowPath | null = null
   if (optional && currentPath === '/cost') skipTarget = '/spec'
+  if (optional && currentPath === '/quotes' && session.analysis?.plan) skipTarget = '/plan'
 
   const forwardReady = Boolean(next && canNext)
 
