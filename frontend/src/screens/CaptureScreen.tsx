@@ -7,6 +7,9 @@ import { useSession } from '../context/SessionContext'
 import { prepareImageFile } from '../lib/imagePrepare'
 import { CaptureExamplesDialog } from '../components/CaptureExamplesDialog'
 import { CaptureGuideSummary } from '../components/CaptureGuideSummary'
+import { CaptureWhyNeedDialog } from '../components/CaptureWhyNeedDialog'
+import { WhyNeedTrigger } from '../components/WhyNeedTrigger'
+import type { WhyNeedId } from '../lib/captureWhyNeed'
 import { CAPTURE_GUIDANCE } from '../lib/captureGuide'
 import { coverUpGuidance, coverUpTitle } from '../lib/photoGuidance'
 import type { PhotoKind } from '../api'
@@ -36,6 +39,8 @@ export function CaptureScreen() {
   const [videoError, setVideoError] = useState<string | null>(null)
   const [examplesKind, setExamplesKind] = useState<PhotoKind | null>(null)
   const examplesTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const [whyNeedId, setWhyNeedId] = useState<WhyNeedId | null>(null)
+  const whyNeedTriggerRef = useRef<HTMLButtonElement | null>(null)
 
   useEffect(() => {
     return () => {
@@ -135,16 +140,24 @@ export function CaptureScreen() {
           <div key={slot.kind} className="photo-slot card">
             <div className="photo-slot-header">
               <h2>{slot.label}</h2>
-              <button
-                type="button"
-                className="btn capture-examples-trigger"
-                onClick={(e) => {
-                  examplesTriggerRef.current = e.currentTarget
-                  setExamplesKind(slot.kind)
-                }}
-              >
-                See examples
-              </button>
+              <div className="capture-slot-actions">
+                <WhyNeedTrigger
+                  onActivate={(el) => {
+                    whyNeedTriggerRef.current = el
+                    setWhyNeedId(slot.kind)
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn capture-examples-trigger"
+                  onClick={(e) => {
+                    examplesTriggerRef.current = e.currentTarget
+                    setExamplesKind(slot.kind)
+                  }}
+                >
+                  See examples
+                </button>
+              </div>
             </div>
             <p className="capture-item-guidance">{CAPTURE_GUIDANCE[slot.kind].oneLine}</p>
             {CAPTURE_GUIDANCE[slot.kind].detail && (
@@ -188,7 +201,15 @@ export function CaptureScreen() {
 
             {slot.kind === 'radiators' && (
               <div className="video-capture-option">
-                <h3>Or film your radiators</h3>
+                <div className="video-capture-header">
+                  <h3>Or film your radiators</h3>
+                  <WhyNeedTrigger
+                    onActivate={(el) => {
+                      whyNeedTriggerRef.current = el
+                      setWhyNeedId('radiator_video')
+                    }}
+                  />
+                </div>
                 <p className="privacy-warn">
                   Video is not covered up like photos: film radiators only, close, with no windows,
                   people or house numbers.
@@ -223,6 +244,14 @@ export function CaptureScreen() {
           title={photos.find((p) => p.kind === examplesKind)?.label ?? examplesKind}
           returnFocusTo={examplesTriggerRef.current}
           onClose={() => setExamplesKind(null)}
+        />
+      )}
+
+      {whyNeedId && (
+        <CaptureWhyNeedDialog
+          id={whyNeedId}
+          returnFocusTo={whyNeedTriggerRef.current}
+          onClose={() => setWhyNeedId(null)}
         />
       )}
 

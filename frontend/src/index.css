@@ -283,9 +283,57 @@ button.primary {
   margin-bottom: 0.5rem;
 }
 
-.capture-examples-trigger {
+.capture-slot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.capture-examples-trigger,
+.capture-why-need-trigger {
   font-size: 0.85rem;
   padding: 0.35rem 0.65rem;
+}
+
+.video-capture-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.video-capture-header h3 {
+  margin: 0;
+}
+
+.quotes-upload-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.quotes-upload-header .lede {
+  flex: 1 1 14rem;
+  margin: 0;
+}
+
+.capture-why-need-list {
+  margin: 0 0 1rem;
+  padding-left: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.capture-why-need-privacy {
+  margin: 0;
+  font-size: 0.9rem;
 }
 
 .capture-item-guidance {
