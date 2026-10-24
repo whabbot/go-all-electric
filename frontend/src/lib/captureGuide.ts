@@ -1,11 +1,13 @@
 import type { PhotoKind } from '../api'
 
-export type CaptureNeedStatus = 'required' | 'optional' | 'recommended'
+export type CaptureNeedStatus = 'most_important' | 'optional' | 'recommended'
 
 export type CaptureSummaryItem = {
   id: string
   label: string
   status: CaptureNeedStatus
+  /** One-line checklist emphasis (e.g. why gas bill matters most). */
+  reason?: string
   photoCount: string
   timeHint: string
 }
@@ -13,23 +15,31 @@ export type CaptureSummaryItem = {
 /** Top-of-screen checklist — grounded in backend slots and analysis behaviour. */
 export const CAPTURE_SUMMARY_ITEMS: CaptureSummaryItem[] = [
   {
+    id: 'gas_bill',
+    label: 'Gas bill',
+    status: 'most_important',
+    reason: 'Drives your measured heat loss, running costs and the quote size check.',
+    photoCount: '1 photo or screenshot',
+    timeHint: 'about 2 min',
+  },
+  {
     id: 'boiler_plate',
     label: 'Boiler data plate',
-    status: 'required',
+    status: 'recommended',
     photoCount: '1 photo',
     timeHint: 'about 1 min',
   },
   {
     id: 'radiators',
     label: 'Radiators',
-    status: 'required',
+    status: 'recommended',
     photoCount: '1 photo, or film a walkthrough instead',
     timeHint: 'about 2 min',
   },
   {
     id: 'fuse_cutout',
     label: 'Fuse cutout',
-    status: 'required',
+    status: 'recommended',
     photoCount: '1 photo',
     timeHint: 'about 1 min',
   },
@@ -40,17 +50,10 @@ export const CAPTURE_SUMMARY_ITEMS: CaptureSummaryItem[] = [
     photoCount: '1 photo',
     timeHint: 'about 1 min',
   },
-  {
-    id: 'gas_bill',
-    label: 'Gas bill',
-    status: 'recommended',
-    photoCount: '1 photo or screenshot',
-    timeHint: 'about 2 min',
-  },
 ]
 
 export const CAPTURE_STATUS_LABEL: Record<CaptureNeedStatus, string> = {
-  required: 'Required',
+  most_important: 'Most important',
   optional: 'Optional',
   recommended: 'Recommended',
 }

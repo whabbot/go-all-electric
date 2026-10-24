@@ -30,7 +30,7 @@ describe('CaptureScreen guide', () => {
     cleanup()
   })
 
-  it('lists each capture input with required, optional, or recommended status', () => {
+  it('lists each capture input with most important, optional, or recommended status', () => {
     renderCapture()
     const list = document.querySelector('.capture-guide-list')
     if (!list) throw new Error('capture guide list missing')
@@ -42,6 +42,9 @@ describe('CaptureScreen guide', () => {
       expect(row.querySelector(`.capture-guide-status--${item.status}`)?.textContent).toBe(
         CAPTURE_STATUS_LABEL[item.status],
       )
+      if (item.reason) {
+        expect(row.querySelector('.capture-guide-reason')?.textContent).toBe(item.reason)
+      }
     })
   })
 
