@@ -382,12 +382,12 @@ class QuoteInput(BaseModel):
 
 
 class ReviewRequest(BaseModel):
-    photos: list[MediaInput] = Field(default_factory=list, max_length=12)
+    photos: list[MediaInput] = Field(default_factory=list, max_length=16)
     bill: MediaInput | None = None
     epc_record: dict[str, JsonValue] = Field(default_factory=dict)
     boiler: BoilerPlateReading | None = None
     bill_reading: GasBillReading | None = None
-    radiators: RadiatorReading | None = None
+    radiators: RadiatorReading | list[RadiatorReading] | None = None
     radiator_video: RadiatorVideoResult | RadiatorVideoReading | None = None
     fuse_cutout: FuseCutoutReading | None = None
     outdoor_space: OutdoorSpaceReading | None = None

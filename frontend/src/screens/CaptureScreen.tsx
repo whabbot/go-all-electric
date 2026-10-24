@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { api, isMockMode } from '../api'
 import { ImageCoverUp } from '../components/ImageCoverUp'
 import { CapturePhotoSlotList } from '../components/CapturePhotoSlotList'
-import { useSession } from '../context/SessionContext'
+import { MAX_RADIATOR_PHOTOS, useSession } from '../context/SessionContext'
 import { resetFileInput } from '../lib/fileInputReset'
 import { prepareImageFile } from '../lib/imagePrepare'
 import type { WhyNeedId } from '../lib/captureWhyNeed'
@@ -17,6 +17,7 @@ type PendingCoverUp = {
   kind: PhotoKind
   url: string
   fileName: string
+  retakeRadiatorId?: string
 }
 
 const MULTI_PHOTO_KINDS: PhotoKind[] = ['radiators']
@@ -25,12 +26,17 @@ export function CaptureScreen() {
   const {
     photos,
     setPhoto,
+    radiatorPhotos,
+    addRadiatorPhoto,
+    updateRadiatorPhoto,
+    removeRadiatorPhoto,
     radiatorVideo,
     radiatorVideoResult,
     setRadiatorVideo,
     placeLabel,
   } = useSession()
   const [busy, setBusy] = useState<Record<string, boolean>>({})
+  const activeChecksRef = useRef<Record<string, number>>({})
   const [coverCurrent, setCoverCurrent] = useState<PendingCoverUp | null>(null)
   const [coverStack, setCoverStack] = useState<PendingCoverUp[]>([])
   const [coverBatch, setCoverBatch] = useState<{ index: number; total: number } | null>(null)
@@ -86,9 +92,14 @@ export function CaptureScreen() {
     setCoverBatch((b) => (b ? { ...b, index: b.index + 1 } : null))
   }
 
-  const onFiles = async (kind: PhotoKind, list: FileList | null, input: HTMLInputElement) => {
-    const allowMulti = MULTI_PHOTO_KINDS.includes(kind)
-    const picked = list?.length
+  const onFiles = async (
+    kind: PhotoKind,
+    list: FileList | null,
+    input: HTMLInputElement,
+    retakeRadiatorId?: string,
+  ) => {
+    const allowMulti = MULTI_PHOTO_KINDS.includes(kind) && !retakeRadiatorId
+    let picked = list?.length
       ? allowMulti
         ? Array.from(list)
         : [list[0]]
@@ -97,6 +108,25 @@ export function CaptureScreen() {
     if (picked.length === 0) return
     setPrepareError(null)
     setExpandedKind(kind)
+    if (kind === 'radiators' && !retakeRadiatorId) {
+      const remaining = MAX_RADIATOR_PHOTOS - radiatorPhotos.length
+      if (remaining <= 0) {
+        setPhotoErrors((errors) => ({
+          ...errors,
+          radiators: `You can add up to ${MAX_RADIATOR_PHOTOS} radiator photos. Remove or retake one instead.`,
+        }))
+        return
+      }
+      if (picked.length > remaining) {
+        picked = picked.slice(0, remaining)
+        setPhotoErrors((errors) => ({
+          ...errors,
+          radiators: `Only the first ${remaining} photo${remaining === 1 ? '' : 's'} queued (maximum ${MAX_RADIATOR_PHOTOS} radiator photos).`,
+        }))
+      } else {
+        setPhotoErrors((errors) => ({ ...errors, radiators: '' }))
+      }
+    }
     revokeCoverQueue(coverCurrent, coverStack)
     setCoverCurrent(null)
     setCoverStack([])
@@ -105,7 +135,12 @@ export function CaptureScreen() {
       const queue: PendingCoverUp[] = []
       for (const file of picked) {
         const prepared = await prepareImageFile(file)
-        queue.push({ kind, url: URL.createObjectURL(prepared), fileName: file.name })
+        queue.push({
+          kind,
+          url: URL.createObjectURL(prepared),
+          fileName: file.name,
+          retakeRadiatorId,
+        })
       }
       if (queue.length === 0) return
       const [first, ...rest] = queue
@@ -132,12 +167,47 @@ export function CaptureScreen() {
 
   const onCoverUpConfirm = async (redacted: File) => {
     if (!coverCurrent) return
-    const { kind } = coverCurrent
+    const { kind, fileName, retakeRadiatorId } = coverCurrent
     resetFileInput(fileInputsRef.current[kind])
     advanceCoverQueue()
     setPhotoErrors((errors) => ({ ...errors, [kind]: '' }))
+    activeChecksRef.current[kind] = (activeChecksRef.current[kind] ?? 0) + 1
     setBusy((b) => ({ ...b, [kind]: true }))
     setExpandedKind(kind)
+    if (kind === 'radiators') {
+      let targetId: string
+      if (retakeRadiatorId) {
+        targetId = retakeRadiatorId
+        updateRadiatorPhoto(targetId, {
+          file: redacted,
+          fileName: fileName || redacted.name,
+          previewUrl: URL.createObjectURL(redacted),
+          result: null,
+          checking: true,
+          error: null,
+        })
+      } else {
+        targetId = addRadiatorPhoto(redacted)
+        if (fileName) {
+          updateRadiatorPhoto(targetId, { fileName })
+        }
+      }
+      try {
+        const result = await api.checkPhoto('radiators', redacted)
+        updateRadiatorPhoto(targetId, { result, checking: false, error: null })
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : 'Could not check that photo.'
+        setPhotoErrors((errors) => ({ ...errors, radiators: msg }))
+        updateRadiatorPhoto(targetId, { result: null, checking: false, error: msg })
+      } finally {
+        const left = Math.max(0, (activeChecksRef.current.radiators ?? 1) - 1)
+        activeChecksRef.current.radiators = left
+        if (left === 0) {
+          setBusy((b) => ({ ...b, radiators: false }))
+        }
+      }
+      return
+    }
     // Only the redacted, re-encoded file is kept (in memory) and later sent for analysis.
     setPhoto(kind, redacted, null)
     try {
@@ -150,7 +220,11 @@ export function CaptureScreen() {
       }))
       setPhoto(kind, redacted, null)
     } finally {
-      setBusy((b) => ({ ...b, [kind]: false }))
+      const left = Math.max(0, (activeChecksRef.current[kind] ?? 1) - 1)
+      activeChecksRef.current[kind] = left
+      if (left === 0) {
+        setBusy((b) => ({ ...b, [kind]: false }))
+      }
     }
   }
 
@@ -210,6 +284,9 @@ export function CaptureScreen() {
         onFiles={onFiles}
         fileInputsRef={fileInputsRef}
         multiPhotoKinds={MULTI_PHOTO_KINDS}
+        radiatorPhotos={radiatorPhotos}
+        onRetakeRadiatorPhoto={(id, list, input) => void onFiles('radiators', list, input, id)}
+        onRemoveRadiatorPhoto={removeRadiatorPhoto}
         radiatorVideo={radiatorVideo}
         radiatorVideoResult={radiatorVideoResult}
         videoError={videoError}

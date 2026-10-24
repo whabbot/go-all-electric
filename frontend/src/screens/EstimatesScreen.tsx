@@ -53,6 +53,8 @@ function ReadingValues({ reading }: { reading: Record<string, unknown> }) {
 }
 
 function Inputs({ analysis }: { analysis: AnalysisResult }) {
+  const radiatorCount = analysis.readings.filter((r) => r.kind === 'radiators').length
+  let radiatorIndex = 0
   return (
     <>
       {analysis.gaps.length > 0 && (
@@ -72,21 +74,27 @@ function Inputs({ analysis }: { analysis: AnalysisResult }) {
       <section className="card">
         <h2>What we read</h2>
         <ul className="reading-list">
-          {analysis.readings.map((r) => (
-            <li key={r.kind}>
-              <strong>{r.kind.replaceAll('_', ' ')}</strong>
-              <span className={`reading-status ${r.status}`}>
-                {r.status === 'not_provided' && OPTIONAL_KINDS.includes(r.kind) ? 'optional' : STATUS_LABEL[r.status]}
-              </span>
-              {r.attempts > 1 && <span className="subtle"> after a re-read</span>}
-              {r.reading && <ReadingValues reading={r.reading} />}
-              {r.warnings.length > 0 && <p className="subtle">Warnings: {r.warnings.join('; ')}</p>}
-              {r.status === 'couldnt_tell' && r.photograph_instead && (
-                <p className="subtle">Photograph instead: {r.photograph_instead}</p>
-              )}
-              {r.used_for && <p className="subtle">Used for: {r.used_for}</p>}
-            </li>
-          ))}
+          {analysis.readings.map((r, i) => {
+            const isRad = r.kind === 'radiators'
+            if (isRad) radiatorIndex += 1
+            const label =
+              isRad && radiatorCount > 1 ? `radiator ${radiatorIndex}` : r.kind.replaceAll('_', ' ')
+            return (
+              <li key={`${r.kind}-${i}`}>
+                <strong>{label}</strong>
+                <span className={`reading-status ${r.status}`}>
+                  {r.status === 'not_provided' && OPTIONAL_KINDS.includes(r.kind) ? 'optional' : STATUS_LABEL[r.status]}
+                </span>
+                {r.attempts > 1 && <span className="subtle"> after a re-read</span>}
+                {r.reading && <ReadingValues reading={r.reading} />}
+                {r.warnings.length > 0 && <p className="subtle">Warnings: {r.warnings.join('; ')}</p>}
+                {r.status === 'couldnt_tell' && r.photograph_instead && (
+                  <p className="subtle">Photograph instead: {r.photograph_instead}</p>
+                )}
+                {r.used_for && <p className="subtle">Used for: {r.used_for}</p>}
+              </li>
+            )
+          })}
         </ul>
       </section>
 
@@ -118,7 +126,7 @@ function Inputs({ analysis }: { analysis: AnalysisResult }) {
 }
 
 export function EstimatesScreen() {
-  const { address, placeLabel, analysis, setAnalysis, files, radiatorVideo } = useSession()
+  const { address, placeLabel, analysis, setAnalysis, files, radiatorFiles, radiatorVideo } = useSession()
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<Progress>({})
@@ -144,6 +152,7 @@ export function EstimatesScreen() {
           }
         },
         radiatorVideo,
+        radiatorFiles,
       )
       .then(setAnalysis)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Analysis failed'))

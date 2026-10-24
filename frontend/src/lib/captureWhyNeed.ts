@@ -26,15 +26,15 @@ export const WHY_NEED: Record<WhyNeedId, WhyNeedContent> = {
       'Only your redacted JPEG leaves the device; we keep extracted readings (not the image). Saved surveys store postcode district only, not your address.',
   },
   radiators: {
-    dialogTitle: 'Why we need a radiator photo',
+    dialogTitle: 'Why we need radiator photos',
     bullets: [
-      'We read radiator type and size (height and width in mm) and rate output at ΔT50 from typical catalogue figures.',
-      'That feeds the 45°C flow check: whether this radiator can meet about a fifth of your design heat loss at the target flow temperature (see heatpump spec).',
-      'Results show as radiator upsizing flags on your target spec and in the verification log — not a full room-by-room survey.',
+      'Take one photo per radiator (up to 8) from a front corner, standing and looking down at about 45° so the front face, top grille/convector fins and one end are visible, with a tape measure held across the width.',
+      'We read each radiator’s type (counting panels and fin rows from the angled view), take width from the tape measure, estimate height from the visible proportion with the end view, and rate output at ΔT50 from typical catalogue figures.',
+      'Each radiator is checked at the 45°C target flow temperature and shown on your target spec and in the verification log.',
       'If you skip it (and skip the walkthrough video), we cannot flag radiator upsizing; flow temperature and grant still come from your estimates.',
     ],
     privacy:
-      'Only your redacted JPEG is sent for analysis; we store readings only. Postcode district only is saved — never the photo.',
+      'Only your redacted JPEGs are sent for analysis; we store readings only. Postcode district only is saved — never the photos.',
   },
   fuse_cutout: {
     dialogTitle: 'Why we need the fuse cutout',
@@ -86,7 +86,7 @@ export const WHY_NEED: Record<WhyNeedId, WhyNeedContent> = {
       'The walkthrough counts distinct radiators and reads type and size per radiator (same 45°C upsizing check as a single photo, applied to each legible radiator).',
       'Uncertain radiators become photo requests on the capture screen — never guessed sizes.',
       'Video does not replace a gas bill for Estimate B; it adds radiator checks when photographing every radiator is awkward.',
-      'If you skip it, use one radiator photo instead, or leave radiators out and accept no upsizing flags.',
+      'If you skip it, add one 45° front-corner photo per radiator instead, or leave radiators out and accept no upsizing flags.',
     ],
     privacy:
       'Video is not blacked out like photos — film radiators only, close. Container metadata is stripped server-side before analysis; video is not stored. Readings only are kept if you run estimates.',

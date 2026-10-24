@@ -146,4 +146,60 @@ describe('CaptureScreen cover-up queue', () => {
     const input = await openRadiatorsAndGetPhotoInput(user)
     expect(input.hasAttribute('multiple')).toBe(true)
   })
+
+  it('shows thumbnails for multiple radiator photos and supports remove and retake per photo', async () => {
+    const user = userEvent.setup()
+    renderCapture()
+    const input = await openRadiatorsAndGetPhotoInput(user)
+    const files = [
+      new File(['1'], 'lounge-rad.jpg', { type: 'image/jpeg' }),
+      new File(['2'], 'bedroom-rad.jpg', { type: 'image/jpeg' }),
+    ]
+
+    await user.upload(input, files)
+    await waitFor(() => expect(screen.getByText('Photo 1 of 2')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Use photo' }))
+    await waitFor(() => expect(screen.getByText('Photo 2 of 2')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Use photo' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    await waitFor(() =>
+      expect(screen.getByText('2 of 8 radiator photos added')).toBeInTheDocument(),
+    )
+    expect(screen.getByAltText('Radiator 1 preview')).toBeInTheDocument()
+    expect(screen.getByAltText('Radiator 2 preview')).toBeInTheDocument()
+    expect(screen.getByText('(lounge-rad.jpg)')).toBeInTheDocument()
+    expect(screen.getByText('(bedroom-rad.jpg)')).toBeInTheDocument()
+
+    // Retake Radiator 1
+    const retakeInput = screen.getByLabelText('Retake Radiator 1') as HTMLInputElement
+    const replacement = new File(['1b'], 'lounge-retake.jpg', { type: 'image/jpeg' })
+    await user.upload(retakeInput, replacement)
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'Use photo' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    expect(screen.getByText('2 of 8 radiator photos added')).toBeInTheDocument()
+    expect(screen.getByText('(lounge-retake.jpg)')).toBeInTheDocument()
+    expect(screen.queryByText('(lounge-rad.jpg)')).not.toBeInTheDocument()
+
+    // Remove Radiator 1
+    await user.click(screen.getByRole('button', { name: 'Remove Radiator 1' }))
+    expect(screen.getByText('1 of 8 radiator photo added')).toBeInTheDocument()
+    expect(screen.queryByText('(lounge-retake.jpg)')).not.toBeInTheDocument()
+    expect(screen.getByText('(bedroom-rad.jpg)')).toBeInTheDocument()
+  })
+
+  it('caps radiator uploads to 8 photos and warns when more are selected', async () => {
+    const user = userEvent.setup()
+    renderCapture()
+    const input = await openRadiatorsAndGetPhotoInput(user)
+    const files = Array.from({ length: 9 }, (_, i) =>
+      new File([String(i)], `rad-${i + 1}.jpg`, { type: 'image/jpeg' }),
+    )
+
+    await user.upload(input, files)
+    await waitFor(() => expect(screen.getByText('Photo 1 of 8')).toBeInTheDocument())
+    expect(screen.getByRole('alert')).toHaveTextContent(/maximum 8 radiator photos/i)
+  })
 })

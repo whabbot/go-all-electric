@@ -73,13 +73,20 @@ SPECS: dict[str, Spec] = {
         lead_first=False,
         thinking="medium",
         prompt=(
-            "This should be a radiator. Identify its type by counting panels and convector fin "
-            "rows (look from above or at the side), and estimate height and width in mm using "
-            "nearby objects such as skirting boards, sockets or doors for scale."
+            "This should be one radiator photographed from a front corner, standing and looking "
+            "down at about 45 degrees so the front face, the top grille/convector fins and the "
+            "end are all visible, with a tape measure held across the width. Identify its type "
+            "by counting panels and convector fin rows from the top and end views. Take width in "
+            "mm from the tape measure (or nearby scale if no tape is shown). Because height is "
+            "foreshortened at a 45-degree angle, estimate height in mm from the visible "
+            "proportion with the end view and widen nothing else; if height is uncertain, set "
+            "confidence to 'low' (or set legible to false and leave height_mm null if you cannot "
+            "tell) rather than guessing confidently."
         ),
         photograph_instead=(
-            "the whole radiator from the front with a tape measure across it, plus one shot "
-            "looking down between the panels"
+            "one shot per radiator from a front corner, standing and looking down at about "
+            "45 degrees so the front face, top grille/fins and one end are all in frame, with a "
+            "tape measure held across the width"
         ),
         check=lambda r, lookup: checks.check_radiator(r),
     ),
@@ -165,7 +172,10 @@ SPECS: dict[str, Spec] = {
 
 GLANCE_HINTS = {
     PhotoKind.BOILER_PLATE: "make, model, output_kw",
-    PhotoKind.RADIATORS: "radiator_type, panels",
+    PhotoKind.RADIATORS: (
+        "radiator_type, panels (taken from a front corner looking down at ~45° so front, top "
+        "grille/fins and end are visible, with a tape measure across the width)"
+    ),
     PhotoKind.FUSE_CUTOUT: "rating_a",
     PhotoKind.OUTDOOR_SPACE: "rough_size_m, surface",
     PhotoKind.GAS_BILL: "supplier, kwh, period",

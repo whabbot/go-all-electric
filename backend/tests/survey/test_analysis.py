@@ -8,6 +8,7 @@ import json
 from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import date, timedelta
+from threading import Lock
 from typing import Any
 
 import pytest
@@ -99,12 +100,14 @@ class ScriptedGemini:
     def __init__(self, replies: dict[str, list[BaseModel | Callable[[Call], BaseModel]]]):
         self.replies = replies
         self.calls: list[Call] = []
+        self._lock = Lock()
 
     def generate(self, *, model, input, schema, thinking_level, system_instruction=None, **_):
         call = Call(model, schema.__name__, thinking_level, list(input), system_instruction)
-        self.calls.append(call)
-        queue = self.replies[schema.__name__]
-        reply = queue.pop(0) if len(queue) > 1 else queue[0]
+        with self._lock:
+            self.calls.append(call)
+            queue = self.replies[schema.__name__]
+            reply = queue.pop(0) if len(queue) > 1 else queue[0]
         if callable(reply):
             reply = reply(call)
         return schema.model_validate_json(reply.model_dump_json())
@@ -506,3 +509,98 @@ def test_analysis_with_radiator_video_feeds_spec_check_and_gaps(harness) -> None
     assert [r["room"] for r in spec_radiators] == ["Dining room"]
     assert any(g["input"] == "radiators" and "0:14" in g["message"] for g in result["gaps"])
     assert any(d["name"] == "radiator_rating_from_video" for d in result["defaults"])
+
+
+def test_multiple_radiator_photos_produce_separate_readings_and_spec_checks(harness) -> None:
+    harness["gemini"].replies["RadiatorReading"] = [
+        RadiatorReading(
+            legible=True,
+            confidence="high",
+            notes="",
+            radiator_type="K2",
+            height_mm=600,
+            width_mm=2000,
+            panels=2,
+            fin_rows=2,
+            room="Living room",
+        ),
+        RadiatorReading(
+            legible=True,
+            confidence="high",
+            notes="",
+            radiator_type="K1",
+            height_mm=600,
+            width_mm=900,
+            panels=1,
+            fin_rows=1,
+            room="Bedroom 1",
+        ),
+    ]
+    files = [
+        ("boiler_plate", ("boiler.jpg", JPEG, "image/jpeg")),
+        ("gas_bill", ("bill.jpg", JPEG, "image/jpeg")),
+        ("radiators", ("rad1.jpg", JPEG + b"rad1", "image/jpeg")),
+        ("radiators", ("rad2.jpg", JPEG + b"rad2", "image/jpeg")),
+    ]
+    response = client.post("/api/analysis", data={"certificate_id": CERTIFICATE}, files=files)
+    assert response.status_code == 200
+    events = [json.loads(line) for line in response.text.splitlines()]
+    result = result_of(events)
+
+    rad_readings = [r for r in result["readings"] if r["kind"] == "radiators"]
+    assert len(rad_readings) == 2
+    assert [r["status"] for r in rad_readings] == ["verified", "verified"]
+    assert {r["reading"]["room"] for r in rad_readings} == {"Living room", "Bedroom 1"}
+
+    spec_radiators = result["bundle"]["target_spec"]["radiators"]
+    assert len(spec_radiators) == 2
+    by_room = {r["room"]: r for r in spec_radiators}
+    assert by_room["Living room"]["status"] == "ok"
+    assert by_room["Bedroom 1"]["status"] == "upsize"
+
+    (survey,) = harness["saved"]
+    assert {
+        survey.extracted_readings["radiators_room"].value,
+        survey.extracted_readings["radiators_2_room"].value,
+    } == {"Living room", "Bedroom 1"}
+
+    harness["gemini"].replies["ArgonReview"] = [
+        ArgonReview(
+            estimates_explanation="The fabric calc reads higher than your bills.",
+            cited_reason_codes=[],
+            conflict_status="no_conflict_found",
+            input_conflicts=[],
+            quote_reviews=[],
+            questions_to_ask=[],
+            summary="Two radiators checked.",
+        )
+    ]
+    context = {
+        "bundle": result["bundle"],
+        "epc": result["epc"],
+        "radiators": [r["reading"] for r in rad_readings],
+    }
+    rev_response = client.post(
+        "/api/analysis/review",
+        data={"context": json.dumps(context)},
+        files=[
+            ("radiators", ("rad1.jpg", JPEG + b"rad1", "image/jpeg")),
+            ("radiators", ("rad2.jpg", JPEG + b"rad2", "image/jpeg")),
+        ],
+    )
+    assert rev_response.status_code == 200, rev_response.text
+    call = harness["gemini"].calls[-1]
+    assert call.schema == "ArgonReview"
+    assert '"Living room"' in call.prompt and '"Bedroom 1"' in call.prompt
+    assert call.media_types.count("image") == 2
+
+
+def test_rejects_more_than_max_radiator_photos(harness) -> None:
+    nine_files = [
+        ("radiators", (f"rad-{i}.jpg", JPEG, "image/jpeg")) for i in range(9)
+    ]
+    response = client.post(
+        "/api/analysis", data={"certificate_id": CERTIFICATE}, files=nine_files
+    )
+    assert response.status_code == 422
+    assert "at most 8" in response.json()["detail"]

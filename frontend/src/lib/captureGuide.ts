@@ -40,7 +40,7 @@ export const CAPTURE_SUMMARY_ITEMS: CaptureSummaryItem[] = [
     id: 'radiators',
     label: 'Radiators',
     status: 'recommended',
-    photoCount: '1 photo, or film a walkthrough instead',
+    photoCount: '1 photo per radiator, or film a walkthrough instead',
     timeHint: 'about 2 min',
   },
   {
@@ -112,11 +112,13 @@ export const CAPTURE_GUIDANCE: Record<PhotoKind, CaptureItemGuidance> = {
   },
   radiators: {
     oneLine:
-      'Whole radiator from the front with scale (tape measure helps). Or use the walkthrough video instead of a photo.',
+      'One shot per radiator from a front corner, standing and looking down at about 45°, so the front face, top grille/fins and one end are visible, with a tape measure held across the width — or use the walkthrough video instead.',
     detail:
-      'Video: radiators only, up to 90 seconds and 100 MB; metadata is stripped but video is not blacked out like photos.',
-    goodReason: 'Full radiator in frame with clear edges and scale.',
-    badReason: 'Cropped, too far, or glare hides type and size.',
+      'Add one photo per radiator (up to 8). Or film a walkthrough video instead: radiators only, up to 90 seconds and 100 MB; metadata is stripped but video is not blacked out like photos.',
+    goodReason:
+      'Taken from a front corner looking down at ~45° so the front face, top grille/fins and end are all visible, with a tape measure held across the width.',
+    badReason:
+      'Straight front-on (single and double panel radiators look alike from the front, so type cannot be told), cropped, or no scale.',
   },
   fuse_cutout: {
     oneLine:

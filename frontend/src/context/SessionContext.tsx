@@ -1,4 +1,13 @@
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { mockAnalysisResult, SAM_EPC_ADDRESSES } from '../api/samMocks'
 import {
   api,
@@ -13,6 +22,18 @@ import {
   type ReviewResult,
 } from '../api'
 import { outwardCode, quoteId } from '../lib/labels'
+
+export const MAX_RADIATOR_PHOTOS = 8
+
+export type RadiatorPhotoItem = {
+  id: string
+  file: File
+  fileName: string
+  previewUrl: string
+  result: PhotoCheckResult | null
+  checking: boolean
+  error: string | null
+}
 
 type PhotoSlot = {
   kind: PhotoKind
@@ -49,6 +70,16 @@ type Session = {
   /** Files stay in memory for this tab only; they are never written to storage. */
   files: Partial<Record<PhotoKind, File>>
   setPhoto: (kind: PhotoKind, file: File | null, result: PhotoCheckResult | null) => void
+  radiatorPhotos: RadiatorPhotoItem[]
+  radiatorFiles: File[]
+  addRadiatorPhoto: (file: File) => string
+  updateRadiatorPhoto: (
+    id: string,
+    patch: Partial<
+      Pick<RadiatorPhotoItem, 'file' | 'fileName' | 'previewUrl' | 'result' | 'checking' | 'error'>
+    >,
+  ) => void
+  removeRadiatorPhoto: (id: string) => void
   radiatorVideo: File | null
   radiatorVideoResult: RadiatorVideoResult | null
   setRadiatorVideo: (file: File | null, result: RadiatorVideoResult | null) => void
@@ -69,6 +100,36 @@ const SessionContext = createContext<Session | null>(null)
 
 const STORAGE_KEY = 'gae-analysis-v2'
 
+function aggregateRadiatorResult(items: RadiatorPhotoItem[]): PhotoCheckResult | null {
+  if (items.length === 0 || items.some((i) => i.checking)) return null
+  const withWarn = items.find((i) => i.result && !i.result.legible)
+  if (withWarn?.result) return withWarn.result
+  const withError = items.find((i) => i.error)
+  if (withError) {
+    return {
+      kind: 'radiators',
+      expected_kind: 'radiators',
+      legible: false,
+      usable: false,
+      matches_expected: true,
+      summary: withError.error ?? 'Could not check radiator photo.',
+      key_fields: {},
+      confidence: 'low',
+      retake_hint: null,
+      privacy_warning: null,
+      model: 'client',
+      elapsed_ms: 0,
+    }
+  }
+  const lastResult = items[items.length - 1]?.result ?? null
+  if (!lastResult) return null
+  if (items.length === 1) return lastResult
+  return {
+    ...lastResult,
+    summary: `${items.length} radiator photos ready`,
+  }
+}
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [address, setAddressState] = useState<EpcAddress | null>(null)
   const [analysis, setAnalysisState] = useState<AnalysisResult | null>(() => {
@@ -81,6 +142,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   })
   const [files, setFiles] = useState<Partial<Record<PhotoKind, File>>>({})
   const [checks, setChecks] = useState<Partial<Record<PhotoKind, PhotoCheckResult | null>>>({})
+  const [radiatorPhotos, setRadiatorPhotos] = useState<RadiatorPhotoItem[]>([])
+  const radiatorIdCounter = useRef(0)
+  const radiatorPhotosRef = useRef<RadiatorPhotoItem[]>([])
+  radiatorPhotosRef.current = radiatorPhotos
   const [radiatorVideo, setRadiatorVideoFile] = useState<File | null>(null)
   const [radiatorVideoResult, setRadiatorVideoResult] = useState<RadiatorVideoResult | null>(null)
   const [quotes, setQuotesState] = useState<CheckedQuote[]>([])
@@ -88,6 +153,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [conflictDecisions, setConflictDecisions] = useState<Record<string, ConflictDecision>>({})
   const [samSampleLoaded, setSamSampleLoaded] = useState(false)
   const reviewRun = useRef(0)
+
+  useEffect(() => {
+    return () => {
+      for (const item of radiatorPhotosRef.current) URL.revokeObjectURL(item.previewUrl)
+    }
+  }, [])
 
   const setAnalysis = useCallback((a: AnalysisResult | null) => {
     setAnalysisState(a)
@@ -129,6 +200,64 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setChecks((prev) => ({ ...prev, [kind]: result }))
   }, [])
 
+  const addRadiatorPhoto = useCallback((file: File): string => {
+    const id = `rad-${++radiatorIdCounter.current}`
+    const previewUrl = URL.createObjectURL(file)
+    setRadiatorPhotos((prev) => [
+      ...prev,
+      {
+        id,
+        file,
+        fileName: file.name,
+        previewUrl,
+        result: null,
+        checking: true,
+        error: null,
+      },
+    ])
+    return id
+  }, [])
+
+  const updateRadiatorPhoto = useCallback(
+    (
+      id: string,
+      patch: Partial<
+        Pick<RadiatorPhotoItem, 'file' | 'fileName' | 'previewUrl' | 'result' | 'checking' | 'error'>
+      >,
+    ) => {
+      setRadiatorPhotos((prev) =>
+        prev.map((item) => {
+          if (item.id !== id) return item
+          if (patch.previewUrl && patch.previewUrl !== item.previewUrl) {
+            URL.revokeObjectURL(item.previewUrl)
+          }
+          return { ...item, ...patch }
+        }),
+      )
+    },
+    [],
+  )
+
+  const removeRadiatorPhoto = useCallback((id: string) => {
+    setRadiatorPhotos((prev) => {
+      const target = prev.find((item) => item.id === id)
+      if (target) URL.revokeObjectURL(target.previewUrl)
+      return prev.filter((item) => item.id !== id)
+    })
+  }, [])
+
+  const radiatorFiles = useMemo(() => {
+    if (radiatorPhotos.length > 0) return radiatorPhotos.map((p) => p.file)
+    return files.radiators ? [files.radiators] : []
+  }, [radiatorPhotos, files.radiators])
+
+  const effectiveFiles = useMemo(() => {
+    if (radiatorPhotos.length > 0) {
+      return { ...files, radiators: radiatorPhotos[0].file }
+    }
+    return files
+  }, [files, radiatorPhotos])
+
   const setRadiatorVideo = useCallback((file: File | null, result: RadiatorVideoResult | null) => {
     setRadiatorVideoFile(file)
     setRadiatorVideoResult(result)
@@ -159,7 +288,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       reading: q.result?.verified.reading ?? null,
     }))
     api
-      .reviewAnalysis(analysis, files, reviewQuotes)
+      .reviewAnalysis(analysis, effectiveFiles, reviewQuotes, radiatorFiles)
       .then((result) => {
         if (run === reviewRun.current)
           setReview({ status: 'done', result, elapsedMs: Date.now() - startedAt, quoteCount: reviewQuotes.length })
@@ -168,16 +297,28 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (run === reviewRun.current)
           setReview({ status: 'failed', message: e instanceof Error ? e.message : 'Review failed' })
       })
-  }, [analysis, files, quotes])
+  }, [analysis, effectiveFiles, quotes, radiatorFiles])
 
   const photos = useMemo(
     () =>
-      PHOTO_SLOTS.map((s) => ({
-        ...s,
-        result: checks[s.kind] ?? null,
-        fileName: files[s.kind]?.name ?? null,
-      })),
-    [checks, files],
+      PHOTO_SLOTS.map((s) => {
+        if (s.kind === 'radiators' && radiatorPhotos.length > 0) {
+          return {
+            ...s,
+            result: aggregateRadiatorResult(radiatorPhotos),
+            fileName:
+              radiatorPhotos.length === 1
+                ? radiatorPhotos[0].fileName
+                : `${radiatorPhotos.length} radiator photos`,
+          }
+        }
+        return {
+          ...s,
+          result: checks[s.kind] ?? null,
+          fileName: files[s.kind]?.name ?? null,
+        }
+      }),
+    [checks, files, radiatorPhotos],
   )
 
   const district = address ? outwardCode(address.postcode) : analysis?.postcode_district
@@ -189,8 +330,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setAddress,
       placeLabel,
       photos,
-      files,
+      files: effectiveFiles,
       setPhoto,
+      radiatorPhotos,
+      radiatorFiles,
+      addRadiatorPhoto,
+      updateRadiatorPhoto,
+      removeRadiatorPhoto,
       radiatorVideo,
       radiatorVideoResult,
       setRadiatorVideo,
@@ -210,8 +356,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setAddress,
       placeLabel,
       photos,
-      files,
+      effectiveFiles,
       setPhoto,
+      radiatorPhotos,
+      radiatorFiles,
+      addRadiatorPhoto,
+      updateRadiatorPhoto,
+      removeRadiatorPhoto,
       radiatorVideo,
       radiatorVideoResult,
       setRadiatorVideo,
