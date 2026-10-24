@@ -1071,7 +1071,7 @@ button.primary {
 }
 
 .hero-tagline {
-  font-size: 1.05rem;
+  font-size: var(--text-base);
   font-weight: 600;
   line-height: 1.35;
   margin: 0 0 1rem;
@@ -1513,11 +1513,18 @@ button.primary {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
 
-.plan-flagged .plan-marker {
+.plan-flagged .plan-marker,
+.plan-marker.plan-flagged {
   background: var(--color-danger);
 }
 
-.plan-couldnt-tell .plan-marker {
+.plan-marker.plan-current {
+  background: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+.plan-couldnt-tell .plan-marker,
+.plan-marker.plan-couldnt-tell {
   background: var(--color-warn);
 }
 
@@ -1525,33 +1532,6 @@ button.primary {
   font-size: var(--text-sm);
   color: var(--text-muted);
   margin: 0.15rem 0 0.5rem;
-}
-
-.plan-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  list-style: none;
-  padding: 0;
-  margin: 0 0 var(--space-4);
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-.plan-legend li {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.plan-legend .plan-marker {
-  margin: 0;
-  position: static;
-}
-
-.plan-ok .plan-marker,
-.plan-marker.plan-ok {
-  background: var(--brand);
 }
 
 .plan-headline {
@@ -2104,6 +2084,17 @@ button.primary {
   gap: var(--space-4);
 }
 
+@media (max-width: 599px) {
+  .cost-table li.card,
+  .spec-screen .radiator-list li {
+    font-size: 1rem;
+  }
+
+  .spec-screen .radiator-list {
+    padding-left: 0;
+  }
+}
+
 @media (min-width: 1024px) {
   :root {
     --shell-max: 72rem;
@@ -2150,13 +2141,19 @@ button.primary {
     font-size: var(--text-lg);
   }
 
+  .lede,
+  .subtle,
+  .hero-tagline,
+  .reasons-list li,
+  .reasons-block p,
+  .default-list li,
+  .log-row,
   .screen .card p,
   .screen .card li,
-  .reasons-block p,
   .quote-results p,
   .plan-steps p,
   .verification-log {
-    max-width: 68ch;
+    max-width: 34em;
   }
 
   .log-step,
@@ -2201,7 +2198,7 @@ button.primary {
   }
 
   .prose-measure {
-    max-width: 68ch;
+    max-width: 34em;
   }
 }
 

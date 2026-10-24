@@ -66,10 +66,15 @@ export function CostScreen() {
         <div className="chart-wrap">
           <p className="chart-axis-caption">Annual saving vs gas (£/yr)</p>
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={chartData} margin={{ top: 16, right: 8, left: 8, bottom: 8 }}>
+            <BarChart data={chartData} margin={{ top: 20, right: 8, left: 8, bottom: 32 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-              <XAxis dataKey="flow" tickFormatter={(v) => `${v} °C`}>
-                <Label value="Flow temperature" offset={-2} position="insideBottom" />
+              <XAxis
+                type="number"
+                dataKey="flow"
+                domain={['dataMin', 'dataMax']}
+                tickFormatter={(v) => `${v} °C`}
+              >
+                <Label value="Flow temperature" offset={8} position="insideBottom" />
               </XAxis>
               <YAxis tickFormatter={(v) => formatGBP(Number(v))} width={80} />
               <Tooltip
@@ -89,7 +94,7 @@ export function CostScreen() {
                 strokeWidth={3}
                 strokeDasharray="6 4"
                 label={{
-                  value: `Break-even ${breakEven.toFixed(0)} °C`,
+                  value: `break-even ≈ ${breakEven.toFixed(0)} °C`,
                   position: 'top',
                   fill: 'var(--color-fabric)',
                   fontSize: 16,

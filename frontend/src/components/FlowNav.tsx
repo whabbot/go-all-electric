@@ -68,7 +68,9 @@ export function FlowNav({ brand }: Props) {
                 title="Complete earlier steps first"
               >
                 {step.label}
-                <span className="flow-step-locked-hint"> (locked)</span>
+                <span className="flow-step-locked-hint">
+                  {index > 0 ? ` (after ${FLOW_STEPS[index - 1].label})` : ' (locked)'}
+                </span>
               </span>
             </li>
           )

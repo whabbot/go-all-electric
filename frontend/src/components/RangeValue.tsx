@@ -45,8 +45,8 @@ export function HeroKwStack({
 }) {
   const fmt = (n: number) => n.toFixed(decimals)
   return (
-    <div className={`kw-hero-stack ${className}`} data-hero>
-      <p className="kw-hero-central">{fmt(range.central)} kW</p>
+    <div className={`kw-hero-stack ${className}`}>
+      <p className="kw-hero-central" data-hero>{fmt(range.central)} kW</p>
       <p className="kw-hero-range">{fmt(range.low)}–{fmt(range.high)} kW range</p>
     </div>
   )
