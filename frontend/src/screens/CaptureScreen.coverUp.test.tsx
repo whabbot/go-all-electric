@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -57,6 +57,18 @@ function renderCapture() {
   )
 }
 
+/** Minimal FileList for tests (jsdom has no DataTransfer). */
+function asFileList(files: File[]): FileList {
+  const list = {
+    length: files.length,
+    item: (index: number) => files[index] ?? null,
+  } as FileList
+  for (let i = 0; i < files.length; i += 1) {
+    Object.defineProperty(list, i, { value: files[i], enumerable: true })
+  }
+  return list
+}
+
 function radiatorFileInput(): HTMLInputElement {
   const heading = screen.getByRole('heading', { name: 'Radiators' })
   const slot = heading.closest('.photo-slot')
@@ -75,18 +87,12 @@ describe('CaptureScreen cover-up queue', () => {
   })
 
   it('reads selected files before clearing the input value', async () => {
-    const user = userEvent.setup()
     renderCapture()
     const input = radiatorFileInput()
     const file = new File(['a'], 'snap.jpg', { type: 'image/jpeg' })
-    Object.defineProperty(input, 'files', {
-      configurable: true,
-      get() {
-        return [file] as unknown as FileList
-      },
-    })
-    await user.upload(input, file)
+    fireEvent.change(input, { target: { files: asFileList([file]) } })
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+    expect(input.value).toBe('')
   })
 
   it('clears the file input after cancel so the same file reopens the dialog', async () => {
