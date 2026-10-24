@@ -9,7 +9,6 @@ import type { WhyNeedId } from '../lib/captureWhyNeed'
 import {
   CAPTURE_CHECKLIST_HEADING,
   CAPTURE_CHECKLIST_INTRO,
-  CAPTURE_CHECKLIST_TOTAL,
   CAPTURE_GUIDANCE,
   CAPTURE_STATUS_LABEL,
   CAPTURE_SUMMARY_ITEMS,
@@ -94,7 +93,6 @@ export function CapturePhotoSlotList({
     <section className="capture-checklist" aria-labelledby={`${listId}-heading`}>
       <h2 id={`${listId}-heading`}>{CAPTURE_CHECKLIST_HEADING}</h2>
       <p className="subtle capture-checklist-intro">{CAPTURE_CHECKLIST_INTRO}</p>
-      <p className="subtle capture-checklist-total">{CAPTURE_CHECKLIST_TOTAL}</p>
 
       <ul className="capture-slot-list">
         {CAPTURE_SUMMARY_ITEMS.map((item) => {
@@ -106,8 +104,14 @@ export function CapturePhotoSlotList({
           const done = slotDoneState(slot, radiatorVideo)
           const isChecking = Boolean(busy[kind])
 
+          const rowState =
+            done === 'ok' ? 'done' : done === 'warn' ? 'warn' : isChecking ? 'checking' : 'pending'
+
           return (
-            <li key={kind} className="capture-slot-accordion card">
+            <li
+              key={kind}
+              className={`capture-slot-accordion card capture-slot-accordion--${rowState}${isExpanded ? ' capture-slot-accordion--open' : ''}`}
+            >
               <div className="capture-slot-collapsed">
                 <button
                   type="button"
@@ -116,10 +120,16 @@ export function CapturePhotoSlotList({
                   aria-controls={panelId}
                   onClick={() => toggleExpanded(kind)}
                 >
+                  <span className="capture-slot-chevron" aria-hidden="true" />
                   <span className="capture-guide-label">{summary.label}</span>
                   <span className={`capture-guide-status capture-guide-status--${summary.status}`}>
                     {CAPTURE_STATUS_LABEL[summary.status]}
                   </span>
+                  {done === 'ok' && (
+                    <span className="capture-slot-done-badge" aria-label="Done">
+                      ✓ Done
+                    </span>
+                  )}
                   {summary.reason ? (
                     <span className="capture-guide-reason subtle">{summary.reason}</span>
                   ) : null}
@@ -142,13 +152,19 @@ export function CapturePhotoSlotList({
                     multiple={multiPhotoKinds.includes(kind)}
                     onChange={(e) => void onFiles(kind, e.target.files, e.currentTarget)}
                   />
-                  {isChecking ? 'Checking…' : 'Take photo or upload'}
+                  {isChecking ? (
+                    <>
+                      <span className="inline-spinner" aria-hidden="true" />
+                      Checking photo…
+                    </>
+                  ) : (
+                    'Take photo or upload'
+                  )}
                 </label>
               </div>
 
               {isExpanded && (
                 <div id={panelId} className="capture-slot-panel">
-                  <h3 className="capture-slot-panel-title">{slot.label}</h3>
                   <div className="capture-slot-actions">
                     <WhyNeedTrigger
                       onActivate={(el) => {

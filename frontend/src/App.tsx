@@ -23,7 +23,10 @@ function App() {
             <FlowStepGate>
               <div className="app-shell">
                 <header className="app-header">
-                  <p className="brand">Go All-Electric</p>
+                  <p className="brand-wordmark">
+                    <span className="brand-bolt" aria-hidden="true">⚡</span>
+                    Go All-Electric
+                  </p>
                   <FlowNav />
                 </header>
                 <main className="app-main">

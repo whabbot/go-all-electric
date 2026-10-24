@@ -2,6 +2,7 @@ import type { AnalysisBundle, Gap } from '../api'
 import { RangeValue } from './RangeValue'
 
 const MAX_KW = 12
+const SAM_QUOTE_KW = [6, 9, 12]
 
 export function EstimateHero({ analysis, billGap }: { analysis: AnalysisBundle; billGap: Gap | null }) {
   const { measured, fabric, cross_check: check } = analysis
@@ -14,8 +15,10 @@ export function EstimateHero({ analysis, billGap }: { analysis: AnalysisBundle; 
         : 'Estimates agree'
 
   return (
-    <section className="hero-estimates">
-      <p className="hero-tagline">It doesn&apos;t trust its own model. It checks it against what your house actually used.</p>
+    <section className="hero-estimates hero-estimates-layout">
+      <p className="hero-tagline prose-measure">
+        It doesn&apos;t trust its own model. It checks it against what your house actually used.
+      </p>
       {check ? (
         <div className={`verdict-banner verdict-${check.verdict}`}>
           <strong>{verdictLabel}</strong>
@@ -35,12 +38,12 @@ export function EstimateHero({ analysis, billGap }: { analysis: AnalysisBundle; 
       )}
 
       <div className="estimate-columns">
-        <div className="estimate-card estimate-b">
+        <div className="estimate-card estimate-b card">
           <h2>Estimate B — measured</h2>
           <p className="estimate-sub">From your gas bill &amp; degree days</p>
           {measured ? (
             <>
-              <div className="kw-display">
+              <div className="kw-display" data-hero>
                 <RangeValue range={measured.design_load_kw} unit=" kW" decimals={1} />
               </div>
               <RangeBand range={measured.design_load_kw} color="var(--color-measured)" label="B" />
@@ -49,19 +52,25 @@ export function EstimateHero({ analysis, billGap }: { analysis: AnalysisBundle; 
               )}
             </>
           ) : (
-            <p className="kw-display couldnt-tell">Couldn&apos;t tell</p>
+            <p className="kw-display couldnt-tell" data-hero>Couldn&apos;t tell</p>
           )}
         </div>
 
-        <div className="estimate-card estimate-a">
+        <div className="estimate-card estimate-a card">
           <h2>Estimate A — fabric</h2>
           <p className="estimate-sub">Installer-style from EPC + photos</p>
-          <div className="kw-display">
+          <div className="kw-display" data-hero>
             <RangeValue range={fabric.design_load_kw} unit=" kW" decimals={1} />
           </div>
           <RangeBand range={fabric.design_load_kw} color="var(--color-fabric)" label="A" />
         </div>
       </div>
+
+      <SharedKwAxis
+        measured={measured?.design_load_kw ?? null}
+        fabric={fabric.design_load_kw}
+        quoteKw={SAM_QUOTE_KW}
+      />
 
       {check && check.reasons.length > 0 && (
       <div className="reasons-block">
@@ -100,6 +109,65 @@ function RangeBand({ range, color, label }: { range: { low: number; central: num
         <span>0</span>
         <span>{MAX_KW} kW</span>
       </div>
+    </div>
+  )
+}
+
+function SharedKwAxis({
+  measured,
+  fabric,
+  quoteKw,
+}: {
+  measured: { low: number; central: number; high: number } | null
+  fabric: { low: number; central: number; high: number }
+  quoteKw: number[]
+}) {
+  return (
+    <div className="shared-kw-axis" aria-label="Estimates and quoted sizes on one scale">
+      <h3>Both estimates vs installer quote sizes (0–12 kW)</h3>
+      <div className="shared-kw-axis-track">
+        {measured && (
+          <div
+            className="range-band-fill"
+            style={{
+              position: 'absolute',
+              top: '35%',
+              height: '30%',
+              left: `${(measured.low / MAX_KW) * 100}%`,
+              width: `${((measured.high - measured.low) / MAX_KW) * 100}%`,
+              background: 'var(--color-measured)',
+              borderRadius: '999px',
+              opacity: 0.85,
+            }}
+          />
+        )}
+        <div
+          className="range-band-fill"
+          style={{
+            position: 'absolute',
+            top: '15%',
+            height: '30%',
+            left: `${(fabric.low / MAX_KW) * 100}%`,
+            width: `${((fabric.high - fabric.low) / MAX_KW) * 100}%`,
+            background: 'var(--color-fabric)',
+            borderRadius: '999px',
+            opacity: 0.85,
+          }}
+        />
+        {quoteKw.map((kw) => (
+          <div
+            key={kw}
+            className="shared-kw-quote-tick"
+            style={{ left: `${(kw / MAX_KW) * 100}%` }}
+            title={`${kw} kW quote`}
+          >
+            <span>{kw}</span>
+          </div>
+        ))}
+      </div>
+      <p className="subtle" style={{ marginTop: '1.75rem' }}>
+        Blue band = measured (B), orange = fabric (A). Ticks = Sam&apos;s 6, 9 and 12 kW quotes.
+      </p>
     </div>
   )
 }

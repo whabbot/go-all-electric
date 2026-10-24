@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api, isMockMode, type EpcAddress } from '../api'
+import { Alert } from '../components/Alert'
 import { useSession } from '../context/SessionContext'
 
 export function StartScreen() {
@@ -50,7 +51,11 @@ export function StartScreen() {
             {loading ? 'Looking…' : 'Find EPC'}
           </button>
         </div>
-        {error && <p className="error">{error}</p>}
+        {error && (
+          <Alert variant="error" title="Could not find EPC records">
+            {error}
+          </Alert>
+        )}
 
         {address ? (
           <div className="selected-house">
