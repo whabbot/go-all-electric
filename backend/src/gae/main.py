@@ -1,5 +1,6 @@
 """FastAPI app. Run with `uv run uvicorn gae.main:app --reload` from backend/."""
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
@@ -12,11 +13,19 @@ from gae.db.router import router as db_router
 from gae.gemini.router import router as gemini_router
 from gae.opendata.router import router as opendata_router
 from gae.pack.router import router as pack_router
-from gae.security import ApiGuard
+from gae.security import ApiGuard, load_access
 from gae.settings import Settings, get_settings
 from gae.survey.router import router as survey_router
 
-app = FastAPI(title="Go All-Electric", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Refuse to start rather than serve with a broken or unsafe access configuration.
+    load_access(get_settings())
+    yield
+
+
+app = FastAPI(title="Go All-Electric", version="0.1.0", lifespan=lifespan)
 app.add_middleware(ApiGuard)
 app.include_router(opendata_router)
 app.include_router(db_router)

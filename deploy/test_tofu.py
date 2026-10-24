@@ -46,8 +46,12 @@ class OpenTofuDeploymentTests(unittest.TestCase):
                     self.assertNotIn(forbidden, source)
         self.assertIn('data "google_secret_manager_secret" "existing"', TF)
         self.assertIn('role      = "roles/secretmanager.secretAccessor"', TF)
-        for name in ("GEMINI_API_KEY", "MONGODB_URI", "EPC_API_TOKEN", "ACCESS_CODE"):
+        for name in (
+            "GEMINI_API_KEY", "MONGODB_URI", "EPC_API_TOKEN", "ACCESS_CODE_HASH", "SESSION_SECRET"
+        ):
             self.assertIn('"' + name + '"', TF)
+        # The retired plaintext code must not be mapped or granted.
+        self.assertNotIn('"ACCESS_CODE"', TF)
         self.assertIn('version = "latest"', TF)
 
     def test_static_direct_egress(self):

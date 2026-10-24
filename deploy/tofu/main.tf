@@ -1,5 +1,7 @@
 locals {
-  secret_names = toset(["GEMINI_API_KEY", "MONGODB_URI", "EPC_API_TOKEN", "ACCESS_CODE"])
+  secret_names = toset([
+    "GEMINI_API_KEY", "MONGODB_URI", "EPC_API_TOKEN", "ACCESS_CODE_HASH", "SESSION_SECRET",
+  ])
   required_apis = toset([
     "run.googleapis.com", "cloudbuild.googleapis.com", "artifactregistry.googleapis.com",
     "secretmanager.googleapis.com", "iam.googleapis.com", "logging.googleapis.com",
@@ -9,7 +11,7 @@ locals {
 
 # Metadata only. No dependency on API resources: missing/inaccessible secrets fail
 # during plan, including bootstrap, with the secret name and API error. Create
-# these four secrets in the console and enable Secret Manager before planning.
+# these five secrets in the console and enable Secret Manager before planning.
 data "google_secret_manager_secret" "existing" {
   for_each  = local.secret_names
   project   = var.project_id

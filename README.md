@@ -384,12 +384,17 @@ Before deploying:
    service accounts, project and secret IAM, Artifact Registry, Logging exclusions,
    Cloud Build and Cloud Run, plus permission to act as `gae-build` and `gae-runtime`.
    Source upload also requires Cloud Storage access. The build account receives
-   `roles/run.builder`; runtime access is restricted to the four named secrets.
+   `roles/run.builder`; runtime access is restricted to the five named secrets.
 2. Open [Secret Manager](https://console.cloud.google.com/security/secret-manager?project=go-all-electric-demo)
    in that project and enable its API if prompted. For each exact name `GEMINI_API_KEY`,
-   `MONGODB_URI`, `EPC_API_TOKEN`, and `ACCESS_CODE`, click **Create secret**, enter the
-   name, paste its value into **Secret value**, then click **Create**. Keep an enabled
-   version for each secret. Choose a demo access code and share it privately with judges.
+   `MONGODB_URI`, `EPC_API_TOKEN`, `ACCESS_CODE_HASH` and `SESSION_SECRET`, click
+   **Create secret**, enter the name, paste its value into **Secret value**, then click
+   **Create**. Keep an enabled version for each secret. The last two never hold the code:
+   - `ACCESS_CODE_HASH`: choose a demo access code and share it privately with judges.
+     In `backend/`, run `uv run python -m gae.security hash-access-code | pbcopy`, type
+     the code twice (it is not echoed), then paste the copied `scrypt$...` line.
+   - `SESSION_SECRET`: run `openssl rand -base64 48 | tr -d '\n' | pbcopy` and paste it.
+     It signs session cookies; replacing it signs every visitor out.
    OpenTofu reads secret metadata only: it never reads, creates or uploads secret values.
    A missing or inaccessible secret fails the plan with its name and the API error;
    create it in the console or correct metadata permissions before continuing.
@@ -437,7 +442,8 @@ Deploy in three steps, reviewing each plan before applying it:
 The service URL is an output after deployment. Cloud Run uses 0–2 instances, 2 GiB
 memory, one CPU, concurrency 8, and a 900-second timeout. All outbound traffic uses
 Direct VPC egress and Cloud NAT with the single reserved IP. Public invocation is
-enabled; the application access code protects every `/api/*` route except `/api/health`.
+enabled; the access-code session protects every `/api/*` route except `/api/health` and
+the `/api/session` sign-in.
 Secret references use `latest`; manage secret versions in the console and deploy a new
 revision to pick up rotations in environment variables. Do not run with shell tracing.
 
@@ -448,9 +454,22 @@ infrastructure, but retains the console-managed secrets and leaves APIs enabled.
 Remove the Atlas **/32 entry by hand**. Cloud Build source staging objects and build
 history are outside OpenTofu state; remove them separately if needed.
 
-The first visit shows **Enter access code**. A verified code is remembered in localStorage
-on that device and sent in `X-Access-Code`. Rotating the code invalidates saved codes.
-When `ACCESS_CODE` is unset, local development retains its existing open behavior.
+The first visit shows **Enter access code**. The server checks it against the salted
+scrypt hash in `ACCESS_CODE_HASH` and replies with a signed `gae_session` cookie
+(`HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/api`) that expires after 12 hours
+(`SESSION_TTL_SECONDS`). The browser never stores the code, and old builds' stored copy
+is deleted on load. Changing the code or `SESSION_SECRET` signs everyone out. Each IP may
+make 10 wrong attempts per 15 minutes (`SESSION_ATTEMPTS_PER_IP`,
+`SESSION_ATTEMPT_WINDOW_SECONDS`) before sign-in returns 429. When `ACCESS_CODE_HASH` is
+unset, local development retains its existing open behavior. The app refuses to start if
+the hash is malformed, `SESSION_SECRET` is missing or under 32 bytes, or the retired
+`ACCESS_CODE` is still set.
+
+To upgrade a deployment that used the plaintext `ACCESS_CODE` secret: create
+`ACCESS_CODE_HASH` and `SESSION_SECRET` in the console as above, then build a new commit
+and run the **Deploy that image** plan and apply. Once the new revision accepts the code,
+delete the old `ACCESS_CODE` secret in the console.
+
 Cloud Run deployments default to 300 Gemini POST requests per IP per 3600 seconds,
 so judges and visitors sharing the venue Wi-Fi have a larger shared allowance. Set
 `gemini_requests_per_ip` (default 300) and `gemini_limit_window_seconds` (default 3600)
@@ -460,7 +479,7 @@ set the runtime `GEMINI_REQUESTS_PER_IP` and `GEMINI_LIMIT_WINDOW_SECONDS` varia
 Local development with a code set defaults to 30 requests per IP per 3600 seconds.
 Both settings also apply when supplied directly to the application
 (`GEMINI_REQUESTS_PER_IP=0` disables the limit). A 429 response explains the limit in the UI
-and supplies `Retry-After`. Rejected access codes do not consume the allowance.
+and supplies `Retry-After`. Signed-out requests do not consume the allowance.
 
 This small in-memory limiter is per container and resets on restart; two instances can
 provide up to two allowances. People sharing Wi-Fi also share an IP allowance. It uses
@@ -485,8 +504,10 @@ docker run --rm -p 8080:8080 \
   --env-file "$HOME/.config/go-all-electric/.env" go-all-electric
 ```
 
-Ensure that env file includes `ACCESS_CODE` for gated validation. Never put a code or API
-key on a command line or commit an env file. Use SAMPLE
+Ensure that env file includes `ACCESS_CODE_HASH` and `SESSION_SECRET` for gated
+validation. Chrome accepts the `Secure` cookie on `http://localhost`; for another
+browser over plain http, add `SESSION_COOKIE_SECURE=false` (refused under Cloud Run).
+Never put a code or API key on a command line or commit an env file. Use SAMPLE
 inputs for verification. Check wrong-code refusal, EPC search and a photo check at
 `http://localhost:8080`, then check the deployed HTTPS URL on Android at about 400 px.
 The manifest includes local 192 px and 512 px icons and standalone display; Chrome's
