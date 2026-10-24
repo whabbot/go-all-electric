@@ -2111,13 +2111,17 @@ button.primary {
     min-height: 52px;
   }
 
-  .screen > p,
-  .screen > .lede,
+  .screen > p:not(.lede):not(.subtle),
   .screen > .subhead,
   .screen > .place-label,
   .screen > .footer-note,
   .screen > .hero-tagline {
     max-width: 68ch;
+  }
+
+  .screen > .lede,
+  .screen > p.subtle {
+    max-width: 34em;
   }
 
   .kw-hero-central {
@@ -2199,6 +2203,29 @@ button.primary {
 
   .prose-measure {
     max-width: 34em;
+  }
+
+  .hero-estimates .hero-tagline {
+    max-width: none;
+    white-space: nowrap;
+    margin-bottom: 0.35rem;
+  }
+
+  .hero-estimates .verdict-banner {
+    margin-bottom: 0.65rem;
+    padding: 0.75rem 1rem;
+  }
+
+  .hero-estimates .kw-hero-stack {
+    margin: 0.25rem 0 0;
+  }
+
+  .hero-estimates-layout .estimate-sub {
+    margin-bottom: 0.4rem;
+  }
+
+  .hero-estimates-layout .estimate-columns {
+    margin-top: 0;
   }
 }
 

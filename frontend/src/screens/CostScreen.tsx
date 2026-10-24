@@ -69,12 +69,12 @@ export function CostScreen() {
             <BarChart data={chartData} margin={{ top: 20, right: 8, left: 8, bottom: 32 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis
-                type="number"
+                type="category"
                 dataKey="flow"
-                domain={['dataMin', 'dataMax']}
+                ticks={[40, 45, 50, 55]}
                 tickFormatter={(v) => `${v} °C`}
               >
-                <Label value="Flow temperature" offset={8} position="insideBottom" />
+                <Label value="Flow temperature" position="bottom" offset={12} />
               </XAxis>
               <YAxis tickFormatter={(v) => formatGBP(Number(v))} width={80} />
               <Tooltip
