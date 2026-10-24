@@ -17,11 +17,11 @@ export const CAPTURE_EXAMPLES: Record<PhotoKind, Record<'good' | 'bad', Example>
   radiators: {
     good: {
       src: new URL('../assets/capture-examples/radiators-good.webp', import.meta.url).href,
-      alt: 'Radiator photographed from a front corner looking down at about 45 degrees so the front face, top grille and fins, and one end are visible, with a tape measure held across the width.',
+      alt: 'White double-panel convector radiator viewed from a front corner looking down at about 45 degrees, showing the front face, top grille, fins between the panels and end profile, with a tape measure across the width.',
     },
     bad: {
       src: new URL('../assets/capture-examples/radiators-bad.webp', import.meta.url).href,
-      alt: 'Radiator photographed straight front-on where single and double panel radiators look alike and panel and fin counts cannot be read.',
+      alt: 'White panel radiator photographed straight on at radiator height, with a tape measure across the width; the top and end profile are hidden so the number of panels cannot be told.',
     },
   },
   fuse_cutout: {
