@@ -211,7 +211,8 @@ needs a paid-tier key). Uploads are multipart, held in memory for the request an
 
 ## Secrets
 
-Keys live in `.env` only and are used server-side only. The frontend never receives any API key.
+Keys live in `.env` for local development and Secret Manager for Cloud Run, and are used
+server-side only. The frontend never receives any API key.
 The backend loads keys with pydantic-settings as `SecretStr`, so they print as `**********`. They
 are never logged or returned by the API: `/api/health` reports only whether each integration is
 configured, as true or false. The browser talks to the backend only through `/api`. Never put a key
@@ -373,14 +374,18 @@ Before deploying:
 
 1. Install Google Cloud CLI, run `gcloud auth login`, and choose a project with billing.
    The deployer needs permission to enable APIs, manage service accounts and their IAM
-   policies, create Secret Manager secrets, update Cloud Logging sink exclusions, build sources,
-   and deploy Cloud Run services.
+   policies, describe Secret Manager secrets and manage their IAM bindings, update Cloud
+   Logging sink exclusions, build sources, and deploy Cloud Run services.
    The script grants `roles/run.builder` to a dedicated build account and grants the
    runtime account access only to the four named secrets.
-2. Put nonempty `GEMINI_API_KEY`, `MONGODB_URI`, `EPC_API_TOKEN`, and `ACCESS_CODE` values
-   in `~/.config/go-all-electric/.env` with mode 600. Use ordinary `NAME=value` lines
-   (quotes are supported; no shell expansion or multiline values). Choose a demo access
-   code and share it privately with judges. Existing local env files may lack that code.
+2. Open [Secret Manager](https://console.cloud.google.com/security/secret-manager) in
+   the selected project and enable the Secret Manager API if prompted. For each exact
+   name `GEMINI_API_KEY`, `MONGODB_URI`, `EPC_API_TOKEN`, and `ACCESS_CODE`, click
+   **Create secret**, enter the name, paste its value into **Secret value**, then click
+   **Create**. Choose a demo access code and share it privately with judges.
+   The script never reads or uploads secret values. It checks that all four secrets
+   exist before making any project changes and stops with their names and a console
+   link if any are missing or unavailable.
 3. **Use a single static Atlas egress IP.** The script creates a custom VPC network
    (`gae-network`), a `10.42.0.0/24` subnet (`gae-egress`) in `europe-west2`, a Cloud Router
    (`gae-router`), a reserved regional external IP (`gae-egress-ip`), and Cloud NAT
@@ -396,12 +401,13 @@ Before deploying:
    GOOGLE_CLOUD_PROJECT=your-project-id ./deploy/cloudrun.sh
    ```
 
-The script enables the required APIs, creates or updates Secret Manager secrets using
-stdin without echoing values, and runs `gcloud run deploy --source .` (using the absolute
+The script enables the required APIs, grants the runtime account access to the four
+secrets, and runs `gcloud run deploy --source .` (using the absolute
 repository path). It uses `europe-west2`, 0–2 instances, 2 GiB memory, one CPU, concurrency
 8, and a 900-second timeout. Public invocation is enabled; the application access code
-protects every `/api/*` route except `/api/health`. Re-running adds current secret versions
-and redeploys. Do not run with shell tracing. Credentials are runtime environment variables.
+protects every `/api/*` route except `/api/health`. Re-running redeploys using the latest
+secret versions managed in the console. Do not run with shell tracing. Credentials are
+runtime environment variables.
 
 The VPC, subnet, router, address and NAT are reused on subsequent runs; the NAT
 configuration is updated to use the reserved address and subnet. Cloud NAT and reserved
