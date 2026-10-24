@@ -1,5 +1,6 @@
 import { useId, type MutableRefObject } from 'react'
 import type { PhotoCheckResult, PhotoKind, RadiatorVideoResult } from '../api'
+import { MAX_RADIATOR_PHOTOS, type RadiatorPhotoItem } from '../context/SessionContext'
 import { CaptureExamplesDialog } from './CaptureExamplesDialog'
 import { CaptureWhyNeedDialog } from './CaptureWhyNeedDialog'
 import { RadiatorVideoResults } from './RadiatorVideoResults'
@@ -31,6 +32,9 @@ type Props = {
   onFiles: (kind: PhotoKind, list: FileList | null, input: HTMLInputElement) => void
   fileInputsRef: MutableRefObject<Partial<Record<PhotoKind, HTMLInputElement>>>
   multiPhotoKinds: PhotoKind[]
+  radiatorPhotos?: RadiatorPhotoItem[]
+  onRetakeRadiatorPhoto?: (id: string, list: FileList | null, input: HTMLInputElement) => void
+  onRemoveRadiatorPhoto?: (id: string) => void
   radiatorVideo: File | null
   radiatorVideoResult: RadiatorVideoResult | null
   videoError: string | null
@@ -60,6 +64,9 @@ export function CapturePhotoSlotList({
   onFiles,
   fileInputsRef,
   multiPhotoKinds,
+  radiatorPhotos = [],
+  onRetakeRadiatorPhoto,
+  onRemoveRadiatorPhoto,
   radiatorVideo,
   radiatorVideoResult,
   videoError,
@@ -167,30 +174,115 @@ export function CapturePhotoSlotList({
                   {photoErrors[kind] && (
                     <p className="error" role="alert">{photoErrors[kind]}</p>
                   )}
-                  {slot.fileName && <p className="file-name">Redacted photo ready</p>}
-                  {slot.result && (
-                    <div className={`check-result ${slot.result.legible ? 'ok' : 'warn'}`}>
-                      <p>
-                        {slot.result.summary}{' '}
-                        <span className="subtle">
-                          ({slot.result.model}, {(slot.result.elapsed_ms / 1000).toFixed(1)}s)
-                        </span>
+                  {kind === 'radiators' && radiatorPhotos.length > 0 ? (
+                    <div className="radiator-photo-batch">
+                      <p className="file-name">
+                        {radiatorPhotos.length} of {MAX_RADIATOR_PHOTOS} radiator photo
+                        {radiatorPhotos.length === 1 ? '' : 's'} added
                       </p>
-                      {!slot.result.matches_expected && (
-                        <p className="retake">
-                          {slot.result.kind === 'other'
-                            ? `This doesn't look like a ${slot.label.replace(' (optional)', '').toLowerCase()}.`
-                            : `This looks like a ${slot.result.kind.replaceAll('_', ' ')}.`}
-                        </p>
-                      )}
-                      {slot.result.retake_hint && <p className="retake">{slot.result.retake_hint}</p>}
-                      {slot.result.privacy_warning && (
-                        <p className="privacy-warn">{slot.result.privacy_warning}</p>
-                      )}
-                      {!slot.result.privacy_warning && slot.result.legible && (
-                        <p className="privacy-ok">Redacted image only — no metadata stored.</p>
-                      )}
+                      <ul className="radiator-list" aria-label="Uploaded radiator photos">
+                        {radiatorPhotos.map((rad, idx) => {
+                          const radLabel = `Radiator ${idx + 1}`
+                          return (
+                            <li key={rad.id} className="radiator-photo-item">
+                              <img
+                                src={rad.previewUrl}
+                                alt={`${radLabel} preview`}
+                                width={96}
+                                height={72}
+                                className="radiator-photo-thumb"
+                              />
+                              <div className="radiator-photo-body">
+                                <p>
+                                  <strong>{radLabel}</strong>{' '}
+                                  <span className="subtle">({rad.fileName})</span>
+                                </p>
+                                {rad.checking && <p className="subtle">Checking…</p>}
+                                {rad.error && (
+                                  <p className="error" role="alert">
+                                    {rad.error}
+                                  </p>
+                                )}
+                                {rad.result && (
+                                  <div className={`check-result ${rad.result.legible ? 'ok' : 'warn'}`}>
+                                    <p>
+                                      {rad.result.summary}{' '}
+                                      <span className="subtle">
+                                        ({rad.result.model}, {(rad.result.elapsed_ms / 1000).toFixed(1)}s)
+                                      </span>
+                                    </p>
+                                    {!rad.result.matches_expected && (
+                                      <p className="retake">
+                                        {rad.result.kind === 'other'
+                                          ? "This doesn't look like a radiator."
+                                          : `This looks like a ${rad.result.kind.replaceAll('_', ' ')}.`}
+                                      </p>
+                                    )}
+                                    {rad.result.retake_hint && <p className="retake">{rad.result.retake_hint}</p>}
+                                    {rad.result.privacy_warning && (
+                                      <p className="privacy-warn">{rad.result.privacy_warning}</p>
+                                    )}
+                                    {!rad.result.privacy_warning && rad.result.legible && (
+                                      <p className="privacy-ok">Redacted image only — no metadata stored.</p>
+                                    )}
+                                  </div>
+                                )}
+                                <div className="capture-slot-actions">
+                                  <label className="btn upload-btn">
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      capture="environment"
+                                      aria-label={`Retake ${radLabel}`}
+                                      onChange={(e) =>
+                                        void onRetakeRadiatorPhoto?.(rad.id, e.target.files, e.currentTarget)
+                                      }
+                                    />
+                                    Retake
+                                  </label>
+                                  <button
+                                    type="button"
+                                    className="btn"
+                                    aria-label={`Remove ${radLabel}`}
+                                    onClick={() => onRemoveRadiatorPhoto?.(rad.id)}
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ul>
                     </div>
+                  ) : (
+                    <>
+                      {slot.fileName && <p className="file-name">Redacted photo ready</p>}
+                      {slot.result && (
+                        <div className={`check-result ${slot.result.legible ? 'ok' : 'warn'}`}>
+                          <p>
+                            {slot.result.summary}{' '}
+                            <span className="subtle">
+                              ({slot.result.model}, {(slot.result.elapsed_ms / 1000).toFixed(1)}s)
+                            </span>
+                          </p>
+                          {!slot.result.matches_expected && (
+                            <p className="retake">
+                              {slot.result.kind === 'other'
+                                ? `This doesn't look like a ${slot.label.replace(' (optional)', '').toLowerCase()}.`
+                                : `This looks like a ${slot.result.kind.replaceAll('_', ' ')}.`}
+                            </p>
+                          )}
+                          {slot.result.retake_hint && <p className="retake">{slot.result.retake_hint}</p>}
+                          {slot.result.privacy_warning && (
+                            <p className="privacy-warn">{slot.result.privacy_warning}</p>
+                          )}
+                          {!slot.result.privacy_warning && slot.result.legible && (
+                            <p className="privacy-ok">Redacted image only — no metadata stored.</p>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
 
                   {kind === 'radiators' && (

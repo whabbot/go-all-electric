@@ -13,7 +13,7 @@ Photos and bills stay in memory for this call: they are never stored, logged or 
 
 import math
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from threading import Lock
@@ -117,11 +117,19 @@ def run_analysis(
     files: dict[PhotoKind, tuple[bytes, str]],
     emit: Emit = lambda event: None,
     radiator_video: tuple[bytes, str] | None = None,
+    radiator_files: Sequence[tuple[bytes, str]] | None = None,
 ) -> AnalysisResult:
     started = time.monotonic()
     timings: dict[str, int] = {}
     entries: list[VerificationLogEntry] = []
     lock = Lock()
+
+    rad_uploads: list[tuple[bytes, str]] = (
+        list(radiator_files)
+        if radiator_files is not None
+        else ([files[PhotoKind.RADIATORS]] if PhotoKind.RADIATORS in files else [])
+    )
+    other_files = {k: v for k, v in files.items() if k is not PhotoKind.RADIATORS}
 
     def record(entry: VerificationLogEntry) -> None:
         with lock:
@@ -142,7 +150,10 @@ def run_analysis(
             timings[name] = round((time.monotonic() - t0) * 1000)
             step(name, "done")
 
-    def read(kind: PhotoKind, data: bytes, mime: str) -> VerifiedReading | None:
+    def read(
+        kind: PhotoKind, data: bytes, mime: str, prefix: str | None = None
+    ) -> VerifiedReading | None:
+        log_prefix = prefix or kind.value
         try:
             return extract(
                 services.gemini,
@@ -150,7 +161,7 @@ def run_analysis(
                 kind,
                 data,
                 mime,
-                log=LiveLog(kind, record),
+                log=LiveLog(log_prefix, record),
                 purpose=f"/api/analysis:{kind.value}",
             )
         except GeminiError as exc:
@@ -187,13 +198,26 @@ def run_analysis(
             )
             return None
 
-    workers = 1 + len(files) + (1 if radiator_video is not None else 0)
+    workers = 1 + len(other_files) + len(rad_uploads) + (1 if radiator_video is not None else 0)
     with ThreadPoolExecutor(max_workers=workers) as pool:
         epc_future = pool.submit(timed, "epc", services.epc, certificate_id)
         futures: dict[PhotoKind, Future] = {
             kind: pool.submit(timed, f"read_{kind.value}", read, kind, data, mime)
-            for kind, (data, mime) in files.items()
+            for kind, (data, mime) in other_files.items()
         }
+        rad_t0 = time.monotonic()
+        if rad_uploads:
+            step("read_radiators", "running")
+        rad_futures: list[Future[VerifiedReading | None]] = [
+            pool.submit(
+                read,
+                PhotoKind.RADIATORS,
+                data,
+                mime,
+                "radiators" if idx == 0 else f"radiators-{idx + 1}",
+            )
+            for idx, (data, mime) in enumerate(rad_uploads)
+        ]
         video_future: Future[RadiatorVideoResult | None] | None = (
             pool.submit(
                 timed,
@@ -211,6 +235,14 @@ def run_analysis(
             pool.shutdown(wait=False, cancel_futures=True)
             raise
         verified = {kind: future.result() for kind, future in futures.items()}
+        if rad_futures:
+            try:
+                rad_verified = [f.result() for f in rad_futures]
+            finally:
+                timings["read_radiators"] = round((time.monotonic() - rad_t0) * 1000)
+                step("read_radiators", "done")
+        else:
+            rad_verified = []
         video_result = video_future.result() if video_future is not None else None
 
     if mapping.estimate is None:
@@ -238,9 +270,29 @@ def run_analysis(
     gaps: list[Gap] = []
     readings: list[InputReading] = []
     for kind in PhotoKind:
-        readings.append(_summary(kind, verified.get(kind), kind in files))
+        if kind is PhotoKind.RADIATORS:
+            if not rad_uploads:
+                readings.append(_summary(kind, None, False))
+            else:
+                for idx, result in enumerate(rad_verified, start=1):
+                    readings.append(_summary(kind, result, True))
+                    if result is None or result.status == "couldnt_tell":
+                        label = (
+                            f"{_label(kind)} photo {idx}"
+                            if len(rad_uploads) > 1
+                            else f"{_label(kind)} photo"
+                        )
+                        gaps.append(
+                            Gap(
+                                input=kind.value,
+                                message=f"Couldn't tell from the {label}.",
+                                provide=f"Photograph {SPECS[kind].photograph_instead}.",
+                            )
+                        )
+            continue
+        readings.append(_summary(kind, verified.get(kind), kind in other_files))
         result = verified.get(kind)
-        if kind in files and (result is None or result.status == "couldnt_tell"):
+        if kind in other_files and (result is None or result.status == "couldnt_tell"):
             gaps.append(
                 Gap(
                     input=kind.value,
@@ -355,9 +407,11 @@ def run_analysis(
     # --- Maths core ---------------------------------------------------------------------------
     t0 = time.monotonic()
     basis = measured.design_load_kw if measured else fabric.design_load_kw
-    radiator = _reading(verified.get(PhotoKind.RADIATORS), RadiatorReading)
-    rooms = _rooms(radiator, basis.central, defaults)
-    if radiator is not None and not rooms:
+    radiator_readings = [
+        r for res in rad_verified if (r := _reading(res, RadiatorReading)) is not None
+    ]
+    rooms = _rooms(radiator_readings, basis.central, defaults)
+    if radiator_readings and not rooms:
         gaps.append(
             Gap(
                 input="radiators",
@@ -370,8 +424,7 @@ def run_analysis(
             Gap(
                 input="radiators",
                 message="Couldn't tell from the radiator video right now.",
-                provide="Photograph each radiator straight-on showing its full width, height "
-                "and top grille.",
+                provide=f"Photograph {SPECS[PhotoKind.RADIATORS].photograph_instead}.",
             )
         )
     elif video_result is not None:
@@ -400,8 +453,7 @@ def run_analysis(
                 Gap(
                     input="radiators",
                     message=req,
-                    provide="Photograph that radiator straight-on showing its full width, height "
-                    "and top grille.",
+                    provide=f"Photograph {SPECS[PhotoKind.RADIATORS].photograph_instead}.",
                 )
             )
         if video_result.status == "couldnt_tell" and not video_result.photo_requests:
@@ -409,8 +461,7 @@ def run_analysis(
                 Gap(
                     input="radiators",
                     message="Couldn't tell from the radiator walk-through video.",
-                    provide="Photograph each radiator straight-on showing its full width, height "
-                    "and top grille.",
+                    provide=f"Photograph {SPECS[PhotoKind.RADIATORS].photograph_instead}.",
                 )
             )
     check = cross_check(fabric, measured) if measured else None
@@ -577,26 +628,47 @@ def _monthly(bill: GasBillReading) -> dict[int, float] | None:
 
 
 def _rooms(
-    reading: RadiatorReading | None, design_load_kw: float, defaults: list[NamedDefault]
+    readings: RadiatorReading | Sequence[RadiatorReading] | None,
+    design_load_kw: float,
+    defaults: list[NamedDefault],
 ) -> list[Room]:
-    if reading is None or reading.height_mm is None or reading.width_mm is None:
+    if readings is None:
+        items: list[RadiatorReading] = []
+    elif isinstance(readings, RadiatorReading):
+        items = [readings]
+    else:
+        items = list(readings)
+    rateable: list[tuple[int, RadiatorReading, float]] = []
+    for idx, reading in enumerate(items, start=1):
+        if reading.height_mm is None or reading.width_mm is None:
+            continue
+        per_m2 = c.PANEL_RADIATOR_DT50_W_PER_M2.get(reading.radiator_type)
+        if per_m2 is None:
+            continue
+        rated = per_m2 * reading.height_mm * reading.width_mm / 1e6
+        rateable.append((idx, reading, rated))
+    if not rateable:
         return []
-    per_m2 = c.PANEL_RADIATOR_DT50_W_PER_M2.get(reading.radiator_type)
-    if per_m2 is None:
-        return []
-    rated = per_m2 * reading.height_mm * reading.width_mm / 1e6
-    share = c.PHOTOGRAPHED_ROOM_SHARE_OF_HEAT_LOSS
+    share = min(c.PHOTOGRAPHED_ROOM_SHARE_OF_HEAT_LOSS, 1.0 / len(rateable))
     loss = design_load_kw * 1000 * share
-    defaults.append(
-        NamedDefault(
-            input="radiators",
-            name="radiator_rating_from_photo",
-            value=f"{rated:,.0f} W at ΔT50",
-            note=f"{reading.radiator_type} panel, {reading.height_mm} x {reading.width_mm} mm "
-            "estimated from the photo, rated from typical catalogue outputs.",
-            confidence="low",
+    rooms: list[Room] = []
+    used_names: set[str] = set()
+    for idx, reading, rated in rateable:
+        fallback_name = "Photographed room" if len(rateable) == 1 else f"Radiator {idx}"
+        base_name = (reading.room or "").strip() or fallback_name
+        room_name = base_name if base_name not in used_names else f"{base_name} ({idx})"
+        used_names.add(room_name)
+        defaults.append(
+            NamedDefault(
+                input="radiators",
+                name="radiator_rating_from_photo",
+                value=f"{rated:,.0f} W at ΔT50",
+                note=f"{reading.radiator_type} panel, {reading.height_mm} x {reading.width_mm} mm "
+                "estimated from the photo, rated from typical catalogue outputs.",
+                confidence="low",
+            )
         )
-    )
+        rooms.append(Room(room_name, loss, rated))
     defaults.append(
         NamedDefault(
             input="radiators",
@@ -607,7 +679,7 @@ def _rooms(
             confidence="low",
         )
     )
-    return [Room(reading.room or "Photographed room", loss, rated)]
+    return rooms
 
 
 def _epc_defaults(mapping: FabricMapping) -> list[NamedDefault]:
@@ -666,9 +738,17 @@ def _survey(
     log: list[VerificationLogEntry],
 ) -> SurveyInput:
     extracted: dict[str, StoredReading] = {}
+    rad_count = 0
     for item in readings:
         if item.reading is None:
             continue
+        if item.kind is PhotoKind.RADIATORS:
+            rad_count += 1
+        prefix = (
+            f"radiators_{rad_count}"
+            if item.kind is PhotoKind.RADIATORS and rad_count > 1
+            else item.kind.value
+        )
         confidence = item.reading.get("confidence", "low")
         for key, value in item.reading.items():
             if key in ("notes", "confidence", "legible") or value is None:
@@ -679,7 +759,7 @@ def _survey(
                 value = ", ".join(value)
             if isinstance(value, dict):
                 continue
-            extracted[f"{item.kind.value}_{key}"] = StoredReading(
+            extracted[f"{prefix}_{key}"] = StoredReading(
                 value=value, confidence=confidence, evidence=item.status
             )
     return SurveyInput(

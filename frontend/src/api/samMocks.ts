@@ -215,8 +215,8 @@ const PHOTO_MOCKS: Record<PhotoKind, PhotoMock> = {
   radiators: {
     kind: 'radiators',
     legible: true,
-    summary: 'Legible — double panel radiator, ~1.2 m wide',
-    key_fields: { type: 'double panel', width_m: '1.2', height_m: '0.6' },
+    summary: 'Legible — K2 double panel convector (2 panels, 2 fin rows), ~1.2 m wide',
+    key_fields: { radiator_type: 'K2', panels: '2', fin_rows: '2', width_m: '1.2', height_m: '0.6' },
     confidence: 'medium',
     retake_hint: null,
     privacy_warning: null,
@@ -298,8 +298,11 @@ function mockLog(): VerificationLogEntry[] {
     entry('boiler_plate-v3', 'boiler_plate', 'pass', 'code', 'all checks passed', true, 'use this reading', 350),
     entry('radiators-v1', 'radiators', 'read', 'gemini-3.8-flash', 'Gemini reads the input', true, '{"radiator_type": "other"}', 500),
     entry('radiators-v2', 'radiators', 'check', 'code', 'radiator legible: model reports it cannot read the radiator', false, 'ask Gemini to look again', 600),
-    entry('radiators-v3', 'radiators', 'reread', 'gemini-4-argon', 'Gemini re-reads with the failed checks', true, '{"radiator_type": "K2", "height_mm": 600, "width_mm": 1200}', 900),
+    entry('radiators-v3', 'radiators', 'reread', 'gemini-4-argon', 'Gemini re-reads with the failed checks', true, '{"room": "Living room", "radiator_type": "K2", "height_mm": 600, "width_mm": 1200}', 900),
     entry('radiators-v4', 'radiators', 'pass', 'code', 'all checks passed', true, 'use this reading', 950),
+    entry('radiators-2-v1', 'radiators', 'read', 'gemini-3.8-flash', 'Gemini reads the input', true, '{"room": "Main bedroom", "radiator_type": "K2", "height_mm": 600, "width_mm": 1400}', 1000),
+    entry('radiators-2-v2', 'radiators', 'check', 'code', 'panels and fins match radiator_type: K2 expects 2 panel(s), 2 fin row(s); got 2, 2', true, 'ok', 1050),
+    entry('radiators-2-v3', 'radiators', 'pass', 'code', 'all checks passed', true, 'use this reading', 1100),
     entry('gas_bill-v1', 'gas_bill', 'read', 'gemini-4-argon', 'Gemini reads the input', true, '{"total_kwh": 12000}', 1200),
     entry('gas_bill-v2', 'gas_bill', 'check', 'code', 'period covers about a year: 365 days', true, 'ok', 1250),
     entry('gas_bill-v3', 'gas_bill', 'pass', 'code', 'all checks passed', true, 'use this reading', 1300),
@@ -514,7 +517,36 @@ export function mockRadiatorVideo(): RadiatorVideoResult {
   return SAM_RADIATOR_VIDEO
 }
 
-export function mockAnalysisResult(kinds: PhotoKind[], hasRadiatorVideo = false): AnalysisResult {
+export const SAM_RADIATOR_READINGS: Record<string, unknown>[] = [
+  {
+    room: 'Living room',
+    radiator_type: 'K2',
+    height_mm: 600,
+    width_mm: 1200,
+    panels: 2,
+    fin_rows: 2,
+    legible: true,
+    confidence: 'medium',
+    notes: '',
+  },
+  {
+    room: 'Main bedroom',
+    radiator_type: 'K2',
+    height_mm: 600,
+    width_mm: 1400,
+    panels: 2,
+    fin_rows: 2,
+    legible: true,
+    confidence: 'high',
+    notes: '',
+  },
+]
+
+export function mockAnalysisResult(
+  kinds: PhotoKind[],
+  hasRadiatorVideo = false,
+  radiatorCount?: number,
+): AnalysisResult {
   const all: PhotoKind[] = ['boiler_plate', 'radiators', 'fuse_cutout', 'outdoor_space', 'loft', 'gas_bill']
   return {
     survey_id: null,
@@ -542,9 +574,34 @@ export function mockAnalysisResult(kinds: PhotoKind[], hasRadiatorVideo = false)
     },
     bundle: SAM_ANALYSIS,
     size_basis: 'measured',
-    readings: all.map((kind) => {
+    readings: all.flatMap((kind): InputReading[] => {
       const active = kinds.includes(kind)
       const status = active ? (READ_STATUS[kind] ?? 'verified') : 'not_provided'
+      if (kind === 'radiators') {
+        if (!active) {
+          return [
+            {
+              kind,
+              status: 'not_provided',
+              attempts: 0,
+              reading: null,
+              warnings: [],
+              photograph_instead: null,
+              used_for: '',
+            },
+          ]
+        }
+        const count = radiatorCount && radiatorCount > 0 ? radiatorCount : SAM_RADIATOR_READINGS.length
+        return Array.from({ length: count }, (_, idx) => ({
+          kind,
+          status,
+          attempts: idx === 0 ? 2 : 1,
+          reading: SAM_RADIATOR_READINGS[idx % SAM_RADIATOR_READINGS.length] ?? null,
+          warnings: [],
+          photograph_instead: null,
+          used_for: '',
+        }))
+      }
       const reading =
         kind === 'fuse_cutout' && active
           ? { rating_a: 60, legible: true, confidence: 'high', notes: '' }
@@ -559,15 +616,17 @@ export function mockAnalysisResult(kinds: PhotoKind[], hasRadiatorVideo = false)
                 notes: '',
               }
             : null
-      return {
-        kind,
-        status,
-        attempts: kind === 'radiators' ? 2 : 1,
-        reading,
-        warnings: [],
-        photograph_instead: null,
-        used_for: '',
-      }
+      return [
+        {
+          kind,
+          status,
+          attempts: 1,
+          reading,
+          warnings: [],
+          photograph_instead: null,
+          used_for: '',
+        },
+      ]
     }),
     radiator_video: hasRadiatorVideo ? SAM_RADIATOR_VIDEO : null,
     gaps: hasRadiatorVideo
@@ -594,10 +653,15 @@ export function mockAnalysisResult(kinds: PhotoKind[], hasRadiatorVideo = false)
   }
 }
 
-export function mockAnalysisEvents(kinds: PhotoKind[], hasRadiatorVideo = false): AnalysisEvent[] {
+export function mockAnalysisEvents(
+  kinds: PhotoKind[],
+  hasRadiatorVideo = false,
+  radiatorCount?: number,
+): AnalysisEvent[] {
   const result = mockAnalysisResult(
     kinds.length ? kinds : ['boiler_plate', 'radiators', 'gas_bill'],
     hasRadiatorVideo,
+    radiatorCount,
   )
   return [
     { type: 'step', step: 'epc', status: 'running', ms: null },

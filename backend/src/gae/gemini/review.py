@@ -226,7 +226,13 @@ def _context(req: ReviewRequest, sheets: list[Datasheet]) -> dict[str, Any]:
             {
                 "boiler": req.boiler.model_dump(mode="json") if req.boiler else None,
                 "gas_bill": req.bill_reading.model_dump(mode="json") if req.bill_reading else None,
-                "radiators": req.radiators.model_dump(mode="json") if req.radiators else None,
+                "radiators": (
+                    [r.model_dump(mode="json") for r in req.radiators] or None
+                    if isinstance(req.radiators, list)
+                    else req.radiators.model_dump(mode="json")
+                    if req.radiators
+                    else None
+                ),
                 "radiator_video": (
                     req.radiator_video.model_dump(mode="json", exclude={"log"})
                     if req.radiator_video
@@ -591,7 +597,7 @@ def _evidence_present(req: ReviewRequest, source: EvidenceSource) -> bool:
     if source == EvidenceSource.FUSE_CUTOUT:
         return req.fuse_cutout is not None or PhotoKind.FUSE_CUTOUT in photo_kinds
     if source == EvidenceSource.RADIATORS:
-        return req.radiators is not None or PhotoKind.RADIATORS in photo_kinds
+        return bool(req.radiators) or PhotoKind.RADIATORS in photo_kinds
     if source == EvidenceSource.RADIATOR_VIDEO:
         return req.radiator_video is not None
     if source == EvidenceSource.OUTDOOR_SPACE:

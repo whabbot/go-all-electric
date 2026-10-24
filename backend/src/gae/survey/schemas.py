@@ -115,7 +115,7 @@ class ReviewContext(BaseModel):
     epc: EpcSummary
     boiler: BoilerPlateReading | None = None
     bill: GasBillReading | None = None
-    radiators: RadiatorReading | None = None
+    radiators: RadiatorReading | list[RadiatorReading] | None = None
     radiator_video: RadiatorVideoResult | RadiatorVideoReading | None = None
     fuse_cutout: FuseCutoutReading | None = None
     outdoor_space: OutdoorSpaceReading | None = None

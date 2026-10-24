@@ -91,6 +91,7 @@ def get_services(
 
 Factory = Annotated[ServicesFactory, Depends(get_services)]
 Upload = Annotated[UploadFile | None, File()]
+MAX_RADIATOR_PHOTOS = 8
 
 
 @router.post("/analysis")
@@ -98,22 +99,30 @@ def analyse(
     services: Factory,
     certificate_id: Annotated[str, Form(pattern=CERTIFICATE_PATTERN)],
     boiler_plate: Upload = None,
-    radiators: Upload = None,
+    radiators: Annotated[list[UploadFile] | None, File()] = None,
     radiator_video: Upload = None,
     fuse_cutout: Upload = None,
     outdoor_space: Upload = None,
     gas_bill: Upload = None,
     loft: Upload = None,
 ) -> StreamingResponse:
+    rad_uploads = radiators or []
+    if len(rad_uploads) > MAX_RADIATOR_PHOTOS:
+        raise HTTPException(422, f"Upload at most {MAX_RADIATOR_PHOTOS} radiator photos.")
     uploads = {
         PhotoKind.BOILER_PLATE: boiler_plate,
-        PhotoKind.RADIATORS: radiators,
         PhotoKind.FUSE_CUTOUT: fuse_cutout,
         PhotoKind.OUTDOOR_SPACE: outdoor_space,
         PhotoKind.GAS_BILL: gas_bill,
         PhotoKind.LOFT: loft,
     }
     files = {kind: _read(upload) for kind, upload in uploads.items() if upload is not None}
+    rad_files = [_read(upload) for upload in rad_uploads]
+    total_photo_bytes = sum(len(data) for data, _ in files.values()) + sum(
+        len(data) for data, _ in rad_files
+    )
+    if total_photo_bytes > MAX_REVIEW_BYTES:
+        raise HTTPException(413, "Attachments too large for one analysis: 18 MB maximum")
     raw_video = _read_video(radiator_video) if radiator_video is not None else None
     events: queue.Queue[dict | None] = queue.Queue()
 
@@ -122,7 +131,12 @@ def analyse(
         try:
             with services() as live:
                 result = run_analysis(
-                    live, certificate_id, files, events.put, radiator_video=raw_video
+                    live,
+                    certificate_id,
+                    files,
+                    events.put,
+                    radiator_video=raw_video,
+                    radiator_files=rad_files,
                 )
             events.put({"type": "result", "result": result.model_dump(mode="json")})
         except AnalysisRefused as exc:
@@ -139,6 +153,7 @@ def analyse(
             )
         finally:
             files.clear()
+            rad_files.clear()
             raw_video = None
             events.put(None)
 
@@ -165,7 +180,7 @@ def review_analysis(
     gemini: Annotated[StructuredModel, Depends(get_gemini)],
     context: Annotated[str, Form(max_length=200_000)],
     boiler_plate: Upload = None,
-    radiators: Upload = None,
+    radiators: Annotated[list[UploadFile] | None, File()] = None,
     fuse_cutout: Upload = None,
     outdoor_space: Upload = None,
     gas_bill: Upload = None,
@@ -178,6 +193,9 @@ def review_analysis(
         ctx = ReviewContext.model_validate_json(context)
     except ValidationError:
         raise HTTPException(422, "Send the analysis bundle and readings as context") from None
+    rad_uploads = radiators or []
+    if len(rad_uploads) > MAX_RADIATOR_PHOTOS:
+        raise HTTPException(422, f"Upload at most {MAX_RADIATOR_PHOTOS} radiator photos.")
     quotes = quotes or []
     quote_index = quote_index or []
     if len(quotes) != len(quote_index) or any(not 0 <= i < len(ctx.quotes) for i in quote_index):
@@ -187,17 +205,18 @@ def review_analysis(
         pages.setdefault(i, []).append(_media("quote", upload))
     if any(len(p) > MAX_QUOTE_PAGES for p in pages.values()):
         raise HTTPException(422, "Eight pages per quote at most")
-    photos = [
-        _media(kind, upload)
-        for kind, upload in (
-            ("boiler_plate", boiler_plate),
-            ("radiators", radiators),
-            ("fuse_cutout", fuse_cutout),
-            ("outdoor_space", outdoor_space),
-            ("loft", loft),
-        )
-        if upload is not None
-    ]
+    photos: list[MediaInput] = []
+    if boiler_plate is not None:
+        photos.append(_media("boiler_plate", boiler_plate))
+    for upload in rad_uploads:
+        photos.append(_media("radiators", upload))
+    for kind, upload in (
+        ("fuse_cutout", fuse_cutout),
+        ("outdoor_space", outdoor_space),
+        ("loft", loft),
+    ):
+        if upload is not None:
+            photos.append(_media(kind, upload))
     request = ReviewRequest(
         photos=photos,
         bill=_media("gas_bill", gas_bill) if gas_bill is not None else None,

@@ -177,6 +177,39 @@ def test_radiator_type_mismatch_is_a_warning(lookup) -> None:
     assert result.status == "verified_with_warnings"
 
 
+def test_radiator_prompt_and_hints_ask_for_45_degree_front_corner_and_foreshortened_height(
+    lookup,
+) -> None:
+    from gae.gemini.extract import GLANCE_HINTS, SPECS
+
+    spec = SPECS[PhotoKind.RADIATORS]
+    assert "45 degrees" in spec.prompt
+    assert "front corner" in spec.prompt
+    assert "foreshortened" in spec.prompt
+    assert "visible proportion with the end view" in spec.prompt
+    assert "45 degrees" in spec.photograph_instead
+    assert "front corner" in spec.photograph_instead
+    assert "45" in GLANCE_HINTS[PhotoKind.RADIATORS]
+    assert "front corner" in GLANCE_HINTS[PhotoKind.RADIATORS]
+
+    uncertain = RadiatorReading(
+        legible=False,
+        confidence="low",
+        notes="Height uncertain at steep angle",
+        radiator_type="K2",
+        height_mm=None,
+        width_mm=1200,
+        panels=2,
+        fin_rows=2,
+        room="Study",
+    )
+    result = extract(
+        FakeGemini([uncertain, uncertain]), lookup, PhotoKind.RADIATORS, JPEG, "image/jpeg"
+    )
+    assert result.status == "couldnt_tell"
+    assert "45 degrees" in (result.photograph_instead or "")
+
+
 def test_quote_sum_mismatch_rereads_then_gives_up(lookup) -> None:
     bad = quote(total_gbp=15_000)  # items sum to 13,500
     gemini = FakeGemini([bad, bad])

@@ -115,10 +115,27 @@ export async function runAnalysis(
   files: Partial<Record<PhotoKind, File>>,
   onEvent: (event: AnalysisEvent) => void,
   radiatorVideo?: File | null,
+  radiatorFiles?: File[],
 ): Promise<AnalysisResult> {
+  const radFiles =
+    radiatorFiles && radiatorFiles.length > 0
+      ? radiatorFiles
+      : files.radiators
+        ? [files.radiators]
+        : []
+  const activeKinds = new Set<PhotoKind>(
+    (Object.entries(files) as [PhotoKind, File | undefined][])
+      .filter(([, f]) => Boolean(f))
+      .map(([k]) => k),
+  )
+  if (radFiles.length > 0) activeKinds.add('radiators')
   if (isMockMode()) {
     let result: AnalysisResult | null = null
-    for (const event of mockAnalysisEvents(Object.keys(files) as PhotoKind[], Boolean(radiatorVideo))) {
+    for (const event of mockAnalysisEvents(
+      Array.from(activeKinds),
+      Boolean(radiatorVideo),
+      radFiles.length || undefined,
+    )) {
       await delay(event.type === 'log' ? 260 : 120)
       onEvent(event)
       if (event.type === 'result') result = event.result
@@ -128,7 +145,11 @@ export async function runAnalysis(
   }
   const form = new FormData()
   form.append('certificate_id', certificateId)
-  for (const [kind, file] of Object.entries(files)) if (file) form.append(kind, file)
+  for (const [kind, file] of Object.entries(files)) {
+    if (kind === 'radiators') continue
+    if (file) form.append(kind, file)
+  }
+  for (const file of radFiles) form.append('radiators', file)
   if (radiatorVideo) form.append('radiator_video', radiatorVideo)
   const res = await apiFetch('/api/analysis', { method: 'POST', body: form })
   if (!res.ok || !res.body) throw await failure(res, 'Analysis')
@@ -192,27 +213,46 @@ export async function reviewAnalysis(
   analysis: AnalysisResult,
   files: Partial<Record<PhotoKind, File>>,
   quotes: ReviewQuote[],
+  radiatorFiles?: File[],
 ): Promise<ReviewResult> {
   if (isMockMode()) {
     await mockDelay(4000, 6000)
     return mockReview(quotes.map((q) => q.quote_id))
   }
   const reading = (kind: PhotoKind) => analysis.readings.find((r) => r.kind === kind)?.reading ?? null
+  const radiatorReadings = analysis.readings
+    .filter((r) => r.kind === 'radiators' && r.reading != null)
+    .map((r) => r.reading as Record<string, unknown>)
   const context = {
     bundle: analysis.bundle,
     epc: analysis.epc,
     boiler: reading('boiler_plate'),
     bill: reading('gas_bill'),
-    radiators: reading('radiators'),
+    radiators:
+      radiatorReadings.length === 0
+        ? null
+        : radiatorReadings.length === 1
+          ? radiatorReadings[0]
+          : radiatorReadings,
     radiator_video: analysis.radiator_video ?? null,
     fuse_cutout: reading('fuse_cutout'),
     outdoor_space: reading('outdoor_space'),
     loft: reading('loft'),
     quotes: quotes.map((q) => ({ quote_id: q.quote_id, reading: q.reading })),
   }
+  const radFiles =
+    radiatorFiles && radiatorFiles.length > 0
+      ? radiatorFiles
+      : files.radiators
+        ? [files.radiators]
+        : []
   const form = new FormData()
   form.append('context', JSON.stringify(context))
-  for (const [kind, file] of Object.entries(files)) if (file) form.append(kind, file)
+  for (const [kind, file] of Object.entries(files)) {
+    if (kind === 'radiators') continue
+    if (file) form.append(kind, file)
+  }
+  for (const file of radFiles) form.append('radiators', file)
   quotes.forEach((q, quoteIndex) => {
     for (const page of q.pages) {
       form.append('quotes', page)

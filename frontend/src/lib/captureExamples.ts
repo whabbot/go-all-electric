@@ -17,11 +17,11 @@ export const CAPTURE_EXAMPLES: Record<PhotoKind, Record<'good' | 'bad', Example>
   radiators: {
     good: {
       src: new URL('../assets/capture-examples/radiators-good.webp', import.meta.url).href,
-      alt: 'Whole radiator with both valves and clear edges, measured across its width.',
+      alt: 'Radiator photographed from a front corner looking down at about 45 degrees so the front face, top grille and fins, and one end are visible, with a tape measure held across the width.',
     },
     bad: {
       src: new URL('../assets/capture-examples/radiators-bad.webp', import.meta.url).href,
-      alt: 'Close crop of radiator panels cuts off every edge, hiding the overall size.',
+      alt: 'Radiator photographed straight front-on where single and double panel radiators look alike and panel and fin counts cannot be read.',
     },
   },
   fuse_cutout: {
