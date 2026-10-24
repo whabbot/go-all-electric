@@ -6,14 +6,25 @@ from gae.gemini.quotes import SizeContext, flag_quote
 from gae.gemini.review import allowed_numbers, review, supported, tidy
 from gae.gemini.schemas import (
     ArgonReview,
+    ConflictField,
+    ConflictStatus,
+    EstimateDirection,
+    EvidenceSource,
+    FuseCutoutReading,
+    InputConflictProposal,
     MathsBundle,
     MediaInput,
+    OutdoorSpaceReading,
+    ProposedValue,
     QuoteInput,
     QuoteReading,
+    RadiatorReading,
+    RadiatorVideoResult,
     ReviewRequest,
     VerifiedReading,
+    VerifiedVideoRadiator,
 )
-from tests.gemini.conftest import boiler, quote
+from tests.gemini.conftest import bill, boiler, quote
 
 SAM_SIZE = SizeContext(size_low_kw=5.0, size_high_kw=7.0, design_load_kw=4.7)
 
@@ -220,3 +231,290 @@ def test_review_never_sends_address_like_epc_fields(sam_maths: MathsBundle) -> N
     for private in ("Synthetic Street", "Flat B", "ZZ1", "100000000001", "0000-1111", "abc123"):
         assert private not in prompt
     assert "Cavity wall" in prompt and '"total_floor_area": 90' in prompt
+
+
+def test_valid_conflict_proposal_reruns_fabric_and_reports_gap_change(
+    sam_maths: MathsBundle, lookup: InMemoryDatasheetLookup
+) -> None:
+    req = request(sam_maths)
+    req.outdoor_space = OutdoorSpaceReading(
+        legible=True,
+        confidence="high",
+        notes="Drilled mortar pattern on external wall.",
+        clear_width_m=2.0,
+        clear_depth_m=1.2,
+        surface="paved",
+        obstructions=[],
+    )
+    reply = argon_reply(sam_maths)
+    reply.estimates_explanation = "The biggest reason is insulation the EPC missed."
+    reply.quote_reviews = []
+    reply.questions_to_ask = []
+    reply.conflict_status = ConflictStatus.CONFLICTS_FOUND
+    reply.input_conflicts = [
+        InputConflictProposal(
+            field=ConflictField.WALL_TYPE,
+            evidence_source=EvidenceSource.OUTDOOR_SPACE,
+            evidence_summary="The outdoor wall photo shows retrofit cavity fill drill holes.",
+            proposed_value=ProposedValue.CAVITY_FILLED,
+            expected_direction=EstimateDirection.LOWER,
+        ),
+        InputConflictProposal(
+            field=ConflictField.WALL_TYPE,
+            evidence_source=EvidenceSource.EPC,
+            evidence_summary="If the walls were solid brick instead, heat loss would be higher.",
+            proposed_value=ProposedValue.SOLID_BRICK,
+            expected_direction=EstimateDirection.HIGHER,
+        ),
+    ]
+
+    orig_fabric_kw = sam_maths.fabric["design_load_kw"]["central"]
+    result = review(FakeGemini([reply]), lookup, req)
+
+    assert result.review.conflict_status == ConflictStatus.CONFLICTS_FOUND
+    assert len(result.review.input_conflicts) == 2
+    assert len(result.tested_conflicts) == 2
+
+    shrinks, grows = result.tested_conflicts
+    assert shrinks.field == ConflictField.WALL_TYPE
+    assert shrinks.current_value == "cavity_unfilled"
+    assert shrinks.proposed_value == ProposedValue.CAVITY_FILLED
+    assert shrinks.evidence_source == EvidenceSource.OUTDOOR_SPACE
+    assert shrinks.direction_matches is True
+    assert shrinks.new_design_load_kw.central < shrinks.original_design_load_kw.central
+    assert shrinks.gap_change == "shrinks"
+    assert shrinks.new_gap_w_per_k is not None and shrinks.original_gap_w_per_k is not None
+    assert shrinks.new_gap_w_per_k < shrinks.original_gap_w_per_k
+
+    assert grows.proposed_value == ProposedValue.SOLID_BRICK
+    assert grows.direction_matches is True
+    assert grows.new_design_load_kw.central > grows.original_design_load_kw.central
+    assert grows.gap_change == "grows"
+    assert grows.new_gap_w_per_k is not None and grows.original_gap_w_per_k is not None
+    assert grows.new_gap_w_per_k > grows.original_gap_w_per_k
+
+    # Original maths bundle is untouched; code tests alternatives without mutating Estimate A.
+    assert sam_maths.fabric["design_load_kw"]["central"] == orig_fabric_kw
+    conflict_logs = [e for e in result.log if e.input == "conflicts"]
+    assert len(conflict_logs) == 2
+    assert all(e.passed for e in conflict_logs)
+    assert "gap shrinks" in conflict_logs[0].action
+    assert "gap grows" in conflict_logs[1].action
+
+
+def test_conflict_proposal_citing_unprovided_input_is_rejected(
+    sam_maths: MathsBundle, lookup: InMemoryDatasheetLookup
+) -> None:
+    req = request(sam_maths)
+    # radiator_video and fuse_cutout are not provided on `req`.
+    reply = argon_reply(sam_maths)
+    reply.estimates_explanation = "The biggest reason is insulation the EPC missed."
+    reply.quote_reviews = []
+    reply.questions_to_ask = []
+    reply.conflict_status = ConflictStatus.CONFLICTS_FOUND
+    reply.input_conflicts = [
+        InputConflictProposal(
+            field=ConflictField.GLAZING,
+            evidence_source=EvidenceSource.RADIATOR_VIDEO,
+            evidence_summary="Modern glazing seen behind the radiators in the video.",
+            proposed_value=ProposedValue.DOUBLE_2003_ONWARDS,
+            expected_direction=EstimateDirection.LOWER,
+        ),
+        InputConflictProposal(
+            field=ConflictField.LOFT_INSULATION_MM,
+            evidence_source=EvidenceSource.FUSE_CUTOUT,
+            evidence_summary="Fuse photo shows thick loft insulation.",
+            proposed_value=ProposedValue.LOFT_270MM,
+            expected_direction=EstimateDirection.LOWER,
+        ),
+    ]
+
+    result = review(FakeGemini([reply]), lookup, req)
+    assert result.tested_conflicts == []
+    assert result.review.input_conflicts == []
+    assert result.review.conflict_status == ConflictStatus.NO_CONFLICT_FOUND
+    conflict_logs = [e for e in result.log if e.input == "conflicts"]
+    assert len(conflict_logs) == 2
+    assert all(not e.passed for e in conflict_logs)
+    assert "radiator_video not provided" in conflict_logs[0].action
+    assert "fuse_cutout not provided" in conflict_logs[1].action
+
+
+def test_conflict_proposal_with_unknown_field_or_invalid_value_is_rejected(
+    sam_maths: MathsBundle, lookup: InMemoryDatasheetLookup
+) -> None:
+    req = request(sam_maths)
+    reply = argon_reply(sam_maths)
+    reply.estimates_explanation = "The biggest reason is insulation the EPC missed."
+    reply.quote_reviews = []
+    reply.questions_to_ask = []
+    reply.conflict_status = ConflictStatus.CONFLICTS_FOUND
+    reply.input_conflicts = [
+        InputConflictProposal(
+            field="boiler_age_years",
+            evidence_source=EvidenceSource.BOILER_PLATE,
+            evidence_summary="The boiler data plate shows a recent condensing model.",
+            proposed_value=ProposedValue.CAVITY_FILLED,
+            expected_direction=EstimateDirection.LOWER,
+        ),
+        InputConflictProposal(
+            field=ConflictField.LOFT_INSULATION_MM,
+            evidence_source=EvidenceSource.BOILER_PLATE,
+            evidence_summary="Boiler upgrade suggests the loft was topped up too.",
+            proposed_value="999mm",
+            expected_direction=EstimateDirection.LOWER,
+        ),
+        InputConflictProposal(
+            field=ConflictField.LOFT_INSULATION_MM,
+            evidence_source=EvidenceSource.BOILER_PLATE,
+            evidence_summary="Mismatched enum value from wall_type.",
+            proposed_value=ProposedValue.CAVITY_FILLED,
+            expected_direction=EstimateDirection.LOWER,
+        ),
+    ]
+
+    result = review(FakeGemini([reply]), lookup, req)
+    assert result.tested_conflicts == []
+    assert result.review.input_conflicts == []
+    assert result.review.conflict_status == ConflictStatus.NO_CONFLICT_FOUND
+    conflict_logs = [e for e in result.log if e.input == "conflicts"]
+    assert len(conflict_logs) == 3
+    assert all(not e.passed for e in conflict_logs)
+    assert "rejected unknown field" in conflict_logs[0].action
+    assert "rejected value outside closed set" in conflict_logs[1].action
+    assert "rejected value outside closed set" in conflict_logs[2].action
+
+
+def test_no_conflict_found_path(sam_maths: MathsBundle, lookup: InMemoryDatasheetLookup) -> None:
+    req = request(sam_maths)
+    reply = argon_reply(sam_maths)
+    reply.estimates_explanation = "The biggest reason is insulation the EPC missed."
+    reply.quote_reviews = []
+    reply.questions_to_ask = []
+    reply.conflict_status = ConflictStatus.NO_CONFLICT_FOUND
+    reply.input_conflicts = []
+
+    result = review(FakeGemini([reply]), lookup, req)
+    assert result.review.conflict_status == ConflictStatus.NO_CONFLICT_FOUND
+    assert result.review.input_conflicts == []
+    assert result.tested_conflicts == []
+    (conflict_log,) = [e for e in result.log if e.input == "conflicts"]
+    assert conflict_log.passed is True
+    assert conflict_log.action == "no conflict proposed"
+
+
+def test_conflict_evidence_summary_is_checked_by_number_guard(
+    sam_maths: MathsBundle, lookup: InMemoryDatasheetLookup
+) -> None:
+    req = request(sam_maths)
+    reply = argon_reply(sam_maths)
+    reply.estimates_explanation = "The biggest reason is insulation the EPC missed."
+    reply.quote_reviews = []
+    reply.questions_to_ask = []
+    reply.conflict_status = ConflictStatus.CONFLICTS_FOUND
+    reply.input_conflicts = [
+        InputConflictProposal(
+            field=ConflictField.LOFT_INSULATION_MM,
+            evidence_source=EvidenceSource.BOILER_PLATE,
+            evidence_summary=(
+                "The recent boiler plate suggests the home was refurbished after the EPC. "
+                "That refurbishment cost 4,321 pounds."
+            ),
+            proposed_value=ProposedValue.LOFT_270MM,
+            expected_direction=EstimateDirection.LOWER,
+        )
+    ]
+
+    result = review(FakeGemini([reply]), lookup, req)
+    assert len(result.tested_conflicts) == 1
+    tested = result.tested_conflicts[0]
+    assert tested.proposed_value == ProposedValue.LOFT_270MM
+    assert "4,321" not in tested.evidence_summary
+    assert "refurbished after the EPC" in tested.evidence_summary
+    assert [s.numbers for s in result.stripped] == [["4,321"]]
+    assert result.log[-1].step == "fail"
+
+
+def test_review_context_includes_all_verified_readings_and_scrubs_privacy(
+    sam_maths: MathsBundle,
+) -> None:
+    req = request(sam_maths)
+    req.bill_reading = bill()
+    req.radiators = RadiatorReading(
+        legible=True,
+        confidence="high",
+        notes="Double panel convector in living room.",
+        radiator_type="K2",
+        height_mm=600,
+        width_mm=1200,
+        panels=2,
+        fin_rows=2,
+        room="Living room",
+    )
+    req.radiator_video = RadiatorVideoResult(
+        status="verified",
+        attempts=1,
+        model="gemini-3.8-flash",
+        radiator_count=1,
+        radiators=[
+            VerifiedVideoRadiator(
+                first_seen="0:04",
+                last_seen="0:09",
+                room="Hallway",
+                status="verified",
+                radiator_type="K2",
+                panels=2,
+                fin_rows=2,
+                width_mm=1000,
+                height_mm=600,
+                confidence="high",
+            )
+        ],
+        warnings=["Note with postcode ZZ1 1ZZ and cert 0000-1111-2222-3333-4444"],
+        log=[],
+    )
+    req.fuse_cutout = FuseCutoutReading(
+        legible=True,
+        confidence="high",
+        notes="Main cutout fuse.",
+        rating_a=100,
+        looks_like="cutout",
+    )
+    req.outdoor_space = OutdoorSpaceReading(
+        legible=True,
+        confidence="high",
+        notes="Side return.",
+        clear_width_m=1.8,
+        clear_depth_m=1.1,
+        surface="paved",
+        obstructions=[],
+    )
+    req.epc_record = {
+        "address_line_1": "1 Synthetic Street",
+        "postcode": "ZZ1 1ZZ",
+        "uprn": 100000000001,
+        "certificate_number": "0000-1111-2222-3333-4444",
+        "property_type": "semi_detached",
+        "floor_area_m2": 90,
+        "storeys": 2,
+        "year_built": 1935,
+        "wall_type": "cavity_unfilled",
+        "glazing": "double_unknown_date",
+        "loft_insulation_mm": 100,
+        "floor_insulated": False,
+    }
+    fake = FakeGemini([argon_reply(sam_maths)])
+    review(fake, InMemoryDatasheetLookup([]), req)
+    prompt = fake.calls[0].prompt
+    for section in (
+        '"radiators":',
+        '"radiator_video":',
+        '"fuse_cutout":',
+        '"outdoor_space":',
+        '"rating_a": 100',
+        '"Hallway"',
+        '"floor_insulated": false',
+    ):
+        assert section in prompt
+    for private in ("Synthetic Street", "ZZ1", "100000000001", "0000-1111-2222-3333-4444"):
+        assert private not in prompt

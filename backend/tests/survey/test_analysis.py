@@ -372,6 +372,16 @@ def test_review_gets_building_fields_only_and_quotes(harness) -> None:
         return ArgonReview(
             estimates_explanation="The fabric calc reads higher than your bills.",
             cited_reason_codes=[r["code"] for r in result["bundle"]["cross_check"]["reasons"]],
+            conflict_status="conflicts_found",
+            input_conflicts=[
+                {
+                    "field": "wall_type",
+                    "evidence_source": "outdoor_space",
+                    "evidence_summary": "The outdoor wall photo shows retrofit cavity fill.",
+                    "proposed_value": "cavity_filled",
+                    "expected_direction": "lower",
+                }
+            ],
             quote_reviews=[{"quote_id": "Quote A", "flags": []}],
             questions_to_ask=["Can I see the room-by-room heat loss?"],
             summary="Your bills point lower than the fabric calc.",
@@ -384,6 +394,9 @@ def test_review_gets_building_fields_only_and_quotes(harness) -> None:
         "epc": result["epc"],
         "boiler": readings["boiler_plate"],
         "bill": readings["gas_bill"],
+        "radiators": readings["radiators"],
+        "fuse_cutout": readings["fuse_cutout"],
+        "outdoor_space": readings["outdoor_space"],
         "quotes": [{"quote_id": "Quote A", "reading": None}],
     }
     response = client.post(
@@ -398,9 +411,14 @@ def test_review_gets_building_fields_only_and_quotes(harness) -> None:
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["review"]["quote_reviews"][0]["quote_id"] == "Quote A"
+    assert len(body["tested_conflicts"]) == 1
+    assert body["tested_conflicts"][0]["field"] == "wall_type"
+    assert body["tested_conflicts"][0]["proposed_value"] == "cavity_filled"
+    assert body["tested_conflicts"][0]["gap_change"] == "shrinks"
     assert body["stripped"] == []
     call = harness["gemini"].calls[-1]
     assert call.schema == "ArgonReview"
+    assert '"outdoor_space":' in call.prompt and '"radiators":' in call.prompt
     assert call.media_types.count("image") == 2 and call.media_types.count("document") == 1
     for private in (STREET, POSTCODE, "ZZ1", CERTIFICATE, "100000000001"):
         assert private not in call.prompt

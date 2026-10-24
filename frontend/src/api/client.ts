@@ -199,6 +199,10 @@ export async function reviewAnalysis(
     epc: analysis.epc,
     boiler: reading('boiler_plate'),
     bill: reading('gas_bill'),
+    radiators: reading('radiators'),
+    radiator_video: analysis.radiator_video ?? null,
+    fuse_cutout: reading('fuse_cutout'),
+    outdoor_space: reading('outdoor_space'),
     quotes: quotes.map((q) => ({ quote_id: q.quote_id, reading: q.reading })),
   }
   const form = new FormData()

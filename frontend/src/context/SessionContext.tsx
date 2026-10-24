@@ -30,6 +30,8 @@ const PHOTO_SLOTS: { kind: PhotoKind; label: string }[] = [
 
 export type CheckedQuote = { group: QuoteUploadGroup; result: QuoteCheckResult | null }
 
+export type ConflictDecision = 'confirmed' | 'dismissed'
+
 export type ReviewState =
   | { status: 'idle' }
   | { status: 'running'; startedAt: number }
@@ -54,6 +56,9 @@ type Session = {
   setQuotes: (q: CheckedQuote[]) => void
   review: ReviewState
   startReview: () => void
+  /** Confirm/dismiss choices on tested EPC conflicts; kept in session state only. */
+  conflictDecisions: Record<string, ConflictDecision>
+  setConflictDecision: (key: string, decision: ConflictDecision | null) => void
 }
 
 const SessionContext = createContext<Session | null>(null)
@@ -76,12 +81,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [radiatorVideoResult, setRadiatorVideoResult] = useState<RadiatorVideoResult | null>(null)
   const [quotes, setQuotesState] = useState<CheckedQuote[]>([])
   const [review, setReview] = useState<ReviewState>({ status: 'idle' })
+  const [conflictDecisions, setConflictDecisions] = useState<Record<string, ConflictDecision>>({})
   const reviewRun = useRef(0)
 
   const setAnalysis = useCallback((a: AnalysisResult | null) => {
     setAnalysisState(a)
     reviewRun.current += 1
     setReview({ status: 'idle' })
+    setConflictDecisions({})
     try {
       // The result carries the postcode district only, never the address.
       if (a) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(a))
@@ -118,10 +125,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setQuotesState(q)
   }, [])
 
+  const setConflictDecision = useCallback((key: string, decision: ConflictDecision | null) => {
+    setConflictDecisions((prev) => {
+      const next = { ...prev }
+      if (decision) next[key] = decision
+      else delete next[key]
+      return next
+    })
+  }, [])
+
   const startReview = useCallback(() => {
     if (!analysis) return
     const run = ++reviewRun.current
     const startedAt = Date.now()
+    setConflictDecisions({})
     setReview({ status: 'running', startedAt })
     const reviewQuotes: ReviewQuote[] = quotes.map((q, i) => ({
       quote_id: quoteId(i, q.result),
@@ -170,6 +187,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setQuotes,
       review,
       startReview,
+      conflictDecisions,
+      setConflictDecision,
     }),
     [
       address,
@@ -187,6 +206,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setQuotes,
       review,
       startReview,
+      conflictDecisions,
+      setConflictDecision,
     ],
   )
 

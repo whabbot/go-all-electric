@@ -413,9 +413,79 @@ export type ReviewFlag = {
   evidence: string
 }
 
+export type ConflictField =
+  | 'wall_type'
+  | 'loft_insulation_mm'
+  | 'glazing'
+  | 'floor_insulated'
+  | 'air_changes_per_hour'
+  | 'heating_system'
+
+export type EvidenceSource =
+  | 'boiler_plate'
+  | 'gas_bill'
+  | 'radiators'
+  | 'radiator_video'
+  | 'fuse_cutout'
+  | 'outdoor_space'
+  | 'epc'
+  | 'quotes'
+
+export type ProposedValue =
+  | 'solid_brick'
+  | 'solid_insulated'
+  | 'cavity_unfilled'
+  | 'cavity_filled'
+  | 'timber_frame'
+  | 'loft_0mm'
+  | 'loft_100mm'
+  | 'loft_200mm'
+  | 'loft_270mm'
+  | 'single'
+  | 'double_old'
+  | 'double_post_2002'
+  | 'triple'
+  | 'floor_insulated_true'
+  | 'floor_insulated_false'
+  | 'ach_0_5'
+  | 'ach_1_0'
+  | 'ach_1_5'
+  | 'condensing_boiler'
+  | 'non_condensing_boiler'
+
+export type EstimateDirection = 'lower' | 'higher' | 'unchanged'
+
+export type ConflictStatus = 'conflicts_found' | 'no_conflict_found'
+
+export type InputConflictProposal = {
+  field: ConflictField
+  evidence_source: EvidenceSource
+  evidence_summary: string
+  proposed_value: ProposedValue
+  expected_direction: EstimateDirection
+}
+
+export type TestedConflict = {
+  field: ConflictField
+  evidence_source: EvidenceSource
+  evidence_summary: string
+  current_value: string
+  proposed_value: ProposedValue
+  expected_direction: EstimateDirection
+  original_design_load_kw: Range
+  revised_design_load_kw: Range
+  original_htc_w_per_k: Range
+  revised_htc_w_per_k: Range
+  original_gap_kw: number | null
+  revised_gap_kw: number | null
+  gap_change: 'shrinks' | 'grows' | 'unchanged'
+}
+
 export type ArgonReview = {
   estimates_explanation: string
   cited_reason_codes: ReasonCode[]
+  conflict_status?: ConflictStatus
+  input_conflicts?: InputConflictProposal[]
   quote_reviews: { quote_id: string; flags: ReviewFlag[] }[]
   questions_to_ask: string[]
   summary: string
@@ -430,6 +500,7 @@ export type StrippedClaim = {
 
 export type ReviewResult = {
   review: ArgonReview
+  tested_conflicts?: TestedConflict[]
   stripped: StrippedClaim[]
   datasheets_used: string[]
   model: string

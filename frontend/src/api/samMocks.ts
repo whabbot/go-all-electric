@@ -604,6 +604,17 @@ export function mockReview(quoteIds: string[]): ReviewResult {
       estimates_explanation:
         'Your bills point to about 4.7 kW; the fabric calc says 8.75 kW. The likeliest reason is cavity walls filled since the EPC, then the default air change rate.',
       cited_reason_codes: ['missed_insulation', 'default_air_change_rate'],
+      conflict_status: 'conflicts_found',
+      input_conflicts: [
+        {
+          field: 'wall_type',
+          evidence_source: 'gas_bill',
+          evidence_summary:
+            'The EPC records unfilled cavity walls (assumed), while 12,000 kWh/year on the gas bill points to filled cavity walls.',
+          proposed_value: 'cavity_filled',
+          expected_direction: 'lower',
+        },
+      ],
       quote_reviews: quoteIds.map((id) => ({
         quote_id: id,
         flags: [{ severity: 'amber', message: 'Ask how the size was chosen.', evidence: 'Target size 5-7 kW.' }],
@@ -611,12 +622,51 @@ export function mockReview(quoteIds: string[]): ReviewResult {
       questions_to_ask: ['Can I see the room-by-room heat loss calculation?'],
       summary: 'A 5-7 kW unit at 45°C or below fits what your bills show.',
     },
+    tested_conflicts: [
+      {
+        field: 'wall_type',
+        evidence_source: 'gas_bill',
+        evidence_summary:
+          'The EPC records unfilled cavity walls (assumed), while 12,000 kWh/year on the gas bill points to filled cavity walls.',
+        current_value: 'cavity_unfilled',
+        proposed_value: 'cavity_filled',
+        expected_direction: 'lower',
+        original_design_load_kw: r(7.43, 8.75, 10.06),
+        revised_design_load_kw: r(5.4, 6.36, 7.31),
+        original_htc_w_per_k: r(306.8, 361.0, 415.1),
+        revised_htc_w_per_k: r(223.0, 262.4, 301.8),
+        original_gap_kw: 4.03,
+        revised_gap_kw: 1.64,
+        gap_change: 'shrinks',
+      },
+    ],
     stripped: [
       { where: 'summary', text: 'This saves you £3,456 a year.', numbers: ['3,456'] },
     ],
     datasheets_used: [],
     model: 'gemini-4-argon',
-    log: [],
+    log: [
+      entry(
+        'review-v1',
+        'review',
+        'read',
+        'gemini-4-argon',
+        'one-context review of photos, bill, EPC, datasheets, quotes and maths',
+        true,
+        'check every number against inputs',
+        0,
+      ),
+      entry(
+        'review-v2',
+        'review',
+        'check',
+        'code',
+        'conflict test on wall_type (cavity_unfilled -> cavity_filled) from gas_bill: Estimate A 8.75 -> 6.36 kW (gap shrinks: 4.03 -> 1.64 kW)',
+        true,
+        'show tested what-if alternative',
+        400,
+      ),
+    ],
     disclaimer:
       'A second opinion with confidence ranges, not financial advice. Nothing is sent to installers or network operators. It advises; you decide.',
   }

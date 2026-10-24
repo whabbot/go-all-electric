@@ -66,3 +66,61 @@ def test_sam_cost_depends_on_flow_temperature(sam_measured: MeasuredEstimate) ->
 
     assert saving(40) > 0
     assert saving(55) < 0
+
+
+def test_sam_argon_conflict_proposal_is_tested_by_code(
+    sam_fabric: FabricEstimate, sam_measured: MeasuredEstimate
+) -> None:
+    from gae.gemini.client import FakeGemini
+    from gae.gemini.datasheets import InMemoryDatasheetLookup
+    from gae.gemini.review import review
+    from gae.gemini.schemas import (
+        ArgonReview,
+        ConflictField,
+        ConflictStatus,
+        EstimateDirection,
+        EvidenceSource,
+        InputConflictProposal,
+        MathsBundle,
+        ProposedValue,
+        ReviewRequest,
+    )
+
+    bundle = MathsBundle.from_core(
+        sam_measured,
+        sam_fabric,
+        cross_check(sam_fabric, sam_measured),
+        [],
+        target_spec(
+            measured_design_load_kw=sam_measured.design_load_kw, current_fuel=HeatingFuel.GAS
+        ),
+    )
+    reply = ArgonReview(
+        estimates_explanation="Your bills read lower than the EPC fabric estimate.",
+        cited_reason_codes=[ReasonCode.MISSED_INSULATION],
+        conflict_status=ConflictStatus.CONFLICTS_FOUND,
+        input_conflicts=[
+            InputConflictProposal(
+                field=ConflictField.WALL_TYPE,
+                evidence_source=EvidenceSource.EPC,
+                evidence_summary=(
+                    "EPC assumes unfilled cavity walls; filled cavities explain the lower bills."
+                ),
+                proposed_value=ProposedValue.CAVITY_FILLED,
+                expected_direction=EstimateDirection.LOWER,
+            )
+        ],
+        quote_reviews=[],
+        questions_to_ask=[],
+        summary="Your bills point to filled cavities.",
+    )
+    req = ReviewRequest(
+        epc_record={"wall_type": "cavity_unfilled", "total_floor_area": 95},
+        maths=bundle,
+    )
+    result = review(FakeGemini([reply]), InMemoryDatasheetLookup([]), req)
+    (tested,) = result.tested_conflicts
+    assert tested.field == ConflictField.WALL_TYPE
+    assert tested.proposed_value == ProposedValue.CAVITY_FILLED
+    assert tested.gap_change == "shrinks"
+    assert tested.new_design_load_kw.central < sam_fabric.design_load_kw.central
