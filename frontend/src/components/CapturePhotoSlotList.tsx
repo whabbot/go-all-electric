@@ -9,6 +9,7 @@ import { RadiatorCards } from './RadiatorCards'
 import { RadiatorVideoResults } from './RadiatorVideoResults'
 import { WhyNeedTrigger } from './WhyNeedTrigger'
 import type { WhyNeedId } from '../lib/captureWhyNeed'
+import { photoCheckAttribution } from '../lib/photoCheckMeta'
 import {
   CAPTURE_CHECKLIST_HEADING,
   CAPTURE_CHECKLIST_INTRO,
@@ -260,9 +261,7 @@ export function CapturePhotoSlotList({
                         <div className={`check-result ${slot.result.legible ? 'ok' : 'warn'}`}>
                           <p>
                             {slot.result.summary}{' '}
-                            <span className="subtle">
-                              ({slot.result.model}, {(slot.result.elapsed_ms / 1000).toFixed(1)}s)
-                            </span>
+                            <span className="subtle">{photoCheckAttribution(slot.result)}</span>
                           </p>
                           {!slot.result.matches_expected && (
                             <p className="retake">

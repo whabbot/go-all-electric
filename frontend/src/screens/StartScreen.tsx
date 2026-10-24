@@ -4,7 +4,8 @@ import { Alert } from '../components/Alert'
 import { useSession } from '../context/SessionContext'
 
 export function StartScreen() {
-  const { address, setAddress, placeLabel, loadSamSample: loadSample } = useSession()
+  const { address, setAddress, placeLabel, loadSamSample: loadSample, clearHouseSelection } =
+    useSession()
   const [postcode, setPostcode] = useState(isMockMode() && !address ? 'N10 2AB' : '')
   const [results, setResults] = useState<EpcAddress[]>([])
   const loadSamSample = () => {
@@ -15,16 +16,27 @@ export function StartScreen() {
   }
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [emptyPostcode, setEmptyPostcode] = useState(false)
 
   const search = async () => {
     setLoading(true)
     setError(null)
+    setEmptyPostcode(false)
     try {
       const list = await api.searchEpcAddresses(postcode)
       setResults(list)
-      if (list.length === 0) setError('No EPC records found — try a full postcode.')
+      if (list.length === 0) {
+        setEmptyPostcode(true)
+        setError(null)
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Search failed')
+      const message = e instanceof Error ? e.message : 'Search failed'
+      const providerOutage =
+        message.includes("Couldn't read the data provider") ||
+        message.includes('rate limited') ||
+        message.includes('credentials were rejected')
+      setError(providerOutage ? message : 'EPC lookup is temporarily unavailable — try again in a few minutes.')
+      setEmptyPostcode(false)
     } finally {
       setLoading(false)
     }
@@ -56,21 +68,34 @@ export function StartScreen() {
             {loading ? 'Looking…' : 'Find EPC'}
           </button>
         </div>
-        {error && (
+        {emptyPostcode && (
           <Alert
-            variant="error"
-            title="Could not find EPC records"
+            variant="info"
+            title="No EPC certificates for this postcode"
             action={
               <>
-                <button type="button" className="btn" onClick={() => void search()}>
-                  Try again
-                </button>
                 {isMockMode() && (
                   <button type="button" className="btn primary" onClick={loadSamSample}>
                     Use Sam&apos;s sample
                   </button>
                 )}
               </>
+            }
+          >
+            That postcode is valid, but we did not find any lodged certificates. Try another house
+            {isMockMode()
+              ? ', or continue with the offline demo if you are exploring the flow.'
+              : '.'}
+          </Alert>
+        )}
+        {error && (
+          <Alert
+            variant="error"
+            title="EPC lookup unavailable"
+            action={
+              <button type="button" className="btn" onClick={() => void search()}>
+                Try again
+              </button>
             }
           >
             {error}
@@ -88,7 +113,7 @@ export function StartScreen() {
               type="button"
               className="btn"
               onClick={() => {
-                setAddress(null)
+                clearHouseSelection()
                 setResults([])
               }}
             >

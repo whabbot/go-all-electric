@@ -16,7 +16,7 @@ def get_json(client: httpx.Client, url: str, *, params=None, headers=None) -> di
         response = client.get(
             url, params=params, headers=headers, timeout=20, follow_redirects=False
         )
-        if response.status_code == 404:
+        if response.status_code in (400, 404):
             raise DataUnavailable("Couldn't find a matching record.", 404)
         if response.status_code in (401, 403):
             raise DataUnavailable(

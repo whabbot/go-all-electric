@@ -4,6 +4,8 @@ import {
   hitTestCrop,
   moveCrop,
   resizeCropByHandle,
+  transformRedactsForCrop,
+  transformRedactsFromCropToOriginal,
   type CropHandle,
   type ImageRect,
 } from '../lib/imageCoverUpGeometry'
@@ -45,6 +47,9 @@ export function ImageCoverUp({
   const maskId = useId().replace(/:/g, '')
   const wrapRef = useRef<HTMLDivElement>(null)
   const derivedUrlRef = useRef<string | null>(null)
+  const redactsBeforeCropRef = useRef<ImageRect[] | null>(null)
+  const appliedCropRef = useRef<ImageRect | null>(null)
+  const originalImageSizeRef = useRef<{ w: number; h: number } | null>(null)
   const [wrapWidth, setWrapWidth] = useState(320)
   const [displayUrl, setDisplayUrl] = useState(imageUrl)
   const [img, setImg] = useState<HTMLImageElement | null>(null)
@@ -228,9 +233,12 @@ export function ImageCoverUp({
       if (derivedUrlRef.current) URL.revokeObjectURL(derivedUrlRef.current)
       derivedUrlRef.current = url
       setDisplayUrl(url)
+      redactsBeforeCropRef.current = redacts
+      appliedCropRef.current = cropSelection
+      originalImageSizeRef.current = { w: img.naturalWidth, h: img.naturalHeight }
       setCropApplied(true)
       setCropSelection(null)
-      setRedacts([])
+      setRedacts(transformRedactsForCrop(redacts, cropSelection))
       setDrawMode('redact')
       const cropped = new Image()
       cropped.width = width
@@ -255,7 +263,17 @@ export function ImageCoverUp({
     setDisplayUrl(imageUrl)
     setCropApplied(false)
     setCropSelection(null)
-    setRedacts([])
+    const crop = appliedCropRef.current
+    const size = originalImageSizeRef.current
+    const before = redactsBeforeCropRef.current ?? []
+    const afterCrop =
+      crop && size
+        ? transformRedactsFromCropToOriginal(redacts, crop, size.w, size.h)
+        : redacts
+    setRedacts([...before, ...afterCrop])
+    redactsBeforeCropRef.current = null
+    appliedCropRef.current = null
+    originalImageSizeRef.current = null
     setDrawMode('crop')
     setImg(null)
   }

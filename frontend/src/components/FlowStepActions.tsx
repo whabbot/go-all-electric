@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import {
-  canAdvanceFrom,
+  canReachNextStep,
   FLOW_STEPS,
   isStepOptional,
   nextPath,
@@ -26,15 +26,23 @@ export function FlowStepActions() {
 
   const back = prevPath(currentPath)
   const next = nextPath(currentPath, flowSession)
-  const canNext = canAdvanceFrom(currentPath, flowSession, visited)
+  const canNext = canReachNextStep(currentPath, flowSession, visited)
   const optional = isStepOptional(currentPath, flowSession)
 
   let skipTarget: FlowPath | null = null
   if (optional && currentPath === '/cost') skipTarget = '/spec'
-  if (optional && currentPath === '/quotes' && session.analysis?.plan) skipTarget = '/plan'
 
-  const forwardLabel =
+  const forwardReady = Boolean(next && canNext)
+
+  const hasUncheckedQuotes =
+    currentPath === '/quotes' &&
+    session.quotes.some((q) => q.group.pages.length > 0 && !q.result)
+
+  let forwardLabel =
     currentPath === '/' ? 'Continue' : next ? `Next: ${stepLabel(next)}` : 'Next'
+  if (currentPath === '/quotes' && hasUncheckedQuotes && next === '/plan') {
+    forwardLabel = 'Continue without checking'
+  }
 
   return (
     <div className="flow-actions" aria-label="Step navigation">
@@ -51,12 +59,17 @@ export function FlowStepActions() {
             Skip
           </Link>
         )}
-        {next && canNext && (
-          <Link className="btn primary" to={next}>
+        {forwardReady && next && (
+          <Link
+            className={
+              currentPath === '/quotes' && hasUncheckedQuotes ? 'btn' : 'btn primary'
+            }
+            to={next}
+          >
             {forwardLabel}
           </Link>
         )}
-        {!next && currentPath === '/pack' && canNext && <span className="subtle">End of flow</span>}
+        {!next && currentPath === '/pack' && <span className="subtle">End of flow</span>}
       </div>
     </div>
   )

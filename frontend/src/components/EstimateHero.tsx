@@ -2,9 +2,15 @@ import type { AnalysisBundle, Gap } from '../api'
 import { HeroKwStack } from './RangeValue'
 
 const MAX_KW = 12
-const SAM_QUOTE_KW = [6, 9, 12]
-
-export function EstimateHero({ analysis, billGap }: { analysis: AnalysisBundle; billGap: Gap | null }) {
+export function EstimateHero({
+  analysis,
+  billGap,
+  quoteKw,
+}: {
+  analysis: AnalysisBundle
+  billGap: Gap | null
+  quoteKw: number[]
+}) {
   const { measured, fabric, cross_check: check } = analysis
   const verdictLabel = !check
     ? null
@@ -65,7 +71,7 @@ export function EstimateHero({ analysis, billGap }: { analysis: AnalysisBundle; 
       <SharedKwAxis
         measured={measured?.design_load_kw ?? null}
         fabric={fabric.design_load_kw}
-        quoteKw={SAM_QUOTE_KW}
+        quoteKw={quoteKw}
       />
 
       {check && check.reasons.length > 0 && (

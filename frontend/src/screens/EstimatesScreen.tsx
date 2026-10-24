@@ -5,6 +5,7 @@ import { RadiatorVideoResults } from '../components/RadiatorVideoResults'
 import { ReviewPanel } from '../components/ReviewPanel'
 import { VerificationLogPanel } from '../components/VerificationLog'
 import { useSession } from '../context/SessionContext'
+import { analysisInputsFingerprint } from '../lib/analysisInputs'
 import { fieldLabel, formatField, radiatorName } from '../lib/knownDetails'
 
 const STEP_LABELS: Record<string, string> = {
@@ -169,9 +170,15 @@ export function EstimatesScreen() {
     files,
     radiatorUploads,
     radiatorLabels,
+    radiators,
     knownBoiler,
     knownFuse,
+    boilerDetails,
+    fuseDetails,
     radiatorVideo,
+    quotes,
+    analysisInputsKey,
+    setAnalysisInputsKey,
   } = useSession()
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -186,6 +193,16 @@ export function EstimatesScreen() {
     setProgress({})
     setLiveLog([])
     const certificate = address?.certificate_id ?? 'sam-demo'
+    const inputsKey = analysisInputsFingerprint({
+      certificateId: certificate,
+      files,
+      radiatorUploads,
+      radiatorLabels,
+      radiators,
+      boilerDetails,
+      fuseDetails,
+      radiatorVideo,
+    })
     api
       .runAnalysis(
         certificate,
@@ -201,7 +218,10 @@ export function EstimatesScreen() {
         radiatorUploads,
         { boiler: knownBoiler, fuse_cutout: knownFuse },
       )
-      .then(setAnalysis)
+      .then((result) => {
+        setAnalysis(result)
+        setAnalysisInputsKey(inputsKey)
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Analysis failed'))
       .finally(() => setRunning(false))
   }
@@ -248,6 +268,21 @@ export function EstimatesScreen() {
   }
 
   const billGap = analysis.gaps.find((g) => g.input === 'gas_bill') ?? null
+  const currentInputsKey = analysisInputsFingerprint({
+    certificateId: address?.certificate_id ?? 'sam-demo',
+    files,
+    radiatorUploads,
+    radiatorLabels,
+    radiators,
+    boilerDetails,
+    fuseDetails,
+    radiatorVideo,
+  })
+  const inputsStale = analysisInputsKey != null && currentInputsKey !== analysisInputsKey
+  const quoteKw = quotes
+    .map((q) => q.result?.quoted_kw)
+    .filter((kw): kw is number => kw != null)
+    .sort((a, b) => a - b)
 
   return (
     <section className="screen estimates-screen">
@@ -256,7 +291,16 @@ export function EstimatesScreen() {
         {isMockMode() && <span className="mock-badge">offline demo data</span>}
       </h1>
       {placeLabel && <p className="place-label">{placeLabel}</p>}
-      <EstimateHero analysis={analysis.bundle} billGap={billGap} />
+      {inputsStale && (
+        <div className="card stale-analysis-banner" role="status">
+          <strong>Your photos or bill changed since this run.</strong>
+          <p className="subtle">The numbers below are from your last analysis, not what you have now.</p>
+          <button type="button" className="btn primary" onClick={run}>
+            Re-run with current photos
+          </button>
+        </div>
+      )}
+      <EstimateHero analysis={analysis.bundle} billGap={billGap} quoteKw={quoteKw} />
       <Inputs analysis={analysis} radiatorLabels={radiatorLabels} />
       <ReviewPanel />
       <VerificationLogPanel entries={analysis.log} />

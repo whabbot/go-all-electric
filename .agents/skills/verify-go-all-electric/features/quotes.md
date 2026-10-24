@@ -46,7 +46,8 @@ Preconditions:
 ## Gotchas
 
 - Mock checks are canned: any uploaded page comes back as a 9 kW, 55 °C quote with a buffer tank.
-- Adding your own quote after Sam's three replaces the checked list with just yours; the review
-  panel below may still mention the earlier quotes until you review again.
-- `Skip` and `Next: Plan` lead to the same place; neither checks unchecked uploads.
+- New uploads append to existing checked quotes; unchecked uploads stay in the list after
+  `Continue without checking` and Back.
+- Footer shows `Continue without checking` (not a duplicate Skip) when uploads are unchecked; `Check
+  quotes` stays the primary action on the page. Max three quotes; use Remove to free a slot.
 - Real quote checks call Gemini per quote; keep to one synthetic page or one sample PDF.

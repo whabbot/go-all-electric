@@ -26,10 +26,11 @@ type RedactedPage = {
   file: File
 }
 
-async function buildRedactQueue(files: File[]): Promise<QuoteQueueItem[]> {
+async function buildRedactQueue(files: File[], startQuoteIndex: number): Promise<QuoteQueueItem[]> {
   const queue: QuoteQueueItem[] = []
-  for (let quoteIndex = 0; quoteIndex < files.length; quoteIndex += 1) {
-    const file = files[quoteIndex]
+  for (let offset = 0; offset < files.length; offset += 1) {
+    const file = files[offset]
+    const quoteIndex = startQuoteIndex + offset
     // The file name stays on this device: it can carry a name or address.
     const quoteName = quoteId(quoteIndex, null)
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
@@ -86,7 +87,7 @@ function sizeContext(analysis: ReturnType<typeof useSession>['analysis']): Quote
 }
 
 export function QuotesScreen() {
-  const { analysis, quotes, setQuotes, placeLabel } = useSession()
+  const { analysis, quotes, setQuotes, placeLabel, setQuotesStepBlocked } = useSession()
   const [redactedPages, setRedactedPages] = useState<RedactedPage[]>([])
   const [results, setResults] = useState<QuoteCheckResult[] | null>(() =>
     quotes.length && quotes.every((q) => q.result) ? quotes.map((q) => q.result as QuoteCheckResult) : null,
@@ -103,6 +104,36 @@ export function QuotesScreen() {
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
 
   const quoteGroups = useMemo(() => groupRedactedPages(redactedPages), [redactedPages])
+
+  const syncQuotesSession = (pages: RedactedPage[]) => {
+    const groups = groupRedactedPages(pages)
+    const resultByName = new Map(quotes.map((q) => [q.group.quoteName, q.result]))
+    setQuotes(groups.map((g) => ({ group: g, result: resultByName.get(g.quoteName) ?? null })))
+  }
+
+  useEffect(() => {
+    if (quotes.length === 0 || redactedPages.length > 0) return
+    setRedactedPages(
+      quotes.flatMap((q, quoteIndex) =>
+        q.group.pages.map((file) => ({
+          quoteIndex,
+          quoteName: q.group.quoteName,
+          file,
+        })),
+      ),
+    )
+    if (quotes.every((q) => q.result)) {
+      setResults(quotes.map((q) => q.result as QuoteCheckResult))
+    }
+  }, [quotes, redactedPages.length])
+
+  const allPagesReady = redactedPages.length > 0 && !current && stack.length === 0
+
+  useEffect(() => {
+    const waitingForCheck =
+      allPagesReady && quoteGroups.some((_, index) => !quotes[index]?.result)
+    setQuotesStepBlocked(Boolean(current) || stack.length > 0 || waitingForCheck)
+  }, [allPagesReady, current, quoteGroups, quotes, setQuotesStepBlocked, stack.length])
 
   // Page URLs are revoked as each page leaves the queue (finish, cancel, new upload). Revoking
   // on every queue change would also revoke the page that just became current, and the cover-up
@@ -134,15 +165,15 @@ export function QuotesScreen() {
 
   const startRedactFlow = async (picked: File[]) => {
     setImportError(null)
-    setResults(null)
-    setRedactedPages([])
     if (current?.url) URL.revokeObjectURL(current.url)
     for (const item of stack) URL.revokeObjectURL(item.url)
     setCurrent(null)
     setStack([])
     setImporting(true)
     try {
-      const queue = await buildRedactQueue(picked)
+      const startQuoteIndex =
+        Math.max(-1, ...redactedPages.map((p) => p.quoteIndex), ...quotes.map((_, i) => i)) + 1
+      const queue = await buildRedactQueue(picked, startQuoteIndex)
       if (queue.length === 0) {
         setImportError('No pages to redact.')
         return
@@ -158,18 +189,38 @@ export function QuotesScreen() {
   }
 
   const onUpload = (list: FileList | null, input: HTMLInputElement) => {
-    const picked = list ? Array.from(list).slice(0, 3) : []
+    const picked = list ? Array.from(list) : []
     resetFileInput(input)
     if (picked.length === 0) return
-    void startRedactFlow(picked)
+    const slotsLeft = 3 - quoteGroups.length
+    if (slotsLeft <= 0) {
+      setImportError('You can upload at most three quotes. Remove one to add another.')
+      return
+    }
+    if (picked.length > slotsLeft) {
+      setImportError(`Only ${slotsLeft} quote slot${slotsLeft === 1 ? '' : 's'} left (max 3).`)
+      return
+    }
+    void startRedactFlow(picked.slice(0, slotsLeft))
+  }
+
+  const removeQuote = (quoteName: string) => {
+    const nextPages = redactedPages.filter((p) => p.quoteName !== quoteName)
+    setRedactedPages(nextPages)
+    syncQuotesSession(nextPages)
+    setResults(null)
   }
 
   const finishPage = (redacted: File) => {
     if (current) {
-      setRedactedPages((prev) => [
-        ...prev,
-        { quoteIndex: current.quoteIndex, quoteName: current.quoteName, file: redacted },
-      ])
+      setRedactedPages((prev) => {
+        const next = [
+          ...prev,
+          { quoteIndex: current.quoteIndex, quoteName: current.quoteName, file: redacted },
+        ]
+        syncQuotesSession(next)
+        return next
+      })
     }
     resetFileInput(uploadInputRef.current)
     if (current?.url) URL.revokeObjectURL(current.url)
@@ -191,8 +242,6 @@ export function QuotesScreen() {
     resetFileInput(uploadInputRef.current)
   }
 
-  const allPagesReady = redactedPages.length > 0 && !current && stack.length === 0
-
   const loadSamDemoQuotes = () => {
     const names = ['Quote A', 'Quote B', 'Quote C']
     const groups = names.map(
@@ -208,6 +257,7 @@ export function QuotesScreen() {
         file: g.pages[0],
       })),
     )
+    setResults(null)
     void runCheck(groups)
   }
 
@@ -248,6 +298,11 @@ export function QuotesScreen() {
             <li key={g.quoteName}>
               {g.quoteName}
               {g.pages.length > 1 ? ` (${g.pages.length} redacted pages)` : ''}
+              {!loading && (
+                <button type="button" className="btn" onClick={() => removeQuote(g.quoteName)}>
+                  Remove
+                </button>
+              )}
             </li>
           ))}
         </ul>
