@@ -262,14 +262,16 @@ def test_routes_use_safe_responses_and_reject_invalid_inputs():
     app.dependency_overrides[get_settings] = lambda: Settings(_env_file=None, epc_api_token=TOKEN)
     try:
         with TestClient(app) as api:
-            response = api.get("/api/epc/search", params={"postcode": POSTCODE})
+            response = api.post("/api/epc/search", json={"postcode": POSTCODE})
             assert response.status_code == 502 and TOKEN not in response.text
             assert response.headers["cache-control"] == "no-store"
-            response = api.get("/api/epc/not-a-certificate")
+            response = api.post(
+                "/api/epc/certificate", json={"certificate_id": "not-a-certificate"}
+            )
             assert response.status_code == 422
-            response = api.get(
+            response = api.post(
                 "/api/weather/degree-days",
-                params={"postcode": POSTCODE, "start": "2024-02-02", "end": "2024-01-01"},
+                json={"postcode": POSTCODE, "start": "2024-02-02", "end": "2024-01-01"},
             )
             assert response.status_code == 422
     finally:
@@ -291,17 +293,69 @@ def test_routes_return_epc_and_weather_contracts():
     app.dependency_overrides[get_settings] = lambda: Settings(_env_file=None, epc_api_token=TOKEN)
     try:
         with TestClient(app) as api:
-            response = api.get("/api/epc/1111-2222-3333-4444-5555")
+            response = api.post(
+                "/api/epc/certificate", json={"certificate_id": "1111-2222-3333-4444-5555"}
+            )
             assert response.status_code == 200
             assert response.json()["fabric_inputs"]["floor_area_m2"] == 90
             assert TOKEN not in response.text
             assert response.headers["cache-control"] == "no-store, private"
-            response = api.get(
+            response = api.post(
                 "/api/weather/degree-days",
-                params={"postcode": POSTCODE, "start": "2024-01-01", "end": "2024-01-03"},
+                json={"postcode": POSTCODE, "start": "2024-01-01", "end": "2024-01-03"},
             )
             assert response.status_code == 200
             assert response.json()["heating_degree_days"] == 15
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize(
+    "path, body",
+    [
+        ("/api/epc/search", {}),
+        ("/api/epc/search", {"postcode": "Z" * 11}),
+        ("/api/epc/certificate", {}),
+        ("/api/weather/degree-days", {"postcode": POSTCODE}),
+        (
+            "/api/weather/degree-days",
+            {"postcode": POSTCODE, "start": "invalid", "end": "2024-01-03"},
+        ),
+    ],
+)
+def test_private_routes_require_valid_json_bodies(path, body):
+    with TestClient(app) as api:
+        assert api.post(path, json=body).status_code == 422
+        assert api.get(path).status_code == 405
+
+
+def test_search_json_body_preserves_address_response():
+    row = {
+        "uprn": 123,
+        "addressLine1": "1 Synthetic Example Lane",
+        "postcode": POSTCODE,
+        "registrationDate": "2024-01-01",
+        "certificateNumber": "1111-2222-3333-4444-5555",
+    }
+    client = client_for(lambda _: httpx.Response(200, json={"data": [row]}))
+    app.dependency_overrides[http_client] = lambda: client
+    app.dependency_overrides[get_settings] = lambda: Settings(_env_file=None, epc_api_token=TOKEN)
+    try:
+        with TestClient(app) as api:
+            response = api.post("/api/epc/search", json={"postcode": POSTCODE})
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store, private"
+        assert response.json() == {
+            "addresses": [
+                {
+                    "certificate_id": "1111-2222-3333-4444-5555",
+                    "address": "1 Synthetic Example Lane",
+                    "postcode": POSTCODE,
+                    "registration_date": "2024-01-01",
+                    "current_energy_efficiency_band": None,
+                }
+            ]
+        }
     finally:
         app.dependency_overrides.clear()
 

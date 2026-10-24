@@ -227,7 +227,7 @@ def test_unset_hash_preserves_open_development(client, monkeypatch):
     monkeypatch.delenv("ACCESS_CODE_HASH")
     monkeypatch.delenv("SESSION_SECRET")
     get_settings.cache_clear()
-    assert client.get("/api/epc/search").status_code == 200
+    assert client.post("/api/epc/search").status_code == 200
     for _ in range(4):
         assert client.post("/api/photos/check").status_code == 200
     response = client.post("/api/session", json={"code": "anything"})
@@ -247,7 +247,7 @@ def test_shared_per_ip_allowance(client, path):
     assert int(response.headers["Retry-After"]) > 0
     headers["X-Forwarded-For"] = "203.0.113.2"
     assert client.post(path, headers=headers).status_code == 200
-    assert client.get("/api/epc/search", headers=headers).status_code == 200
+    assert client.post("/api/epc/search", headers=headers).status_code == 200
 
 
 def test_spoofed_prefix_cannot_reset_limit(client):
