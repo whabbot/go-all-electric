@@ -1,6 +1,7 @@
 """Offline deployment checks; never call a cloud API or execute the build helper."""
 
 from pathlib import Path
+import subprocess
 import unittest
 
 
@@ -9,6 +10,19 @@ TF = "\n".join(p.read_text() for p in sorted((ROOT / "tofu").glob("*.tf")))
 
 
 class OpenTofuDeploymentTests(unittest.TestCase):
+    def test_saved_plans_are_ignored(self):
+        patterns = (ROOT.parent / ".gitignore").read_text().splitlines()
+        for suffix in ("plan", "tfplan"):
+            with self.subTest(suffix=suffix):
+                self.assertIn(f"deploy/tofu/*.{suffix}", patterns)
+                result = subprocess.run(
+                    ["git", "check-ignore", "--", f"deploy/tofu/bootstrap.{suffix}"],
+                    cwd=ROOT.parent,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_deployment_never_handles_secret_values(self):
         # Inspect source, excluding downloaded provider binaries and local state.
         for path in ROOT.rglob("*"):
