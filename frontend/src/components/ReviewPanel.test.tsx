@@ -46,11 +46,18 @@ describe('ReviewPanel tested conflict proposals', () => {
     expect(
       screen.getByText(/The EPC records unfilled cavity walls \(assumed\)/),
     ).toBeInTheDocument()
-    expect(screen.getByText('8.8 kW → 6.4 kW')).toBeInTheDocument()
-    expect(screen.getByText('A-vs-B gap shrinks (4.0 → 1.6 kW)')).toBeInTheDocument()
+    expect(screen.getByText('8.8 kW → 7.1 kW')).toBeInTheDocument()
+    expect(screen.getByText('A-vs-B gap shrinks (4.0 → 2.4 kW)')).toBeInTheDocument()
 
-    const confirmBtn = screen.getByRole('button', { name: 'Confirm' })
-    const dismissBtn = screen.getByRole('button', { name: 'Dismiss' })
+    expect(
+      screen.getByText('Loft insulation depth: 100 mm loft insulation → 270 mm+ loft insulation'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Evidence: Loft photo')).toBeInTheDocument()
+    expect(screen.getByText('8.8 kW → 8.5 kW')).toBeInTheDocument()
+    expect(screen.getByText('A-vs-B gap shrinks (4.0 → 3.8 kW)')).toBeInTheDocument()
+
+    const [confirmBtn] = screen.getAllByRole('button', { name: 'Confirm' })
+    const [dismissBtn] = screen.getAllByRole('button', { name: 'Dismiss' })
     expect(confirmBtn).toHaveAttribute('aria-pressed', 'false')
     expect(dismissBtn).toHaveAttribute('aria-pressed', 'false')
 

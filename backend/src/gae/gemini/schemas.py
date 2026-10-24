@@ -27,6 +27,7 @@ class PhotoKind(StrEnum):
     FUSE_CUTOUT = "fuse_cutout"
     OUTDOOR_SPACE = "outdoor_space"
     GAS_BILL = "gas_bill"
+    LOFT = "loft"
 
 
 # What the instant check may see instead of what was asked for.
@@ -36,6 +37,7 @@ DetectedKind = Literal[
     "fuse_cutout",
     "outdoor_space",
     "gas_bill",
+    "loft",
     "gas_meter",
     "consumer_unit",
     "other",
@@ -153,6 +155,33 @@ class OutdoorSpaceReading(Reading):
     clear_depth_m: float | None
     surface: Literal["paved", "gravel", "grass", "soil", "decking", "other", "unknown"]
     obstructions: list[str] = Field(description="Drains, windows, fences, steps near the spot.")
+
+
+LoftDepthBand = Literal["0mm", "25mm", "50mm", "100mm", "150mm", "200mm", "270mm"]
+
+
+class LoftReading(Reading):
+    insulation_visible: bool | None = Field(
+        default=None, description="Is loft floor insulation clearly visible in the photo?"
+    )
+    depth_mm_band: LoftDepthBand | None = Field(
+        default=None,
+        description=(
+            "Estimated loft insulation depth band from the closed set "
+            "(0mm, 25mm, 50mm, 100mm, 150mm, 200mm, 270mm); 270mm covers 270 mm or deeper."
+        ),
+    )
+    joists_visible_above_insulation: bool | None = Field(
+        default=None,
+        description=(
+            "Are the tops of the ceiling joists visible above the insulation "
+            "(typical joists are ~100 mm deep, so buried joists indicate >=150-270 mm)?"
+        ),
+    )
+    ruler_or_tape_visible: bool | None = Field(
+        default=None,
+        description="Is a tape measure or ruler visible in the insulation to show depth?",
+    )
 
 
 class MonthlyKwh(BaseModel):
@@ -362,6 +391,7 @@ class ReviewRequest(BaseModel):
     radiator_video: RadiatorVideoResult | RadiatorVideoReading | None = None
     fuse_cutout: FuseCutoutReading | None = None
     outdoor_space: OutdoorSpaceReading | None = None
+    loft: LoftReading | None = None
     quotes: list[QuoteInput] = Field(default_factory=list, max_length=5)
     maths: MathsBundle
 
@@ -387,6 +417,7 @@ class EvidenceSource(StrEnum):
     RADIATORS = "radiators"
     RADIATOR_VIDEO = "radiator_video"
     OUTDOOR_SPACE = "outdoor_space"
+    LOFT = "loft"
     QUOTE = "quote"
     EPC = "epc"
 

@@ -138,6 +138,7 @@ export type PhotoKind =
   | 'radiators'
   | 'fuse_cutout'
   | 'outdoor_space'
+  | 'loft'
   | 'gas_bill'
 
 export type DetectedKind = PhotoKind | 'gas_meter' | 'consumer_unit' | 'other'
@@ -431,6 +432,7 @@ export type EvidenceSource =
   | 'radiators'
   | 'radiator_video'
   | 'outdoor_space'
+  | 'loft'
   | 'quote'
   | 'epc'
 

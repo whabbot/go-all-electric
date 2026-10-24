@@ -203,6 +203,7 @@ export async function reviewAnalysis(
     radiator_video: analysis.radiator_video ?? null,
     fuse_cutout: reading('fuse_cutout'),
     outdoor_space: reading('outdoor_space'),
+    loft: reading('loft'),
     quotes: quotes.map((q) => ({ quote_id: q.quote_id, reading: q.reading })),
   }
   const form = new FormData()

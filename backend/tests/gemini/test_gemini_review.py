@@ -24,7 +24,7 @@ from gae.gemini.schemas import (
     VerifiedReading,
     VerifiedVideoRadiator,
 )
-from tests.gemini.conftest import bill, boiler, quote
+from tests.gemini.conftest import bill, boiler, loft, quote
 
 SAM_SIZE = SizeContext(size_low_kw=5.0, size_high_kw=7.0, design_load_kw=4.7)
 
@@ -281,10 +281,20 @@ def test_valid_conflict_proposal_reruns_fabric_and_reports_gap_change(
     assert shrinks.proposed_value == ProposedValue.CAVITY_FILLED
     assert shrinks.evidence_source == EvidenceSource.OUTDOOR_SPACE
     assert shrinks.direction_matches is True
-    assert shrinks.new_design_load_kw.central < shrinks.original_design_load_kw.central
+    assert shrinks.original_design_load_kw.model_dump() == {
+        "low": 7.43,
+        "central": 8.75,
+        "high": 10.06,
+    }
+    assert shrinks.new_design_load_kw.model_dump() == {
+        "low": 6.05,
+        "central": 7.11,
+        "high": 8.18,
+    }
+    assert (shrinks.original_htc_w_per_k, shrinks.new_htc_w_per_k) == (380.3, 309.28)
+    assert (shrinks.original_gap_kw, shrinks.new_gap_kw) == (4.02, 2.39)
+    assert (shrinks.original_gap_w_per_k, shrinks.new_gap_w_per_k) == (174.96, 103.94)
     assert shrinks.gap_change == "shrinks"
-    assert shrinks.new_gap_w_per_k is not None and shrinks.original_gap_w_per_k is not None
-    assert shrinks.new_gap_w_per_k < shrinks.original_gap_w_per_k
 
     assert grows.proposed_value == ProposedValue.SOLID_BRICK
     assert grows.direction_matches is True
@@ -306,7 +316,7 @@ def test_conflict_proposal_citing_unprovided_input_is_rejected(
     sam_maths: MathsBundle, lookup: InMemoryDatasheetLookup
 ) -> None:
     req = request(sam_maths)
-    # radiator_video and fuse_cutout are not provided on `req`.
+    # radiator_video, fuse_cutout, and loft are not provided on `req`.
     reply = argon_reply(sam_maths)
     reply.estimates_explanation = "The biggest reason is insulation the EPC missed."
     reply.quote_reviews = []
@@ -327,6 +337,13 @@ def test_conflict_proposal_citing_unprovided_input_is_rejected(
             proposed_value=ProposedValue.LOFT_270MM,
             expected_direction=EstimateDirection.LOWER,
         ),
+        InputConflictProposal(
+            field=ConflictField.LOFT_INSULATION_MM,
+            evidence_source=EvidenceSource.LOFT,
+            evidence_summary="The loft hatch photo shows deep mineral wool burying the joists.",
+            proposed_value=ProposedValue.LOFT_270MM,
+            expected_direction=EstimateDirection.LOWER,
+        ),
     ]
 
     result = review(FakeGemini([reply]), lookup, req)
@@ -334,10 +351,64 @@ def test_conflict_proposal_citing_unprovided_input_is_rejected(
     assert result.review.input_conflicts == []
     assert result.review.conflict_status == ConflictStatus.NO_CONFLICT_FOUND
     conflict_logs = [e for e in result.log if e.input == "conflicts"]
-    assert len(conflict_logs) == 2
+    assert len(conflict_logs) == 3
     assert all(not e.passed for e in conflict_logs)
     assert "radiator_video not provided" in conflict_logs[0].action
     assert "fuse_cutout not provided" in conflict_logs[1].action
+    assert "loft not provided" in conflict_logs[2].action
+
+
+def test_loft_evidence_accepted_for_loft_insulation_mm_and_reruns_fabric(
+    sam_maths: MathsBundle, lookup: InMemoryDatasheetLookup
+) -> None:
+    req = request(sam_maths)
+    req.loft = loft(
+        notes="Cross-layered mineral wool burying the ceiling joists, ~270 mm on tape measure."
+    )
+    req.photos.append(MediaInput(kind="loft", data_base64="/9j/AA==", mime_type="image/jpeg"))
+    reply = argon_reply(sam_maths)
+    reply.estimates_explanation = "The biggest reason is insulation the EPC missed."
+    reply.quote_reviews = []
+    reply.questions_to_ask = []
+    reply.conflict_status = ConflictStatus.CONFLICTS_FOUND
+    reply.input_conflicts = [
+        InputConflictProposal(
+            field=ConflictField.LOFT_INSULATION_MM,
+            evidence_source=EvidenceSource.LOFT,
+            evidence_summary="The loft photo shows cross-layered wool burying the joists.",
+            proposed_value=ProposedValue.LOFT_270MM,
+            expected_direction=EstimateDirection.LOWER,
+        )
+    ]
+
+    orig_fabric_kw = sam_maths.fabric["design_load_kw"]["central"]
+    fake = FakeGemini([reply])
+    result = review(fake, lookup, req)
+
+    assert "PHOTO 2: loft" in fake.calls[0].prompt
+    assert '"loft":' in fake.calls[0].prompt
+    assert len(result.tested_conflicts) == 1
+    tested = result.tested_conflicts[0]
+    assert tested.field == ConflictField.LOFT_INSULATION_MM
+    assert tested.evidence_source == EvidenceSource.LOFT
+    assert tested.current_value == "100mm"
+    assert tested.proposed_value == ProposedValue.LOFT_270MM
+    assert tested.direction_matches is True
+    assert tested.original_design_load_kw.model_dump() == {
+        "low": 7.43,
+        "central": 8.75,
+        "high": 10.06,
+    }
+    assert tested.new_design_load_kw.model_dump() == {
+        "low": 7.22,
+        "central": 8.5,
+        "high": 9.77,
+    }
+    assert (tested.original_htc_w_per_k, tested.new_htc_w_per_k) == (380.3, 369.5)
+    assert (tested.original_gap_kw, tested.new_gap_kw) == (4.02, 3.78)
+    assert (tested.original_gap_w_per_k, tested.new_gap_w_per_k) == (174.96, 164.16)
+    assert tested.gap_change == "shrinks"
+    assert sam_maths.fabric["design_load_kw"]["central"] == orig_fabric_kw
 
 
 def test_conflict_proposal_with_unknown_field_or_invalid_value_is_rejected(
@@ -489,6 +560,7 @@ def test_review_context_includes_all_verified_readings_and_scrubs_privacy(
         surface="paved",
         obstructions=[],
     )
+    req.loft = loft(notes="Loft hatch at 1 Synthetic Street ZZ1 1ZZ.")
     req.epc_record = {
         "address_line_1": "1 Synthetic Street",
         "postcode": "ZZ1 1ZZ",
@@ -511,6 +583,8 @@ def test_review_context_includes_all_verified_readings_and_scrubs_privacy(
         '"radiator_video":',
         '"fuse_cutout":',
         '"outdoor_space":',
+        '"loft":',
+        '"depth_mm_band": "270mm"',
         '"rating_a": 100',
         '"Hallway"',
         '"floor_insulated": false',

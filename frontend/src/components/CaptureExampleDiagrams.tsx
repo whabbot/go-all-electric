@@ -112,6 +112,28 @@ function OutdoorDiagram({ variant }: { variant: Variant }) {
   )
 }
 
+function LoftDiagram({ variant }: { variant: Variant }) {
+  if (variant === 'good') {
+    return frame(
+      <>
+        <rect x="24" y="52" width="112" height="32" rx="4" fill="var(--bg)" stroke="var(--text-muted)" />
+        <line x1="96" y1="26" x2="96" y2="84" stroke="var(--color-accent)" strokeWidth="3" />
+        <text x="80" y="70" textAnchor="middle" fontSize="8" fill="var(--text)">270 mm wool</text>
+        <text x="80" y="98" textAnchor="middle" fontSize="7" fill="var(--text-muted)">lit + tape measure</text>
+      </>,
+      variant,
+    )
+  }
+  return frame(
+    <>
+      <rect x="36" y="36" width="88" height="48" rx="4" fill="var(--bg)" stroke="var(--text-muted)" opacity="0.5" />
+      <text x="80" y="64" textAnchor="middle" fontSize="8" fill="var(--text-muted)">too dark / boarded</text>
+      <text x="80" y="96" textAnchor="middle" fontSize="7" fill="var(--color-warn)">depth hidden</text>
+    </>,
+    variant,
+  )
+}
+
 function BillDiagram({ variant }: { variant: Variant }) {
   if (variant === 'good') {
     return frame(
@@ -140,6 +162,7 @@ const DIAGRAMS: Record<PhotoKind, (p: { variant: Variant }) => ReactNode> = {
   radiators: RadiatorDiagram,
   fuse_cutout: FuseDiagram,
   outdoor_space: OutdoorDiagram,
+  loft: LoftDiagram,
   gas_bill: BillDiagram,
 }
 

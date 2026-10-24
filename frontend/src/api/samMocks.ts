@@ -239,6 +239,15 @@ const PHOTO_MOCKS: Record<PhotoKind, PhotoMock> = {
     retake_hint: null,
     privacy_warning: null,
   },
+  loft: {
+    kind: 'loft',
+    legible: true,
+    summary: 'Legible — deep mineral wool burying ceiling joists (~270 mm+)',
+    key_fields: { depth_mm_band: '270mm', joists_visible: 'no', tape_measure: 'yes' },
+    confidence: 'high',
+    retake_hint: null,
+    privacy_warning: null,
+  },
   gas_bill: {
     kind: 'gas_bill',
     legible: true,
@@ -302,6 +311,7 @@ const READ_STATUS: Partial<Record<PhotoKind, InputReading['status']>> = {
   boiler_plate: 'verified',
   radiators: 'verified',
   fuse_cutout: 'verified',
+  loft: 'verified',
   gas_bill: 'verified',
 }
 
@@ -505,7 +515,7 @@ export function mockRadiatorVideo(): RadiatorVideoResult {
 }
 
 export function mockAnalysisResult(kinds: PhotoKind[], hasRadiatorVideo = false): AnalysisResult {
-  const all: PhotoKind[] = ['boiler_plate', 'radiators', 'fuse_cutout', 'outdoor_space', 'gas_bill']
+  const all: PhotoKind[] = ['boiler_plate', 'radiators', 'fuse_cutout', 'outdoor_space', 'loft', 'gas_bill']
   return {
     survey_id: null,
     saved: false,
@@ -538,7 +548,17 @@ export function mockAnalysisResult(kinds: PhotoKind[], hasRadiatorVideo = false)
       const reading =
         kind === 'fuse_cutout' && active
           ? { rating_a: 60, legible: true, confidence: 'high', notes: '' }
-          : null
+          : kind === 'loft' && active
+            ? {
+                insulation_visible: true,
+                depth_mm_band: '270mm',
+                joists_visible_above_insulation: false,
+                ruler_or_tape_visible: true,
+                legible: true,
+                confidence: 'high',
+                notes: '',
+              }
+            : null
       return {
         kind,
         status,
@@ -616,6 +636,14 @@ export function mockReview(quoteIds: string[]): ReviewResult {
           proposed_value: 'cavity_filled',
           expected_direction: 'lower',
         },
+        {
+          field: 'loft_insulation_mm',
+          evidence_source: 'loft',
+          evidence_summary:
+            'The EPC lists 100 mm loft insulation, while the loft photo shows cross-layered wool burying the joists (~270 mm+).',
+          proposed_value: '270mm',
+          expected_direction: 'lower',
+        },
       ],
       quote_reviews: quoteIds.map((id) => ({
         quote_id: id,
@@ -635,13 +663,32 @@ export function mockReview(quoteIds: string[]): ReviewResult {
         expected_direction: 'lower',
         direction_matches: true,
         original_design_load_kw: r(7.43, 8.75, 10.06),
-        new_design_load_kw: r(5.4, 6.36, 7.31),
-        original_htc_w_per_k: 361.0,
-        new_htc_w_per_k: 262.4,
-        original_gap_kw: 4.03,
-        new_gap_kw: 1.64,
-        original_gap_w_per_k: 98.6,
-        new_gap_w_per_k: 0.0,
+        new_design_load_kw: r(6.05, 7.11, 8.18),
+        original_htc_w_per_k: 380.3,
+        new_htc_w_per_k: 309.28,
+        original_gap_kw: 4.02,
+        new_gap_kw: 2.39,
+        original_gap_w_per_k: 174.96,
+        new_gap_w_per_k: 103.94,
+        gap_change: 'shrinks',
+      },
+      {
+        field: 'loft_insulation_mm',
+        evidence_source: 'loft',
+        evidence_summary:
+          'The EPC lists 100 mm loft insulation, while the loft photo shows cross-layered wool burying the joists (~270 mm+).',
+        current_value: '100mm',
+        proposed_value: '270mm',
+        expected_direction: 'lower',
+        direction_matches: true,
+        original_design_load_kw: r(7.43, 8.75, 10.06),
+        new_design_load_kw: r(7.22, 8.5, 9.77),
+        original_htc_w_per_k: 380.3,
+        new_htc_w_per_k: 369.5,
+        original_gap_kw: 4.02,
+        new_gap_kw: 3.78,
+        original_gap_w_per_k: 174.96,
+        new_gap_w_per_k: 164.16,
         gap_change: 'shrinks',
       },
     ],
@@ -663,13 +710,23 @@ export function mockReview(quoteIds: string[]): ReviewResult {
       ),
       entry(
         'review-v2',
-        'review',
+        'conflicts',
         'check',
         'code',
-        'conflict test on wall_type (cavity_unfilled -> cavity_filled) from gas_bill: Estimate A 8.75 -> 6.36 kW (gap shrinks: 4.03 -> 1.64 kW)',
+        're-run fabric.py with wall_type=cavity_filled (evidence: gas_bill)',
         true,
-        'show tested what-if alternative',
+        'Estimate A 8.8 -> 7.1 kW; A-vs-B gap shrinks',
         400,
+      ),
+      entry(
+        'review-v3',
+        'conflicts',
+        'check',
+        'code',
+        're-run fabric.py with loft_insulation_mm=270mm (evidence: loft)',
+        true,
+        'Estimate A 8.8 -> 8.5 kW; A-vs-B gap shrinks',
+        550,
       ),
     ],
     disclaimer:

@@ -9,9 +9,12 @@ from dataclasses import dataclass
 from gae.db.datasheets import DatasheetLookup
 from gae.gemini.datasheets import match_datasheet
 from gae.gemini.schemas import (
+    ALLOWED_VALUES_BY_FIELD,
     BoilerPlateReading,
+    ConflictField,
     FuseCutoutReading,
     GasBillReading,
+    LoftReading,
     OutdoorSpaceReading,
     QuoteReading,
     RadiatorReading,
@@ -19,6 +22,9 @@ from gae.gemini.schemas import (
 
 # Main service fuse ratings fitted in UK homes.
 STANDARD_FUSE_RATINGS_A = {40, 45, 60, 63, 80, 100}
+ALLOWED_LOFT_DEPTH_BANDS = {
+    v.value for v in ALLOWED_VALUES_BY_FIELD[ConflictField.LOFT_INSULATION_MM]
+}
 # Annual gas use, kWh: below this the home is barely gas-heated; above it, likely misread.
 PLAUSIBLE_ANNUAL_GAS_KWH = (2_000, 40_000)
 FULL_YEAR_DAYS = (300, 430)  # about 10 to 14 months
@@ -195,6 +201,39 @@ def check_outdoor(r: OutdoorSpaceReading) -> Outcome:
                 "room for a typical monobloc (1.0 x 0.6 m plus clearance)",
                 w >= 1.0 and d >= 0.6,
                 f"{w} x {d} m",
+                hard=False,
+            )
+        )
+    return Outcome(checks)
+
+
+def check_loft(r: LoftReading) -> Outcome:
+    checks = [
+        _legible(r, "loft insulation"),
+        Check(
+            "insulation visible in photo",
+            r.insulation_visible is True,
+            "insulation visible" if r.insulation_visible else "insulation not clearly visible",
+        ),
+        Check(
+            "depth band in allowed set",
+            r.depth_mm_band in ALLOWED_LOFT_DEPTH_BANDS,
+            r.depth_mm_band or "no depth band read",
+        ),
+    ]
+    if (
+        r.joists_visible_above_insulation is not None
+        and r.depth_mm_band in ALLOWED_LOFT_DEPTH_BANDS
+    ):
+        consistent = not (
+            (r.depth_mm_band in {"200mm", "270mm"} and r.joists_visible_above_insulation is True)
+            or (r.depth_mm_band == "0mm" and r.joists_visible_above_insulation is False)
+        )
+        checks.append(
+            Check(
+                "joist visibility consistent with depth band",
+                consistent,
+                f"depth {r.depth_mm_band}, joists visible={r.joists_visible_above_insulation}",
                 hard=False,
             )
         )

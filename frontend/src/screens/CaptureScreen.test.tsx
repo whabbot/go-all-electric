@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionProvider } from '../context/SessionContext'
-import { CAPTURE_STATUS_LABEL, CAPTURE_SUMMARY_ITEMS } from '../lib/captureGuide'
+import { CAPTURE_GUIDANCE, CAPTURE_STATUS_LABEL, CAPTURE_SUMMARY_ITEMS } from '../lib/captureGuide'
 import { WHY_NEED } from '../lib/captureWhyNeed'
 import { CaptureScreen } from './CaptureScreen'
 
@@ -51,8 +51,40 @@ describe('CaptureScreen guide', () => {
   it('shows a why-need control for each capture upload and the radiator video', () => {
     renderCapture()
     const triggers = screen.getAllByRole('button', { name: 'Why do we need this?' })
-    // Five photo slots plus the radiator walkthrough option.
-    expect(triggers).toHaveLength(6)
+    // Six photo slots plus the radiator walkthrough option.
+    expect(triggers).toHaveLength(7)
+  })
+
+  it('includes the optional Loft slot after Gas bill in the checklist, with guidance, examples SVG, and why-need dialog', async () => {
+    const user = userEvent.setup()
+    renderCapture()
+
+    expect(CAPTURE_SUMMARY_ITEMS[0].id).toBe('gas_bill')
+    expect(CAPTURE_SUMMARY_ITEMS[1]).toMatchObject({
+      id: 'loft',
+      label: 'Loft',
+      status: 'recommended',
+    })
+
+    expect(screen.getByRole('heading', { name: 'Loft (optional)' })).toBeInTheDocument()
+    expect(screen.getByText(CAPTURE_GUIDANCE.loft.oneLine)).toBeInTheDocument()
+
+    // Loft is the 6th photo slot (index 5 in "See examples", index 6 in "Why do we need this?" after radiator video).
+    const examplesTriggers = screen.getAllByRole('button', { name: 'See examples' })
+    await user.click(examplesTriggers[5])
+    const examplesDialog = screen.getByRole('dialog', { name: 'Example photos: Loft (optional)' })
+    expect(examplesDialog).toBeInTheDocument()
+    expect(examplesDialog.querySelectorAll('svg')).toHaveLength(2)
+    expect(screen.getByText(CAPTURE_GUIDANCE.loft.goodReason, { exact: false })).toBeInTheDocument()
+    expect(screen.getByText(CAPTURE_GUIDANCE.loft.badReason, { exact: false })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    const whyTriggers = screen.getAllByRole('button', { name: 'Why do we need this?' })
+    await user.click(whyTriggers[6])
+    const whyDialog = screen.getByRole('dialog', { name: WHY_NEED.loft.dialogTitle })
+    expect(whyDialog).toBeInTheDocument()
+    expect(screen.getByText(WHY_NEED.loft.bullets[1])).toBeInTheDocument()
   })
 
   it('opens the why-need dialog with matching copy, closes on Escape, and restores focus', async () => {

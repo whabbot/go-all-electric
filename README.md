@@ -109,7 +109,7 @@ VITE_USE_MOCKS=false npm run dev         # http://localhost:5173
 ```
 
 Then: enter a postcode and pick a **house** (flats are refused by design), add the photos you have
-(boiler plate, radiator, fuse cutout and gas bill; the outdoor spot is optional), redact each one,
+(boiler plate, radiator, fuse cutout and gas bill; the outdoor spot and loft photo are optional), redact each one,
 and press **Run estimates**. Without `MONGODB_URI` everything still runs: datasheets come from the
 seed file in memory and the survey is simply not saved.
 
@@ -203,12 +203,12 @@ needs a paid-tier key). Uploads are multipart, held in memory for the request an
   photos) and `POST /api/analysis/review` run the whole survey; see
   [Run the demo locally](#run-the-demo-locally).
 - `POST /api/review` (JSON) sends every verified reading (boiler plate, gas bill, fuse cutout,
-  radiator photo and walkthrough video, outdoor space, quotes), allowlisted EPC building fields,
+  radiator photo and walkthrough video, outdoor space, loft, quotes), allowlisted EPC building fields,
   full matched datasheets, the maths-core outputs and redacted photos to one Gemini 4 Argon
   interaction, validates any proposed EPC input conflicts by re-running `fabric.py` in code, and
   removes any statement whose numbers do not trace back to those inputs.
 
-`kind` is one of `boiler_plate`, `radiators`, `fuse_cutout`, `outdoor_space`, `gas_bill`.
+`kind` is one of `boiler_plate`, `radiators`, `fuse_cutout`, `outdoor_space`, `loft`, `gas_bill`.
 
 ## Secrets
 
@@ -251,7 +251,7 @@ in a `VITE_*` variable, because Vite bundles those into the browser build.
   fields (type, age band, floor area, wall/roof/floor/window/heating descriptions, ratings), with
   any address, postcode, UPRN or certificate key stripped, and a test asserts none reaches the
   request. Quotes are labelled "Quote A", "Quote B", not by file name.
-- Photos are for reading data plates, radiators and fuse cutouts. Gemini is told never to transcribe
+- Photos are for reading data plates, radiators, fuse cutouts, outdoor spots and loft insulation. Gemini is told never to transcribe
   people, plates, names, addresses or meter numbers; the instant check warns when identifying
   detail may still be visible and asks you to cover it and resend.
 - Every Gemini reading is checked in code (bill period about a year, kWh plausible, plate model
@@ -277,7 +277,7 @@ in a `VITE_*` variable, because Vite bundles those into the browser build.
 | Source | Use | Status |
 | --- | --- | --- |
 | Gemini 4 Argon (`gemini-4-argon`) via the Interactions API, `google-genai>=2.3.0` | Reads gas bills and installer quotes (`thinking_level` medium); watches radiator walkthrough videos (`thinking_level` high, verified in code with one re-read and photo requests for uncertain radiators); every re-read after a failed code check (high); one-context review of all evidence with closed-enum EPC conflict proposals verified by re-running `fabric.py` in code (high); drafts per-quote installer emails with number-trace verification and deterministic template fallback (medium) | Built |
-| Gemini 3.8 Flash (`gemini-3.8-flash`) via the Interactions API | Instant photo check on upload (`thinking_level` low, about 3-4 s); first read of data plates, radiators, fuse cutouts and outdoor space (medium) | Built |
+| Gemini 3.8 Flash (`gemini-3.8-flash`) via the Interactions API | Instant photo check on upload (`thinking_level` low, about 3-4 s); first read of data plates, radiators, fuse cutouts, outdoor space and loft insulation (medium) | Built |
 | [Get energy performance of buildings data](https://get-energy-performance-data.communities.gov.uk/guidance/energy-certificate-data-apis) (MHCLG, England/Wales) | Latest EPC per matching address, floor area, dwelling form, age band, fabric and heating descriptions | Built; bearer token authentication |
 | [postcodes.io](https://postcodes.io/docs/api/lookup-postcode/) | Postcode centroid for weather requests; no exact home coordinates stored | Built; no key |
 | [Open-Meteo](https://open-meteo.com/en/docs/historical-weather-api) historical reanalysis | Daily mean temperatures at postcode centroid; heating degree days at 15.5C base for exact inclusive bill dates | Built; no key; attribution Open-Meteo, weather data CC BY 4.0 |

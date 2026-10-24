@@ -103,6 +103,7 @@ def analyse(
     fuse_cutout: Upload = None,
     outdoor_space: Upload = None,
     gas_bill: Upload = None,
+    loft: Upload = None,
 ) -> StreamingResponse:
     uploads = {
         PhotoKind.BOILER_PLATE: boiler_plate,
@@ -110,6 +111,7 @@ def analyse(
         PhotoKind.FUSE_CUTOUT: fuse_cutout,
         PhotoKind.OUTDOOR_SPACE: outdoor_space,
         PhotoKind.GAS_BILL: gas_bill,
+        PhotoKind.LOFT: loft,
     }
     files = {kind: _read(upload) for kind, upload in uploads.items() if upload is not None}
     raw_video = _read_video(radiator_video) if radiator_video is not None else None
@@ -167,6 +169,7 @@ def review_analysis(
     fuse_cutout: Upload = None,
     outdoor_space: Upload = None,
     gas_bill: Upload = None,
+    loft: Upload = None,
     quotes: Annotated[list[UploadFile] | None, File()] = None,
     quote_index: Annotated[list[int] | None, Form()] = None,
 ) -> GeminiReviewResult:
@@ -191,6 +194,7 @@ def review_analysis(
             ("radiators", radiators),
             ("fuse_cutout", fuse_cutout),
             ("outdoor_space", outdoor_space),
+            ("loft", loft),
         )
         if upload is not None
     ]
@@ -205,6 +209,7 @@ def review_analysis(
         radiator_video=ctx.radiator_video,
         fuse_cutout=ctx.fuse_cutout,
         outdoor_space=ctx.outdoor_space,
+        loft=ctx.loft,
         quotes=[
             QuoteInput(
                 quote_id=q.quote_id,

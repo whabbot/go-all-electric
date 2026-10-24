@@ -105,8 +105,8 @@ Rules:
   important first, and list their codes in cited_reason_codes. Do not smooth over the gap.
 - Input conflict proposals (`conflict_status` and `input_conflicts`):
   Look across all provided evidence (photos, boiler_plate, gas_bill, fuse_cutout, radiators,
-  radiator_video, outdoor_space, quote, epc) to see whether an EPC building field or fabric-model
-  assumption feeding Estimate A is probably wrong or outdated.
+  radiator_video, outdoor_space, loft, quote, epc) to see whether an EPC building field or
+  fabric-model assumption feeding Estimate A is probably wrong or outdated.
   If no conflict is supported by the provided evidence, set `conflict_status` to
   `no_conflict_found` and `input_conflicts` to `[]`.
   If the evidence suggests one or more conflicts, set `conflict_status` to `conflicts_found` and
@@ -114,7 +114,9 @@ Rules:
   - `field`: one of `wall_type`, `loft_insulation_mm`, `glazing`, `floor_insulated`,
     `air_change_rate`, `property_type`, `storeys`.
   - `evidence_source`: only an input present in this run (`boiler_plate`, `gas_bill`,
-    `fuse_cutout`, `radiators`, `radiator_video`, `outdoor_space`, `quote`, `epc`).
+    `fuse_cutout`, `radiators`, `radiator_video`, `outdoor_space`, `loft`, `quote`, `epc`).
+    For `loft_insulation_mm`, `loft` is the expected `evidence_source` when a loft photo or
+    reading is provided.
   - `evidence_summary`: plain English saying what that evidence shows in words (never invent
     numbers).
   - `proposed_value`: choose only from the closed set for that `field`:
@@ -229,6 +231,7 @@ def _context(req: ReviewRequest, sheets: list[Datasheet]) -> dict[str, Any]:
                 "outdoor_space": (
                     req.outdoor_space.model_dump(mode="json") if req.outdoor_space else None
                 ),
+                "loft": req.loft.model_dump(mode="json") if req.loft else None,
             }
         ),
         "QUOTES": _scrub_privacy(
@@ -586,6 +589,8 @@ def _evidence_present(req: ReviewRequest, source: EvidenceSource) -> bool:
         return req.radiator_video is not None
     if source == EvidenceSource.OUTDOOR_SPACE:
         return req.outdoor_space is not None or PhotoKind.OUTDOOR_SPACE in photo_kinds
+    if source == EvidenceSource.LOFT:
+        return req.loft is not None or PhotoKind.LOFT in photo_kinds
     if source == EvidenceSource.QUOTE:
         return bool(req.quotes)
     if source == EvidenceSource.EPC:

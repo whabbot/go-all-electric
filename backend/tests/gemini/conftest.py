@@ -9,6 +9,7 @@ from gae.gemini.datasheets import InMemoryDatasheetLookup
 from gae.gemini.schemas import (
     BoilerPlateReading,
     GasBillReading,
+    LoftReading,
     MathsBundle,
     QuoteReading,
 )
@@ -152,6 +153,19 @@ def quote(**overrides: Any) -> QuoteReading:
         mcs_heat_loss_kw=8.9,
     )
     return QuoteReading(**{**values, **overrides})
+
+
+def loft(**overrides: Any) -> LoftReading:
+    values = dict(
+        legible=True,
+        confidence="high",
+        notes="",
+        insulation_visible=True,
+        depth_mm_band="270mm",
+        joists_visible_above_insulation=False,
+        ruler_or_tape_visible=True,
+    )
+    return LoftReading(**{**values, **overrides})
 
 
 JPEG = b"\xff\xd8\xff\xe0synthetic-not-a-real-photo"
