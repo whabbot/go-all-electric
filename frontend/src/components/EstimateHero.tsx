@@ -16,7 +16,7 @@ export function EstimateHero({ analysis, billGap }: { analysis: AnalysisBundle; 
 
   return (
     <section className="hero-estimates hero-estimates-layout">
-      <p className="hero-tagline prose-measure">
+      <p className="hero-tagline">
         It doesn&apos;t trust its own model. It checks it against what your house actually used.
       </p>
       {check ? (
