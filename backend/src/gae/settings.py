@@ -17,6 +17,16 @@ class Settings(BaseSettings):
         env_file=(".env", "../.env"), env_file_encoding="utf-8", extra="ignore"
     )
 
+    # Salted scrypt hash of the shared code; unset keeps local development open.
+    access_code_hash: SecretStr | None = None
+    # Signs session cookies; required (32+ bytes) whenever the hash is set.
+    session_secret: SecretStr | None = None
+    session_ttl_seconds: int = 12 * 3600
+    # Only plain-http localhost may turn this off; refused under Cloud Run.
+    session_cookie_secure: bool = True
+    session_attempts_per_ip: int = 10
+    session_attempt_window_seconds: int = 900
+    # Retired plaintext code: read only so a stale setting refuses to start.
     access_code: SecretStr | None = None
     gemini_requests_per_ip: int = 30
     gemini_limit_window_seconds: int = 3600

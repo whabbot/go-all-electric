@@ -23,13 +23,9 @@ import type {
   ReviewResult,
 } from './types'
 
-export const ACCESS_CODE_KEY = 'gae-access-code'
-
+/** The session lives in an HttpOnly cookie set by `/api/session`; script never sees it. */
 export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-  const headers = new Headers(init.headers)
-  const code = localStorage.getItem(ACCESS_CODE_KEY)
-  if (code) headers.set('X-Access-Code', code)
-  const response = await fetch(input, { ...init, headers })
+  const response = await fetch(input, { ...init, credentials: 'same-origin' })
   if (response.status === 401) window.dispatchEvent(new Event('gae-access-required'))
   return response
 }

@@ -1,5 +1,10 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { ACCESS_CODE_KEY, isMockMode } from '../api/client'
+import { isMockMode } from '../api/client'
+
+/** Older builds kept the code itself in localStorage; remove it from those browsers. */
+const LEGACY_CODE_KEY = 'gae-access-code'
+
+const CONNECT_ERROR = 'Could not connect. Please try again.'
 
 export function AccessGate({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(isMockMode())
@@ -8,6 +13,11 @@ export function AccessGate({ children }: { children: ReactNode }) {
   const [error, setError] = useState('')
 
   useEffect(() => {
+    try {
+      localStorage.removeItem(LEGACY_CODE_KEY)
+    } catch {
+      /* storage unavailable */
+    }
     const required = () => {
       setReady(false)
       setError('Please enter your access code again.')
@@ -15,17 +25,13 @@ export function AccessGate({ children }: { children: ReactNode }) {
     const controller = new AbortController()
     window.addEventListener('gae-access-required', required)
     if (!isMockMode()) {
-      const saved = localStorage.getItem(ACCESS_CODE_KEY)
-      void fetch('/api/access', {
-        headers: saved ? { 'X-Access-Code': saved } : {},
-        signal: controller.signal,
-      })
+      void fetch('/api/access', { credentials: 'same-origin', signal: controller.signal })
         .then((res) => {
           if (res.ok) setReady(true)
-          else if (res.status !== 401) setError('Could not connect. Please try again.')
+          else if (res.status !== 401) setError(CONNECT_ERROR)
         })
         .catch(() => {
-          if (!controller.signal.aborted) setError('Could not connect. Please try again.')
+          if (!controller.signal.aborted) setError(CONNECT_ERROR)
         })
         .finally(() => {
           if (!controller.signal.aborted) setChecking(false)
@@ -42,17 +48,25 @@ export function AccessGate({ children }: { children: ReactNode }) {
     setError('')
     setChecking(true)
     try {
-      const res = await fetch('/api/access', { headers: { 'X-Access-Code': code } })
+      // The server answers with an HttpOnly session cookie; the code is not kept anywhere.
+      const res = await fetch('/api/session', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      })
       if (!res.ok) {
         setError(res.status === 401
           ? 'Incorrect access code. Please try again.'
-          : 'Could not connect. Please try again.')
+          : res.status === 429
+            ? 'Too many attempts. Please wait a few minutes and try again.'
+            : CONNECT_ERROR)
         return
       }
-      localStorage.setItem(ACCESS_CODE_KEY, code)
+      setCode('')
       setReady(true)
     } catch {
-      setError('Could not connect. Please try again.')
+      setError(CONNECT_ERROR)
     } finally {
       setChecking(false)
     }
