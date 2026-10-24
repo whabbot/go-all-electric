@@ -456,9 +456,9 @@ history are outside OpenTofu state; remove them separately if needed.
 
 The first visit shows **Enter access code**. The server checks it against the salted
 scrypt hash in `ACCESS_CODE_HASH` and replies with a signed `gae_session` cookie
-(`HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/api`) that expires after 12 hours
-(`SESSION_TTL_SECONDS`). The browser never stores the code, and old builds' stored copy
-is deleted on load. Changing the code or `SESSION_SECRET` signs everyone out. Each IP may
+(`HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/api`) that lasts until the browser
+closes. The server refuses it after 12 hours (`SESSION_TTL_SECONDS`). The browser never
+stores the code, and old builds' stored copy is deleted on load. Changing the code or `SESSION_SECRET` signs everyone out. Each IP may
 make 10 wrong attempts per 15 minutes (`SESSION_ATTEMPTS_PER_IP`,
 `SESSION_ATTEMPT_WINDOW_SECONDS`) before sign-in returns 429. When `ACCESS_CODE_HASH` is
 unset, local development retains its existing open behavior. The app refuses to start if

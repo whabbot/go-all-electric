@@ -292,7 +292,6 @@ class ApiGuard:
         response.set_cookie(
             SESSION_COOKIE,
             access.issue(time.time()),
-            max_age=access.ttl,
             path="/api",
             secure=access.secure,
             httponly=True,

@@ -106,10 +106,11 @@ def test_correct_code_sets_strict_session_cookie(client):
     cookie = response.headers["set-cookie"]
     attributes = {part.strip().split("=")[0].lower() for part in cookie.split(";")}
     assert cookie.startswith("gae_session=")
-    assert {"httponly", "secure", "path", "max-age", "samesite"} <= attributes
+    assert {"httponly", "secure", "path", "samesite"} <= attributes
     assert "Path=/api" in cookie
     assert "SameSite=strict" in cookie
-    assert "Max-Age=43200" in cookie
+    assert "max-age" not in attributes
+    assert "expires" not in attributes
 
 
 def test_insecure_cookie_only_when_configured(client, monkeypatch):
@@ -176,6 +177,8 @@ def test_session_expires(client, monkeypatch):
     monkeypatch.setattr("gae.security.time.time", lambda: 1_000_000 + 12 * 3600 - 1)
     assert client.get("/api/access").status_code == 200
     monkeypatch.setattr("gae.security.time.time", lambda: 1_000_000 + 12 * 3600)
+    assert client.get("/api/access").status_code == 401
+    monkeypatch.setattr("gae.security.time.time", lambda: 1_000_000 + 12 * 3600 + 1)
     assert client.get("/api/access").status_code == 401
     # Issued far in the future (a forged clock) is refused too.
     monkeypatch.setattr("gae.security.time.time", lambda: 1_000_000 - 3600)
