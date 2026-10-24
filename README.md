@@ -372,7 +372,7 @@ inputs, env files, dependencies and test caches from the image and source upload
 
 Infrastructure lives in `deploy/tofu/` and uses OpenTofu with local state. Helm
 manages Kubernetes; Cloud Run is managed directly through the pinned Google provider.
-Image builds run separately through `deploy/build.sh`.
+The `deploy/deploy.sh` helper builds through `deploy/build.sh` and deploys with OpenTofu.
 
 Before deploying:
 
@@ -403,7 +403,7 @@ Before deploying:
    Keep local state and its backups safe: subsequent plans and cleanup need that state.
    There is no remote backend. Run commands below from the repository root.
 
-Deploy in three steps, reviewing each plan before applying it:
+Bootstrap once, then use the redeploy helper:
 
 1. **Bootstrap infrastructure without a service** (`image = null`):
 
@@ -418,26 +418,33 @@ Deploy in three steps, reviewing each plan before applying it:
    (`10.42.0.0/24`), `gae-router`, `gae-egress-ip` and `gae-nat`. No default network is
    required. Add exactly the output `egress_ip` as a **/32** in MongoDB Atlas network
    access before deploying the service. Do not allow `0.0.0.0/0`.
-2. **Build a committed source tree**, using the dedicated build account:
+2. **Deploy the current commit**, after the bootstrap and Atlas allowlist step:
 
    ```sh
-   GOOGLE_CLOUD_PROJECT=go-all-electric-demo GOOGLE_CLOUD_REGION=europe-west2 ./deploy/build.sh
+   ./deploy/deploy.sh
    ```
 
-   The helper submits the root Dockerfile to Cloud Build and prints an Artifact Registry
-   image reference tagged with the full Git commit SHA. It handles no secrets. It
-   refuses uncommitted changes so the tag identifies the source. Copy the printed
-   reference for the next step.
-3. **Deploy that image**:
+   For routine redeploys:
 
    ```sh
-   tofu -chdir=deploy/tofu plan -var 'image=<printed-image-reference>' -out=deploy.plan
-   tofu -chdir=deploy/tofu apply deploy.plan
+   git pull
+   ./deploy/deploy.sh
    ```
 
-   Save the same reference as `image` in your private `terraform.tfvars` immediately
-   afterwards. Leaving it null on a later apply would remove the service. For each
-   update, build a new commit and repeat this step with its reference.
+   The helper refuses a dirty working tree, reuses the current commit's image when
+   it exists in Artifact Registry, or submits a build through the dedicated account.
+   It atomically saves the image in the gitignored `deploy/tofu/image.auto.tfvars`,
+   shows a saved OpenTofu plan, and requires a typed `yes` before applying it.
+   Use `./deploy/deploy.sh --yes` for an unattended apply. A plan with no changes
+   stops without applying. The service URL is printed at the end.
+
+   `image.auto.tfvars` loads after `terraform.tfvars` and takes precedence; an older
+   `image` line in `terraform.tfvars` can be deleted. Keep the generated file for
+   future plans: a null image would remove the service. A failed plan or apply
+   leaves the saved image in place, so rerunning the helper can reuse the build.
+   For another project or region, set `GOOGLE_CLOUD_PROJECT` and
+   `GOOGLE_CLOUD_REGION` to match your private `terraform.tfvars` (defaults are
+   `go-all-electric-demo` and `europe-west2`). The helper handles no secret values.
 
 The service URL is an output after deployment. Cloud Run uses 0–2 instances, 2 GiB
 memory, one CPU, concurrency 8, and a 900-second timeout. All outbound traffic uses
@@ -467,7 +474,7 @@ the hash is malformed, `SESSION_SECRET` is missing or under 32 bytes, or the ret
 
 To upgrade a deployment that used the plaintext `ACCESS_CODE` secret: create
 `ACCESS_CODE_HASH` and `SESSION_SECRET` in the console as above, then build a new commit
-and run the **Deploy that image** plan and apply. Once the new revision accepts the code,
+and run `./deploy/deploy.sh`. Once the new revision accepts the code,
 delete the old `ACCESS_CODE` secret in the console.
 
 Cloud Run deployments default to 300 Gemini POST requests per IP per 3600 seconds,

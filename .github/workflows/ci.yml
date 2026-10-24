@@ -64,7 +64,7 @@ jobs:
         with:
           tofu_version: 1.13.2
       - run: python3 -m unittest discover -s deploy -v
-      - run: bash -n deploy/build.sh
+      - run: bash -n deploy/build.sh deploy/deploy.sh
       - run: tofu -chdir=deploy/tofu fmt -check
       - run: tofu -chdir=deploy/tofu init -backend=false -lockfile=readonly
       - run: tofu -chdir=deploy/tofu validate
