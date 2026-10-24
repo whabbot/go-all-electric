@@ -2,3 +2,6 @@
 .gitignore
 .gcloudignore
 #!include:.dockerignore
+
+# Deployment state and private variable files are not build inputs.
+deploy/tofu/

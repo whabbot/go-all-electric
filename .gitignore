@@ -34,3 +34,9 @@ build/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# --- OpenTofu local working data ----------------------------------------------------------
+.terraform/
+*.tfstate*
+*.tfvars
+!deploy/tofu/example.tfvars
