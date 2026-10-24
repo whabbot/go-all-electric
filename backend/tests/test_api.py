@@ -6,8 +6,6 @@ from gae.settings import Settings, get_settings
 FAKE_SECRETS = {
     "GEMINI_API_KEY": "test-gemini-not-a-real-key",
     "EPC_API_TOKEN": "test-epc-bearer-not-real",
-    "EPC_API_EMAIL": "someone@example.invalid",
-    "EPC_API_KEY": "test-epc-not-a-real-key",
     "MONGODB_URI": "mongodb+srv://user:test-password@example.invalid/db",
     "GOOGLE_SOLAR_API_KEY": "test-solar-not-a-real-key",
 }

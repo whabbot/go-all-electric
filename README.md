@@ -156,16 +156,15 @@ frontend lint and build, then a gitleaks scan of the full history.
 | `VITE_USE_MOCKS` | Frontend: mock Sam demo vs live `/api` (never put secrets in `VITE_*`) | Built |
 | `GEMINI_API_KEY` | Gemini photo checks, bill/quote reading and the review | Built |
 | `GEMINI_LEAD_MODEL`, `GEMINI_FAST_MODEL` | Optional model ids (defaults `gemini-4-argon`, `gemini-3.8-flash`); not secrets | Built |
-| `EPC_API_TOKEN` | GOV.UK EPC replacement API bearer token, issued after GOV.UK One Login | Required for EPC lookup |
-| `EPC_API_EMAIL`, `EPC_API_KEY` | Retained legacy configuration; retired API Basic auth is no longer used | Deprecated |
+| `EPC_API_TOKEN` | GOV.UK “Get energy performance of buildings data” API bearer token from the account page | Required for EPC lookup |
 | `MONGODB_URI` | Server-side Atlas connection string; database `go_all_electric` | Built |
 | `GOOGLE_SOLAR_API_KEY` | Google Solar API roof potential | Planned |
 
 ### Open-data endpoints
 
 Create a GOV.UK One Login account via the [EPC API guidance](https://get-energy-performance-data.communities.gov.uk/guidance/energy-certificate-data-apis),
-then set `EPC_API_TOKEN` to the bearer token on your account page. The legacy EPC service retired
-in May 2026; old email/key credentials are not a substitute. Weather needs no credentials.
+then set `EPC_API_TOKEN` to the bearer token on your account page. The app uses the GOV.UK
+“Get energy performance of buildings data” API for EPC lookups. Weather needs no credentials.
 
 - `GET /api/epc/search?postcode=...` returns matching addresses and their latest certificate IDs.
 - `GET /api/epc/{certificate_id}` returns an allowlisted raw summary, mapped fabric inputs,
@@ -270,7 +269,7 @@ in a `VITE_*` variable, because Vite bundles those into the browser build.
 | --- | --- | --- |
 | Gemini 4 Argon (`gemini-4-argon`) via the Interactions API, `google-genai>=2.3.0` | Reads gas bills and installer quotes (`thinking_level` medium); watches radiator walkthrough videos (`thinking_level` high, verified in code with one re-read and photo requests for uncertain radiators); every re-read after a failed code check (high); one-context review of all evidence (high) | Built |
 | Gemini 3.8 Flash (`gemini-3.8-flash`) via the Interactions API | Instant photo check on upload (`thinking_level` low, about 3-4 s); first read of data plates, radiators, fuse cutouts and outdoor space (medium) | Built |
-| [Get energy performance of buildings data](https://get-energy-performance-data.communities.gov.uk/guidance/energy-certificate-data-apis) (MHCLG, England/Wales) | Latest EPC per matching address, floor area, dwelling form, age band, fabric and heating descriptions | Built; 2026 replacement API, bearer auth |
+| [Get energy performance of buildings data](https://get-energy-performance-data.communities.gov.uk/guidance/energy-certificate-data-apis) (MHCLG, England/Wales) | Latest EPC per matching address, floor area, dwelling form, age band, fabric and heating descriptions | Built; bearer token authentication |
 | [postcodes.io](https://postcodes.io/docs/api/lookup-postcode/) | Postcode centroid for weather requests; no exact home coordinates stored | Built; no key |
 | [Open-Meteo](https://open-meteo.com/en/docs/historical-weather-api) historical reanalysis | Daily mean temperatures at postcode centroid; heating degree days at 15.5C base for exact inclusive bill dates | Built; no key; attribution Open-Meteo, weather data CC BY 4.0 |
 | [postcodes.io](https://postcodes.io/docs/api/outward-code/) outward code | Postcode-district centroid for PVGIS (never a full postcode) | Built; no key |
