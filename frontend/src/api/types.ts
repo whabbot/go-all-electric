@@ -204,6 +204,39 @@ export type RadiatorKind =
 
 export type UpsizeStatus = 'ok' | 'marginal' | 'upsize' | 'couldnt_tell'
 
+/** Details a homeowner already knows, in the reading schema's field names. All optional. */
+export type KnownRadiator = {
+  radiator_type?: RadiatorKind
+  panels?: number
+  fin_rows?: number
+  width_mm?: number
+  height_mm?: number
+}
+
+export type KnownBoiler = {
+  make?: string
+  model?: string
+  heating_output_kw?: number
+  hot_water_output_kw?: number
+}
+
+export type KnownFuse = { rating_a?: number }
+
+/** Sent with the analysis. Radiators by position (radiator 1 first); never a room label. */
+export type KnownDetails = {
+  radiators: KnownRadiator[]
+  boiler: KnownBoiler | null
+  fuse_cutout: KnownFuse | null
+}
+
+/** One radiator's photos and entered details, in the order they are numbered. */
+export type RadiatorUpload = { photos: File[]; known: KnownRadiator }
+
+export type EnteredValueScalar = string | number
+
+/** A photo reading that differs from what the homeowner entered (the entered value is used). */
+export type Disagreement = { field: string; entered: EnteredValueScalar; read: EnteredValueScalar }
+
 export type VerifiedVideoRadiator = {
   first_seen: string
   last_seen: string | null
@@ -304,12 +337,18 @@ export type EpcSummary = {
 
 export type InputReading = {
   kind: PhotoKind
-  status: ReadingStatus | 'not_provided'
+  /** `entered`: nothing read from a photo, only what the homeowner typed in. */
+  status: ReadingStatus | 'not_provided' | 'entered'
   attempts: number
+  /** Photo values with any entered values applied. */
   reading: Record<string, unknown> | null
   warnings: string[]
   photograph_instead: string | null
   used_for: string
+  /** Radiators: 0 = radiator 1, however many photos it had. */
+  index?: number | null
+  entered?: Record<string, EnteredValueScalar>
+  disagreements?: Disagreement[]
 }
 
 export type NamedDefault = {

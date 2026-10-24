@@ -211,9 +211,10 @@ client = TestClient(app)
 ALL_PHOTOS = ["boiler_plate", "radiators", "fuse_cutout", "outdoor_space", "gas_bill", "loft"]
 
 
-def analyse(kinds=ALL_PHOTOS, certificate=CERTIFICATE):
+def analyse(kinds=ALL_PHOTOS, certificate=CERTIFICATE, **form):
     files = [(k, (f"{k}.jpg", JPEG + k.encode(), "image/jpeg")) for k in kinds]
-    response = client.post("/api/analysis", data={"certificate_id": certificate}, files=files)
+    data = {"certificate_id": certificate, **form}
+    response = client.post("/api/analysis", data=data, files=files)
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/x-ndjson")
     events = [json.loads(line) for line in response.text.splitlines()]
@@ -244,7 +245,8 @@ def test_full_path_runs_epc_photos_bill_weather_maths_and_saves(harness) -> None
     spec = bundle["target_spec"]
     assert spec["grant"]["amount_gbp"]["value"] == 7500
     (radiator,) = spec["radiators"]
-    assert radiator["room"] == "Living room"
+    # Named by number, never by a room name: labels stay in the browser.
+    assert radiator["room"] == "Radiator 1"
     names = {d["name"] for d in result["defaults"]}
     assert {"radiator_rating_from_photo", "photographed_room_share_of_heat_loss"} <= names
     assert "boiler_efficiency" in names
@@ -379,8 +381,12 @@ def test_house_with_unrecorded_form_renders_estimate_a_without_photos(harness) -
 
         # Uploading a boiler photo or one/multiple radiator photos cannot change
         # the EPC-derived Estimate A or turn this geometry refusal on/off.
-        for photos in (["boiler_plate"], ["radiators"], ["radiators", "radiators"]):
-            _, events = analyse(photos)
+        for photos, index in (
+            (["boiler_plate"], []),
+            (["radiators"], []),
+            (["radiators", "radiators"], ["0", "1"]),
+        ):
+            _, events = analyse(photos, radiator_index=index)
             assert result_of(events)["bundle"]["fabric"] == no_photos["bundle"]["fabric"]
 
 
@@ -567,58 +573,57 @@ def test_analysis_with_radiator_video_feeds_spec_check_and_gaps(harness) -> None
     assert any(d["name"] == "radiator_rating_from_video" for d in result["defaults"])
 
 
-def test_multiple_radiator_photos_produce_separate_readings_and_spec_checks(harness) -> None:
+def _radiator(**overrides) -> RadiatorReading:
+    values = dict(
+        legible=True,
+        confidence="high",
+        notes="",
+        radiator_type="K2",
+        height_mm=600,
+        width_mm=2000,
+        panels=2,
+        fin_rows=2,
+        room="Living room",
+    )
+    return RadiatorReading(**{**values, **overrides})
+
+
+def _rad_files(*names: str) -> list[tuple[str, tuple[str, bytes, str]]]:
+    return [("radiators", (n, JPEG + n.encode(), "image/jpeg")) for n in names]
+
+
+def _post(files, **form) -> dict:
+    data = {"certificate_id": CERTIFICATE, **form}
+    response = client.post("/api/analysis", data=data, files=files)
+    assert response.status_code == 200, response.text
+    return result_of([json.loads(line) for line in response.text.splitlines()])
+
+
+def test_two_photos_of_one_radiator_are_one_radiator(harness) -> None:
     harness["gemini"].replies["RadiatorReading"] = [
-        RadiatorReading(
-            legible=True,
-            confidence="high",
-            notes="",
-            radiator_type="K2",
-            height_mm=600,
-            width_mm=2000,
-            panels=2,
-            fin_rows=2,
-            room="Living room",
-        ),
-        RadiatorReading(
-            legible=True,
-            confidence="high",
-            notes="",
-            radiator_type="K1",
-            height_mm=600,
-            width_mm=900,
-            panels=1,
-            fin_rows=1,
-            room="Bedroom 1",
-        ),
+        _radiator(),
+        _radiator(radiator_type="K1", width_mm=900, panels=1, fin_rows=1, room="Bedroom 1"),
     ]
     files = [
         ("boiler_plate", ("boiler.jpg", JPEG, "image/jpeg")),
         ("gas_bill", ("bill.jpg", JPEG, "image/jpeg")),
-        ("radiators", ("rad1.jpg", JPEG + b"rad1", "image/jpeg")),
-        ("radiators", ("rad2.jpg", JPEG + b"rad2", "image/jpeg")),
+        *_rad_files("rad1-front.jpg", "rad1-end.jpg", "rad2.jpg"),
     ]
-    response = client.post("/api/analysis", data={"certificate_id": CERTIFICATE}, files=files)
-    assert response.status_code == 200
-    events = [json.loads(line) for line in response.text.splitlines()]
-    result = result_of(events)
+    result = _post(files, radiator_index=["0", "0", "1"])
 
     rad_readings = [r for r in result["readings"] if r["kind"] == "radiators"]
-    assert len(rad_readings) == 2
+    assert [r["index"] for r in rad_readings] == [0, 1]
     assert [r["status"] for r in rad_readings] == ["verified", "verified"]
-    assert {r["reading"]["room"] for r in rad_readings} == {"Living room", "Bedroom 1"}
+    rad_calls = [c for c in harness["gemini"].calls if c.schema == "RadiatorReading"]
+    # One Gemini read per radiator; radiator 1's two photos go in the same request.
+    assert sorted(c.media_types.count("image") for c in rad_calls) == [1, 2]
+    two_photo_call = next(c for c in rad_calls if c.media_types.count("image") == 2)
+    assert "same single radiator" in two_photo_call.prompt
 
     spec_radiators = result["bundle"]["target_spec"]["radiators"]
-    assert len(spec_radiators) == 2
-    by_room = {r["room"]: r for r in spec_radiators}
-    assert by_room["Living room"]["status"] == "ok"
-    assert by_room["Bedroom 1"]["status"] == "upsize"
-
+    assert sorted(r["room"] for r in spec_radiators) == ["Radiator 1", "Radiator 2"]
     (survey,) = harness["saved"]
-    assert {
-        survey.extracted_readings["radiators_room"].value,
-        survey.extracted_readings["radiators_2_room"].value,
-    } == {"Living room", "Bedroom 1"}
+    assert {"radiators_room", "radiators_2_room"} <= set(survey.extracted_readings)
 
     harness["gemini"].replies["ArgonReview"] = [
         ArgonReview(
@@ -638,21 +643,173 @@ def test_multiple_radiator_photos_produce_separate_readings_and_spec_checks(harn
     }
     rev_response = client.post(
         "/api/analysis/review",
-        data={"context": json.dumps(context)},
-        files=[
-            ("radiators", ("rad1.jpg", JPEG + b"rad1", "image/jpeg")),
-            ("radiators", ("rad2.jpg", JPEG + b"rad2", "image/jpeg")),
-        ],
+        data={"context": json.dumps(context), "radiator_index": ["0", "0", "1"]},
+        files=_rad_files("rad1-front.jpg", "rad1-end.jpg", "rad2.jpg"),
     )
     assert rev_response.status_code == 200, rev_response.text
     call = harness["gemini"].calls[-1]
     assert call.schema == "ArgonReview"
-    assert '"Living room"' in call.prompt and '"Bedroom 1"' in call.prompt
-    assert call.media_types.count("image") == 2
+    assert '"radiator": 1' in call.prompt and '"radiator": 2' in call.prompt
+    assert call.prompt.count("radiators (radiator 1)") == 2
+    assert call.prompt.count("radiators (radiator 2)") == 1
+    assert call.media_types.count("image") == 3
 
 
-def test_rejects_more_than_max_radiator_photos(harness) -> None:
-    nine_files = [("radiators", (f"rad-{i}.jpg", JPEG, "image/jpeg")) for i in range(9)]
-    response = client.post("/api/analysis", data={"certificate_id": CERTIFICATE}, files=nine_files)
+def test_entered_values_win_and_disagreements_are_shown(harness) -> None:
+    harness["gemini"].replies["RadiatorReading"] = [_radiator(width_mm=1400)]
+    known = {
+        "radiators": [{"width_mm": 1200, "height_mm": 590}],
+        "boiler": {"make": "Acme Heating Ltd", "heating_output_kw": 30},
+        "fuse_cutout": {"rating_a": 100},
+    }
+    files = [
+        ("boiler_plate", ("boiler.jpg", JPEG, "image/jpeg")),
+        ("gas_bill", ("bill.jpg", JPEG, "image/jpeg")),
+        *_rad_files("rad1.jpg"),
+    ]
+    result = _post(files, radiator_index=["0"], known=json.dumps(known))
+    by_kind = {r["kind"]: r for r in result["readings"]}
+
+    rad = by_kind["radiators"]
+    assert rad["status"] == "verified"
+    assert rad["reading"]["width_mm"] == 1200 and rad["reading"]["height_mm"] == 590
+    assert rad["entered"] == {"width_mm": 1200, "height_mm": 590}
+    # 1,400 vs 1,200 mm is a disagreement; 600 vs 590 mm is within the photo's tolerance.
+    assert rad["disagreements"] == [{"field": "width_mm", "entered": 1200, "read": 1400}]
+    rating = next(d for d in result["defaults"] if d["name"].startswith("radiator_rating"))
+    assert rating["name"] == "radiator_rating" and "as you measured them" in rating["note"]
+
+    boiler = by_kind["boiler_plate"]
+    assert boiler["reading"]["make"] == "Acme Heating Ltd"  # the photo's "Acme Heating" agrees
+    assert boiler["reading"]["heating_output_kw"] == 30
+    assert boiler["disagreements"] == [{"field": "heating_output_kw", "entered": 30, "read": 20}]
+
+    # No fuse photo: the entered rating still counts and feeds the supply check.
+    fuse = by_kind["fuse_cutout"]
+    assert fuse["status"] == "entered" and fuse["reading"]["rating_a"] == 100
+    assert result["plan"]["supply"]["fuse_rating_a"] == 100
+    assert not any(c.schema == "FuseCutoutReading" for c in harness["gemini"].calls)
+
+
+def test_details_only_radiator_counts_without_a_gemini_call(harness) -> None:
+    known = {
+        "radiators": [
+            {},
+            {"radiator_type": "K2", "width_mm": 1000, "height_mm": 600},
+            {"radiator_type": "K1"},
+        ]
+    }
+    result = _post([("gas_bill", ("bill.jpg", JPEG, "image/jpeg"))], known=json.dumps(known))
+
+    rad_readings = [r for r in result["readings"] if r["kind"] == "radiators"]
+    # The empty first card counts for nothing; the others keep their radiator numbers.
+    assert [(r["index"], r["status"]) for r in rad_readings] == [(1, "entered"), (2, "entered")]
+    assert rad_readings[0]["reading"]["width_mm"] == 1000
+    assert not any(c.schema == "RadiatorReading" for c in harness["gemini"].calls)
+    (radiator,) = result["bundle"]["target_spec"]["radiators"]
+    assert radiator["room"] == "Radiator 2"
+    assert not any(g["input"] == "radiators" for g in result["gaps"])
+
+
+def test_couldnt_tell_photo_falls_back_to_entered_values(harness) -> None:
+    blurry = _radiator(legible=False, height_mm=None, width_mm=None, radiator_type="other")
+    harness["gemini"].replies["RadiatorReading"] = [blurry]
+    known = {"radiators": [{"radiator_type": "K1", "width_mm": 800, "height_mm": 600}]}
+    result = _post(_rad_files("rad1.jpg"), radiator_index=["0"], known=json.dumps(known))
+
+    (rad,) = [r for r in result["readings"] if r["kind"] == "radiators"]
+    assert rad["status"] == "entered" and rad["attempts"] == 2
+    assert rad["reading"]["radiator_type"] == "K1"
+    assert not any(g["input"] == "radiators" for g in result["gaps"])
+
+
+def test_entered_details_are_validated_and_labels_are_refused(harness) -> None:
+    for known, detail in (
+        ({"radiators": [{"width_mm": 50}]}, "radiators.0.width_mm"),
+        ({"radiators": [{"radiator_type": "K2", "panels": 1}]}, "2 panel(s)"),
+        ({"fuse_cutout": {"rating_a": 70}}, "Main fuse ratings"),
+        ({"boiler": {"heating_output_kw": 500}}, "boiler.heating_output_kw"),
+        ({"boiler": {"make": "Worcester ZZ1 1ZZ"}}, "make or model only"),
+        # Labels are display-only in the browser: the API has nowhere to put one.
+        ({"radiators": [{"label": "Jamie's room"}]}, "radiators.0.label"),
+        ({"radiators": [{}] * 9}, "radiators"),
+    ):
+        response = client.post(
+            "/api/analysis", data={"certificate_id": CERTIFICATE, "known": json.dumps(known)}
+        )
+        assert response.status_code == 422, known
+        assert detail in response.json()["detail"]
+        assert "Jamie" not in response.text and "ZZ1" not in response.text
+    assert harness["gemini"].calls == []
+
+
+def test_review_sees_entered_values_and_photo_disagreements(harness) -> None:
+    harness["gemini"].replies["RadiatorReading"] = [_radiator(width_mm=1400)]
+    known = {"radiators": [{"width_mm": 1200}]}
+    result = _post(_rad_files("rad1.jpg"), radiator_index=["0"], known=json.dumps(known))
+    (rad,) = [r for r in result["readings"] if r["kind"] == "radiators"]
+    harness["gemini"].replies["ArgonReview"] = [
+        ArgonReview(
+            estimates_explanation="No bill to compare against.",
+            cited_reason_codes=[],
+            conflict_status="no_conflict_found",
+            input_conflicts=[],
+            quote_reviews=[],
+            questions_to_ask=[],
+            summary="Your measured width differs from the photo.",
+        )
+    ]
+    context = {
+        "bundle": {**result["bundle"], "measured": None, "cross_check": None},
+        "epc": result["epc"],
+        "radiators": [rad["reading"]],
+        "entered": [
+            {
+                "input": "radiators",
+                "radiator": 1,
+                "field": "width_mm",
+                "entered": 1200,
+                "photo_read": 1400,
+            }
+        ],
+    }
+    response = client.post(
+        "/api/analysis/review",
+        data={"context": json.dumps(context), "radiator_index": ["0"]},
+        files=_rad_files("rad1.jpg"),
+    )
+    assert response.status_code == 200, response.text
+    call = harness["gemini"].calls[-1]
+    assert '"homeowner_entered"' in call.prompt
+    assert '"photo_read": 1400' in call.prompt and '"entered": 1200' in call.prompt
+
+    labelled = {**context, "entered": [{**context["entered"][0], "label": "Jamie's room"}]}
+    response = client.post("/api/analysis/review", data={"context": json.dumps(labelled)})
     assert response.status_code == 422
-    assert "at most 8" in response.json()["detail"]
+
+
+def test_rejects_more_than_max_radiators_or_photos(harness) -> None:
+    nine = _rad_files(*(f"rad-{i}.jpg" for i in range(9)))
+    response = client.post(
+        "/api/analysis",
+        data={"certificate_id": CERTIFICATE, "radiator_index": [str(i) for i in range(9)]},
+        files=nine,
+    )
+    assert response.status_code == 422
+    assert "at most 8 radiators" in response.json()["detail"]
+
+    four = _rad_files(*(f"rad-{i}.jpg" for i in range(4)))
+    response = client.post(
+        "/api/analysis",
+        data={"certificate_id": CERTIFICATE, "radiator_index": ["0"] * 4},
+        files=four,
+    )
+    assert response.status_code == 422
+    assert "at most 3 photos per radiator" in response.json()["detail"]
+
+    # Several photos with no radiator_index can't be told apart into radiators.
+    response = client.post(
+        "/api/analysis", data={"certificate_id": CERTIFICATE}, files=_rad_files("a.jpg", "b.jpg")
+    )
+    assert response.status_code == 422
+    assert "radiator_index" in response.json()["detail"]

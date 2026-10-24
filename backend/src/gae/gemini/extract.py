@@ -301,6 +301,11 @@ def extract(
                 f"{prompt}\n\nThese {len(parts)} images are sequential pages of one installer "
                 "quote. Read them together as a single document."
             )
+        if kind == PhotoKind.RADIATORS and len(parts) > 1:
+            prompt = (
+                f"{prompt}\n\nThese {len(parts)} photos all show the same single radiator from "
+                "different angles. Use them together and report one reading for that radiator."
+            )
         reading = gemini.generate(
             model=model,
             input=[text(prompt), *blocks],

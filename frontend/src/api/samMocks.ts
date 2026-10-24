@@ -1,4 +1,5 @@
 /** Offline demo data: Sam's invented 1930s semi. The UI labels mock mode wherever it is shown. */
+import { applyEntered } from '../lib/knownDetails'
 import type {
   AllElectricPlan,
   AnalysisBundle,
@@ -10,9 +11,12 @@ import type {
   InstallerDraft,
   InstallerDraftsRequest,
   InstallerDraftsResult,
+  KnownDetails,
   PhotoCheckResult,
   PhotoKind,
   QuoteCheckResult,
+  RadiatorCheck,
+  RadiatorUpload,
   RadiatorVideoResult,
   ReviewResult,
   SuggestedModel,
@@ -542,12 +546,119 @@ export const SAM_RADIATOR_READINGS: Record<string, unknown>[] = [
   },
 ]
 
+const SAM_BOILER_READING: Record<string, unknown> = {
+  make: 'Worcester',
+  model: 'Greenstar 24i',
+  gc_number: null,
+  heating_output_kw: 24,
+  hot_water_output_kw: 24,
+  fuel: 'natural_gas',
+  legible: true,
+  confidence: 'high',
+  notes: '',
+}
+
+const SAM_FUSE_READING: Record<string, unknown> = {
+  rating_a: 60,
+  looks_like: 'cutout',
+  legible: true,
+  confidence: 'high',
+  notes: '',
+}
+
+const SAM_LOFT_READING: Record<string, unknown> = {
+  insulation_visible: true,
+  depth_mm_band: '270mm',
+  joists_visible_above_insulation: false,
+  ruler_or_tape_visible: true,
+  legible: true,
+  confidence: 'high',
+  notes: '',
+}
+
+/** Sam's two photographed radiators, used when no radiator cards are passed (the sample). */
+const SAM_RADIATOR_UPLOADS: RadiatorUpload[] = SAM_RADIATOR_READINGS.map(() => ({ photos: [], known: {} }))
+
+/** Like the backend's merge: entered values over the photo reading, or entered values alone. */
+function mockReading(
+  kind: PhotoKind,
+  photo: Record<string, unknown> | null,
+  entered: Record<string, string | number>,
+  index?: number,
+): InputReading {
+  const base = { kind, warnings: [], photograph_instead: null, used_for: '', entered, ...(index != null ? { index } : {}) }
+  if (photo) {
+    const { reading, disagreements } = applyEntered(photo, entered)
+    return { ...base, status: READ_STATUS[kind] ?? 'verified', attempts: index === 0 ? 2 : 1, reading, disagreements }
+  }
+  if (Object.keys(entered).length > 0) {
+    return {
+      ...base,
+      status: 'entered',
+      attempts: 0,
+      reading: { ...entered, legible: true, confidence: 'medium', notes: '' },
+      disagreements: [],
+    }
+  }
+  return { ...base, status: 'not_provided', attempts: 0, reading: null, disagreements: [] }
+}
+
+/** Spec radiator checks named "Radiator N" by number, as the backend names them. */
+function mockSpecRadiators(readings: InputReading[]): RadiatorCheck[] {
+  const rateable = readings.filter(
+    (r) =>
+      r.kind === 'radiators' &&
+      r.reading?.width_mm != null &&
+      r.reading?.height_mm != null &&
+      ['single_panel', 'K1', 'P+', 'K2', 'K3'].includes(String(r.reading?.radiator_type)),
+  )
+  return rateable.map((r, i) => ({
+    ...SAM_ANALYSIS.target_spec.radiators[i % SAM_ANALYSIS.target_spec.radiators.length],
+    room: `Radiator ${(r.index ?? i) + 1}`,
+  }))
+}
+
 export function mockAnalysisResult(
   kinds: PhotoKind[],
   hasRadiatorVideo = false,
-  radiatorCount?: number,
+  radiators?: RadiatorUpload[],
+  known?: KnownDetails,
 ): AnalysisResult {
   const all: PhotoKind[] = ['boiler_plate', 'radiators', 'fuse_cutout', 'outdoor_space', 'loft', 'gas_bill']
+  const uploads = radiators ?? (kinds.includes('radiators') ? SAM_RADIATOR_UPLOADS : [])
+  // Sam's sample has photographed radiators; passed cards are photographed only when they have photos.
+  const photographed = (i: number) => radiators == null || uploads[i].photos.length > 0
+  const radiatorReadings = uploads
+    .map((upload, index) =>
+      mockReading(
+        'radiators',
+        photographed(index) ? SAM_RADIATOR_READINGS[index % SAM_RADIATOR_READINGS.length] : null,
+        upload.known as Record<string, string | number>,
+        index,
+      ),
+    )
+    .filter((r) => r.status !== 'not_provided')
+  const readings = all.flatMap((kind): InputReading[] => {
+    const active = kinds.includes(kind)
+    if (kind === 'radiators') {
+      return radiatorReadings.length > 0 ? radiatorReadings : [mockReading(kind, null, {})]
+    }
+    const entered = ((kind === 'boiler_plate' ? known?.boiler : kind === 'fuse_cutout' ? known?.fuse_cutout : null) ??
+      {}) as Record<string, string | number>
+    const photo = !active
+      ? null
+      : kind === 'boiler_plate'
+        ? SAM_BOILER_READING
+        : kind === 'fuse_cutout'
+          ? SAM_FUSE_READING
+          : kind === 'loft'
+            ? SAM_LOFT_READING
+            : null
+    const item = mockReading(kind, photo, entered)
+    // Photo kinds the mock has no reading for still read as provided.
+    return [active && !photo ? { ...item, status: READ_STATUS[kind] ?? 'verified', attempts: 1 } : item]
+  })
+  const specRadiators = mockSpecRadiators(readings)
   return {
     survey_id: null,
     saved: false,
@@ -572,62 +683,9 @@ export function mockAnalysisResult(
       windows: ['fully double glazed'],
       main_heating: ['boiler and radiators, mains gas'],
     },
-    bundle: SAM_ANALYSIS,
+    bundle: { ...SAM_ANALYSIS, target_spec: { ...SAM_ANALYSIS.target_spec, radiators: specRadiators } },
     size_basis: 'measured',
-    readings: all.flatMap((kind): InputReading[] => {
-      const active = kinds.includes(kind)
-      const status = active ? (READ_STATUS[kind] ?? 'verified') : 'not_provided'
-      if (kind === 'radiators') {
-        if (!active) {
-          return [
-            {
-              kind,
-              status: 'not_provided',
-              attempts: 0,
-              reading: null,
-              warnings: [],
-              photograph_instead: null,
-              used_for: '',
-            },
-          ]
-        }
-        const count = radiatorCount && radiatorCount > 0 ? radiatorCount : SAM_RADIATOR_READINGS.length
-        return Array.from({ length: count }, (_, idx) => ({
-          kind,
-          status,
-          attempts: idx === 0 ? 2 : 1,
-          reading: SAM_RADIATOR_READINGS[idx % SAM_RADIATOR_READINGS.length] ?? null,
-          warnings: [],
-          photograph_instead: null,
-          used_for: '',
-        }))
-      }
-      const reading =
-        kind === 'fuse_cutout' && active
-          ? { rating_a: 60, legible: true, confidence: 'high', notes: '' }
-          : kind === 'loft' && active
-            ? {
-                insulation_visible: true,
-                depth_mm_band: '270mm',
-                joists_visible_above_insulation: false,
-                ruler_or_tape_visible: true,
-                legible: true,
-                confidence: 'high',
-                notes: '',
-              }
-            : null
-      return [
-        {
-          kind,
-          status,
-          attempts: 1,
-          reading,
-          warnings: [],
-          photograph_instead: null,
-          used_for: '',
-        },
-      ]
-    }),
+    readings,
     radiator_video: hasRadiatorVideo ? SAM_RADIATOR_VIDEO : null,
     gaps: hasRadiatorVideo
       ? [
@@ -656,12 +714,15 @@ export function mockAnalysisResult(
 export function mockAnalysisEvents(
   kinds: PhotoKind[],
   hasRadiatorVideo = false,
-  radiatorCount?: number,
+  radiators?: RadiatorUpload[],
+  known?: KnownDetails,
 ): AnalysisEvent[] {
+  const nothingSent = kinds.length === 0 && !radiators?.length && !known?.boiler && !known?.fuse_cutout
   const result = mockAnalysisResult(
-    kinds.length ? kinds : ['boiler_plate', 'radiators', 'gas_bill'],
+    nothingSent ? ['boiler_plate', 'radiators', 'gas_bill'] : kinds,
     hasRadiatorVideo,
-    radiatorCount,
+    nothingSent ? undefined : radiators,
+    known,
   )
   return [
     { type: 'step', step: 'epc', status: 'running', ms: null },

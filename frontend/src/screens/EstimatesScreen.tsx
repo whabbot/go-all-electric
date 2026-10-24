@@ -5,6 +5,7 @@ import { RadiatorVideoResults } from '../components/RadiatorVideoResults'
 import { ReviewPanel } from '../components/ReviewPanel'
 import { VerificationLogPanel } from '../components/VerificationLog'
 import { useSession } from '../context/SessionContext'
+import { fieldLabel, formatField, radiatorName } from '../lib/knownDetails'
 
 const STEP_LABELS: Record<string, string> = {
   epc: 'EPC record',
@@ -24,6 +25,7 @@ const STATUS_LABEL: Record<string, string> = {
   verified_with_warnings: 'verified, with warnings',
   couldnt_tell: "couldn't tell",
   not_provided: 'not provided',
+  entered: 'entered by you',
 }
 
 /** Photos the answer does not depend on: skipping them is never shown as a gap. */
@@ -38,23 +40,36 @@ function formatValue(value: unknown): string | null {
   return String(value)
 }
 
-function ReadingValues({ reading }: { reading: Record<string, unknown> }) {
+function ReadingValues({
+  reading,
+  entered,
+  showConfidence,
+}: {
+  reading: Record<string, unknown>
+  entered: string[]
+  showConfidence: boolean
+}) {
   const shown = Object.entries(reading)
-    .filter(([k]) => !['notes', 'legible', 'confidence', 'monthly', 'line_items'].includes(k))
+    .filter(([k]) => !['notes', 'legible', 'confidence', 'monthly', 'line_items', 'room'].includes(k))
     .map(([k, v]) => [k, formatValue(v)] as const)
     .filter(([, v]) => v != null)
   if (shown.length === 0) return null
   return (
     <p className="subtle">
-      {shown.map(([k, v]) => `${k.replaceAll('_', ' ')}: ${v}`).join(' · ')}
-      {typeof reading.confidence === 'string' && ` · confidence ${reading.confidence}`}
+      {shown.map(([k, v], i) => (
+        <span key={k}>
+          {i > 0 && ' · '}
+          {k.replaceAll('_', ' ')}: {v}
+          {entered.includes(k) && <span className="entered-tag"> (you)</span>}
+        </span>
+      ))}
+      {showConfidence && typeof reading.confidence === 'string' && ` · confidence ${reading.confidence}`}
     </p>
   )
 }
 
-function Inputs({ analysis }: { analysis: AnalysisResult }) {
-  const radiatorCount = analysis.readings.filter((r) => r.kind === 'radiators').length
-  let radiatorIndex = 0
+function Inputs({ analysis, radiatorLabels }: { analysis: AnalysisResult; radiatorLabels: (string | null)[] }) {
+  const anyEntered = analysis.readings.some((r) => Object.keys(r.entered ?? {}).length > 0)
   return (
     <>
       {analysis.gaps.length > 0 && (
@@ -75,10 +90,11 @@ function Inputs({ analysis }: { analysis: AnalysisResult }) {
         <h2>What we read</h2>
         <ul className="reading-list">
           {analysis.readings.map((r, i) => {
-            const isRad = r.kind === 'radiators'
-            if (isRad) radiatorIndex += 1
             const label =
-              isRad && radiatorCount > 1 ? `radiator ${radiatorIndex}` : r.kind.replaceAll('_', ' ')
+              r.kind === 'radiators' && r.index != null
+                ? radiatorName(r.index, radiatorLabels, analysis.readings)
+                : r.kind.replaceAll('_', ' ')
+            const entered = Object.keys(r.entered ?? {})
             return (
               <li key={`${r.kind}-${i}`}>
                 <strong>{label}</strong>
@@ -86,7 +102,25 @@ function Inputs({ analysis }: { analysis: AnalysisResult }) {
                   {r.status === 'not_provided' && OPTIONAL_KINDS.includes(r.kind) ? 'optional' : STATUS_LABEL[r.status]}
                 </span>
                 {r.attempts > 1 && <span className="subtle"> after a re-read</span>}
-                {r.reading && <ReadingValues reading={r.reading} />}
+                {r.reading && (
+                  <ReadingValues reading={r.reading} entered={entered} showConfidence={r.status !== 'entered'} />
+                )}
+                {(r.disagreements ?? []).length > 0 && (
+                  <div className="disagreement" role="note">
+                    <p>
+                      <strong>Your entry and the photo disagree.</strong> We used what you entered; check it
+                      before your survey.
+                    </p>
+                    <ul>
+                      {r.disagreements!.map((d) => (
+                        <li key={d.field}>
+                          {fieldLabel(d.field)}: you entered {formatField(d.field, d.entered)}; the photo reads{' '}
+                          {formatField(d.field, d.read)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {r.warnings.length > 0 && <p className="subtle">Warnings: {r.warnings.join('; ')}</p>}
                 {r.status === 'couldnt_tell' && r.photograph_instead && (
                   <p className="subtle">Photograph instead: {r.photograph_instead}</p>
@@ -96,6 +130,7 @@ function Inputs({ analysis }: { analysis: AnalysisResult }) {
             )
           })}
         </ul>
+        {anyEntered && <p className="subtle">(you) marks a value you entered: it is used instead of the photo reading.</p>}
       </section>
 
       {analysis.radiator_video && (
@@ -126,7 +161,18 @@ function Inputs({ analysis }: { analysis: AnalysisResult }) {
 }
 
 export function EstimatesScreen() {
-  const { address, placeLabel, analysis, setAnalysis, files, radiatorFiles, radiatorVideo } = useSession()
+  const {
+    address,
+    placeLabel,
+    analysis,
+    setAnalysis,
+    files,
+    radiatorUploads,
+    radiatorLabels,
+    knownBoiler,
+    knownFuse,
+    radiatorVideo,
+  } = useSession()
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<Progress>({})
@@ -152,7 +198,8 @@ export function EstimatesScreen() {
           }
         },
         radiatorVideo,
-        radiatorFiles,
+        radiatorUploads,
+        { boiler: knownBoiler, fuse_cutout: knownFuse },
       )
       .then(setAnalysis)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Analysis failed'))
@@ -210,7 +257,7 @@ export function EstimatesScreen() {
       </h1>
       {placeLabel && <p className="place-label">{placeLabel}</p>}
       <EstimateHero analysis={analysis.bundle} billGap={billGap} />
-      <Inputs analysis={analysis} />
+      <Inputs analysis={analysis} radiatorLabels={radiatorLabels} />
       <ReviewPanel />
       <VerificationLogPanel entries={analysis.log} />
       <p className="subtle">

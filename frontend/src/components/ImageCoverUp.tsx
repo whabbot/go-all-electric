@@ -19,7 +19,10 @@ type Props = {
   /** e.g. "Photo 2 of 3" when several uploads are queued */
   progressLabel?: string
   onConfirm: (file: File) => void
+  /** Skips this photo (the only one, or the current one of a batch). Escape does the same. */
   onCancel: () => void
+  /** When more photos are queued: drops this one and every photo still waiting. */
+  onCancelAll?: () => void
 }
 
 type DrawMode = 'crop' | 'redact'
@@ -37,6 +40,7 @@ export function ImageCoverUp({
   progressLabel,
   onConfirm,
   onCancel,
+  onCancelAll,
 }: Props) {
   const maskId = useId().replace(/:/g, '')
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -51,6 +55,17 @@ export function ImageCoverUp({
   const [draft, setDraft] = useState<ImageRect | null>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !busy) {
+        event.preventDefault()
+        onCancel()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [busy, onCancel])
 
   useEffect(() => {
     setDisplayUrl(imageUrl)
@@ -416,8 +431,13 @@ export function ImageCoverUp({
         </p>
 
         <div className="cover-up-actions">
+          {onCancelAll && (
+            <button type="button" className="btn" onClick={onCancelAll} disabled={busy}>
+              Cancel all
+            </button>
+          )}
           <button type="button" className="btn" onClick={onCancel} disabled={busy}>
-            Cancel
+            {onCancelAll ? 'Skip this photo' : 'Cancel'}
           </button>
           <button type="button" className="btn primary" onClick={() => void confirm()} disabled={!img || busy}>
             {busy ? 'Preparing…' : 'Use photo'}

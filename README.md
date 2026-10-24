@@ -110,11 +110,15 @@ VITE_USE_MOCKS=false npm run dev         # http://localhost:5173
 
 Then: enter a postcode and pick a **house** (flats are refused by design), add the photos you have
 (boiler plate, radiator, fuse cutout and gas bill; the outdoor spot and loft photo are optional), redact each one,
-and press **Run estimates**. Without `MONGODB_URI` everything still runs: datasheets come from the
+and press **Run estimates**. Radiators are added one at a time with **Add radiator**: each has a room label
+(kept in the browser, never sent), up to three photos read together as that one radiator, and an optional
+**Add details you know** section, as do the boiler and fuse cutout. Entered values replace the photo reading of
+that field; where the photo disagrees, both are shown. Without `MONGODB_URI` everything still runs: datasheets come from the
 seed file in memory and the survey is simply not saved.
 
 What happens on **Run estimates** (`POST /api/analysis`, multipart: `certificate_id` plus one file
-per photo kind, all optional):
+per photo kind, all optional; radiator photos repeat `radiators` with a matching `radiator_index`, and a
+`known` JSON field carries entered details, radiators by position):
 
 1. The EPC fetch and every photo/bill extraction start together; each extraction is its own Gemini
    verification loop (read, check in code, re-read once on failure, give up honestly).

@@ -32,6 +32,7 @@ from gae.gemini.schemas import (
     PhotoKind,
     RadiatorReading,
     RadiatorVideoResult,
+    Reading,
     VerificationLog,
     VerificationLogEntry,
     VerifiedReading,
@@ -49,6 +50,7 @@ from gae.opendata.weather import normalise_postcode
 from gae.plan.build import build_all_electric_plan
 from gae.plan.solar import SolarYieldProvider
 from gae.survey.fields import NamedDefault
+from gae.survey.known import KnownDetails, apply_entered, entered_for
 from gae.survey.schemas import (
     AnalysisBundle,
     AnalysisResult,
@@ -117,18 +119,27 @@ def run_analysis(
     files: dict[PhotoKind, tuple[bytes, str]],
     emit: Emit = lambda event: None,
     radiator_video: tuple[bytes, str] | None = None,
-    radiator_files: Sequence[tuple[bytes, str]] | None = None,
+    radiator_files: Sequence[Sequence[tuple[bytes, str]]] | None = None,
+    known: KnownDetails | None = None,
 ) -> AnalysisResult:
+    """`radiator_files` holds each radiator's photos (radiator 1 first): one radiator may have
+    several photos, read together as one radiator. `known` holds what the homeowner entered."""
     started = time.monotonic()
     timings: dict[str, int] = {}
     entries: list[VerificationLogEntry] = []
     lock = Lock()
 
-    rad_uploads: list[tuple[bytes, str]] = (
-        list(radiator_files)
+    rad_groups: list[list[tuple[bytes, str]]] = (
+        [list(group) for group in radiator_files]
         if radiator_files is not None
-        else ([files[PhotoKind.RADIATORS]] if PhotoKind.RADIATORS in files else [])
+        else ([[files[PhotoKind.RADIATORS]]] if PhotoKind.RADIATORS in files else [])
     )
+    known_rads = known.radiators if known is not None else []
+    rad_count = max(len(rad_groups), len(known_rads))
+    rad_groups += [[] for _ in range(rad_count - len(rad_groups))]
+    rad_entered = [
+        known_rads[idx].values() if idx < len(known_rads) else {} for idx in range(rad_count)
+    ]
     other_files = {k: v for k, v in files.items() if k is not PhotoKind.RADIATORS}
 
     def record(entry: VerificationLogEntry) -> None:
@@ -151,7 +162,11 @@ def run_analysis(
             step(name, "done")
 
     def read(
-        kind: PhotoKind, data: bytes, mime: str, prefix: str | None = None
+        kind: PhotoKind,
+        data: bytes,
+        mime: str,
+        prefix: str | None = None,
+        more: list[tuple[bytes, str]] | None = None,
     ) -> VerifiedReading | None:
         log_prefix = prefix or kind.value
         try:
@@ -161,6 +176,7 @@ def run_analysis(
                 kind,
                 data,
                 mime,
+                media_parts=more,
                 log=LiveLog(log_prefix, record),
                 purpose=f"/api/analysis:{kind.value}",
             )
@@ -198,7 +214,8 @@ def run_analysis(
             )
             return None
 
-    workers = 1 + len(other_files) + len(rad_uploads) + (1 if radiator_video is not None else 0)
+    rad_photos = [group for group in rad_groups if group]
+    workers = 1 + len(other_files) + len(rad_photos) + (1 if radiator_video is not None else 0)
     with ThreadPoolExecutor(max_workers=workers) as pool:
         epc_future = pool.submit(timed, "epc", services.epc, certificate_id)
         futures: dict[PhotoKind, Future] = {
@@ -206,17 +223,21 @@ def run_analysis(
             for kind, (data, mime) in other_files.items()
         }
         rad_t0 = time.monotonic()
-        if rad_uploads:
+        if rad_photos:
             step("read_radiators", "running")
-        rad_futures: list[Future[VerifiedReading | None]] = [
+        # One Gemini read per radiator, with all of that radiator's photos; none without photos.
+        rad_futures: list[Future[VerifiedReading | None] | None] = [
             pool.submit(
                 read,
                 PhotoKind.RADIATORS,
-                data,
-                mime,
+                group[0][0],
+                group[0][1],
                 "radiators" if idx == 0 else f"radiators-{idx + 1}",
+                group[1:],
             )
-            for idx, (data, mime) in enumerate(rad_uploads)
+            if group
+            else None
+            for idx, group in enumerate(rad_groups)
         ]
         video_future: Future[RadiatorVideoResult | None] | None = (
             pool.submit(
@@ -235,14 +256,14 @@ def run_analysis(
             pool.shutdown(wait=False, cancel_futures=True)
             raise
         verified = {kind: future.result() for kind, future in futures.items()}
-        if rad_futures:
+        if rad_photos:
             try:
-                rad_verified = [f.result() for f in rad_futures]
+                rad_verified = [f.result() if f is not None else None for f in rad_futures]
             finally:
                 timings["read_radiators"] = round((time.monotonic() - rad_t0) * 1000)
                 step("read_radiators", "done")
         else:
-            rad_verified = []
+            rad_verified = [None] * rad_count
         video_result = video_future.result() if video_future is not None else None
 
     if mapping.estimate is None:
@@ -269,30 +290,32 @@ def run_analysis(
 
     gaps: list[Gap] = []
     readings: list[InputReading] = []
+    rad_items: list[InputReading] = []
     for kind in PhotoKind:
         if kind is PhotoKind.RADIATORS:
-            if not rad_uploads:
-                readings.append(_summary(kind, None, False))
-            else:
-                for idx, result in enumerate(rad_verified, start=1):
-                    readings.append(_summary(kind, result, True))
-                    if result is None or result.status == "couldnt_tell":
-                        label = (
-                            f"{_label(kind)} photo {idx}"
-                            if len(rad_uploads) > 1
-                            else f"{_label(kind)} photo"
+            for idx in range(rad_count):
+                photos, entered = rad_groups[idx], rad_entered[idx]
+                if not photos and not entered:
+                    continue  # an empty radiator card counts for nothing
+                result = rad_verified[idx]
+                item = _summary(kind, result, bool(photos), entered, index=idx)
+                rad_items.append(item)
+                if photos and item.status == "couldnt_tell":
+                    what = "photos" if len(photos) > 1 else "photo"
+                    gaps.append(
+                        Gap(
+                            input=kind.value,
+                            message=f"Couldn't tell from the {what} of radiator {idx + 1}.",
+                            provide=f"Photograph {SPECS[kind].photograph_instead}, or add "
+                            "the details you know.",
                         )
-                        gaps.append(
-                            Gap(
-                                input=kind.value,
-                                message=f"Couldn't tell from the {label}.",
-                                provide=f"Photograph {SPECS[kind].photograph_instead}.",
-                            )
-                        )
+                    )
+            readings.extend(rad_items or [_summary(kind, None, False)])
             continue
-        readings.append(_summary(kind, verified.get(kind), kind in other_files))
         result = verified.get(kind)
-        if kind in other_files and (result is None or result.status == "couldnt_tell"):
+        item = _summary(kind, result, kind in other_files, entered_for(known, kind))
+        readings.append(item)
+        if kind in other_files and item.status == "couldnt_tell":
             gaps.append(
                 Gap(
                     input=kind.value,
@@ -305,6 +328,7 @@ def run_analysis(
     measured: MeasuredEstimate | None = None
     annual_gas_kwh: float | None = None
     bill = _reading(verified.get(PhotoKind.GAS_BILL), GasBillReading)
+    by_kind = {item.kind: item for item in readings if item.kind is not PhotoKind.RADIATORS}
     if PhotoKind.GAS_BILL not in files:
         gaps.append(
             Gap(
@@ -389,11 +413,11 @@ def run_analysis(
 
     # --- Heating fuel (grant) -----------------------------------------------------------------
     fuel = mapping.main_heating_fuel
-    boiler = _reading(verified.get(PhotoKind.BOILER_PLATE), BoilerPlateReading)
+    boiler = _typed(by_kind[PhotoKind.BOILER_PLATE], BoilerPlateReading)
     if fuel is HeatingFuel.OTHER and boiler is not None and boiler.fuel == "natural_gas":
         fuel = HeatingFuel.GAS
         code_log.add("check", "boiler_plate", "code", "fuel from data plate", True, "gas")
-    elif boiler is None:
+    elif boiler is None or boiler.fuel == "unknown":
         defaults.append(
             NamedDefault(
                 input="boiler_plate",
@@ -408,15 +432,16 @@ def run_analysis(
     t0 = time.monotonic()
     basis = measured.design_load_kw if measured else fabric.design_load_kw
     radiator_readings = [
-        r for res in rad_verified if (r := _reading(res, RadiatorReading)) is not None
+        (item, r) for item in rad_items if (r := _typed(item, RadiatorReading)) is not None
     ]
     rooms = _rooms(radiator_readings, basis.central, defaults)
     if radiator_readings and not rooms:
         gaps.append(
             Gap(
                 input="radiators",
-                message="Couldn't rate this radiator type from a photo.",
-                provide="The radiator's make and model label, or its rated output in watts.",
+                message="Couldn't rate these radiators: the type, width and height are all needed.",
+                provide="Add the type and size under each radiator's details, or its make and "
+                "model label.",
             )
         )
     if radiator_video is not None and video_result is None:
@@ -576,40 +601,70 @@ def _reading[T](result: VerifiedReading | None, schema: type[T]) -> T | None:
     return result.reading
 
 
-def _summary(kind: PhotoKind, result: VerifiedReading | None, provided: bool) -> InputReading:
-    if not provided:
-        return InputReading(
-            kind=kind,
-            status="not_provided",
-            attempts=0,
-            reading=None,
-            warnings=[],
-            photograph_instead=SPECS[kind].photograph_instead,
-            used_for=USED_FOR[kind],
-        )
-    if result is None:
-        return InputReading(
-            kind=kind,
-            status="couldnt_tell",
-            attempts=0,
-            reading=None,
-            warnings=["Gemini couldn't read this right now"],
-            photograph_instead=SPECS[kind].photograph_instead,
-            used_for=USED_FOR[kind],
-        )
-    reading = None
-    if result.reading is not None:
+def _summary(
+    kind: PhotoKind,
+    result: VerifiedReading | None,
+    provided: bool,
+    entered: dict[str, Any] | None = None,
+    index: int | None = None,
+) -> InputReading:
+    """One input's reading, with any values the homeowner entered applied over the photo's."""
+    entered = entered or {}
+    common = dict(kind=kind, used_for=USED_FOR[kind], index=index, entered=entered)
+    if provided and result is not None and result.reading is not None:
         # Free-text notes are blanked: they are the one field that could carry stray text.
-        reading = {**result.reading.model_dump(mode="json"), "notes": ""}
+        photo = {**result.reading.model_dump(mode="json"), "notes": ""}
+        reading, disagreements = apply_entered(photo, entered)
+        return InputReading(
+            **common,
+            status=result.status,
+            attempts=result.attempts,
+            reading=reading,
+            warnings=result.warnings,
+            photograph_instead=result.photograph_instead,
+            disagreements=disagreements,
+        )
+    warnings = [] if not provided else ["Gemini couldn't read this right now"]
+    if provided and result is not None:
+        warnings = result.warnings
+    if entered:
+        # Nothing read from a photo (none sent, or it couldn't be read): what was entered counts.
+        return InputReading(
+            **common,
+            status="entered",
+            attempts=result.attempts if result is not None else 0,
+            reading={**entered, "legible": True, "confidence": "medium", "notes": ""},
+            warnings=warnings,
+            photograph_instead=None,
+        )
     return InputReading(
-        kind=kind,
-        status=result.status,
-        attempts=result.attempts,
-        reading=reading,
-        warnings=result.warnings,
-        photograph_instead=result.photograph_instead,
-        used_for=USED_FOR[kind],
+        **common,
+        status="couldnt_tell" if provided else "not_provided",
+        attempts=result.attempts if result is not None else 0,
+        reading=None,
+        warnings=warnings,
+        photograph_instead=(
+            result.photograph_instead
+            if result is not None and result.photograph_instead
+            else SPECS[kind].photograph_instead
+        ),
     )
+
+
+# Schema fields an entered-only reading has no value for.
+_UNREAD = {"radiator_type": "other", "fuel": "unknown", "looks_like": "cutout"}
+
+
+def _typed[T: Reading](item: InputReading, schema: type[T]) -> T | None:
+    """The reading the maths uses (photo values with entered ones applied), as its schema."""
+    if item.reading is None or item.status not in (
+        "verified",
+        "verified_with_warnings",
+        "entered",
+    ):
+        return None
+    blank = {name: _UNREAD.get(name) for name, f in schema.model_fields.items() if f.is_required()}
+    return schema.model_validate({**blank, **item.reading})
 
 
 def _monthly(bill: GasBillReading) -> dict[int, float] | None:
@@ -628,47 +683,46 @@ def _monthly(bill: GasBillReading) -> dict[int, float] | None:
 
 
 def _rooms(
-    readings: RadiatorReading | Sequence[RadiatorReading] | None,
+    readings: Sequence[tuple[InputReading, RadiatorReading]],
     design_load_kw: float,
     defaults: list[NamedDefault],
 ) -> list[Room]:
-    if readings is None:
-        items: list[RadiatorReading] = []
-    elif isinstance(readings, RadiatorReading):
-        items = [readings]
-    else:
-        items = list(readings)
-    rateable: list[tuple[int, RadiatorReading, float]] = []
-    for idx, reading in enumerate(items, start=1):
+    """Rooms for the radiator check, named by radiator number (never by a homeowner label)."""
+    rateable: list[tuple[InputReading, RadiatorReading, float]] = []
+    for item, reading in readings:
         if reading.height_mm is None or reading.width_mm is None:
             continue
         per_m2 = c.PANEL_RADIATOR_DT50_W_PER_M2.get(reading.radiator_type)
         if per_m2 is None:
             continue
         rated = per_m2 * reading.height_mm * reading.width_mm / 1e6
-        rateable.append((idx, reading, rated))
+        rateable.append((item, reading, rated))
     if not rateable:
         return []
     share = min(c.PHOTOGRAPHED_ROOM_SHARE_OF_HEAT_LOSS, 1.0 / len(rateable))
     loss = design_load_kw * 1000 * share
     rooms: list[Room] = []
-    used_names: set[str] = set()
-    for idx, reading, rated in rateable:
-        fallback_name = "Photographed room" if len(rateable) == 1 else f"Radiator {idx}"
-        base_name = (reading.room or "").strip() or fallback_name
-        room_name = base_name if base_name not in used_names else f"{base_name} ({idx})"
-        used_names.add(room_name)
+    for item, reading, rated in rateable:
+        measured = {"height_mm", "width_mm"} & set(item.entered)
+        source = (
+            "as you measured them"
+            if len(measured) == 2
+            else "from your measurement and the photo"
+            if measured
+            else "estimated from the photo"
+        )
         defaults.append(
             NamedDefault(
                 input="radiators",
-                name="radiator_rating_from_photo",
+                name="radiator_rating_from_photo" if len(measured) < 2 else "radiator_rating",
                 value=f"{rated:,.0f} W at ΔT50",
-                note=f"{reading.radiator_type} panel, {reading.height_mm} x {reading.width_mm} mm "
-                "estimated from the photo, rated from typical catalogue outputs.",
+                note=f"Radiator {(item.index or 0) + 1}: {reading.radiator_type} panel, "
+                f"{reading.height_mm} x {reading.width_mm} mm {source}, rated from typical "
+                "catalogue outputs.",
                 confidence="low",
             )
         )
-        rooms.append(Room(room_name, loss, rated))
+        rooms.append(Room(f"Radiator {(item.index or 0) + 1}", loss, rated))
     defaults.append(
         NamedDefault(
             input="radiators",
@@ -738,15 +792,12 @@ def _survey(
     log: list[VerificationLogEntry],
 ) -> SurveyInput:
     extracted: dict[str, StoredReading] = {}
-    rad_count = 0
     for item in readings:
         if item.reading is None:
             continue
-        if item.kind is PhotoKind.RADIATORS:
-            rad_count += 1
         prefix = (
-            f"radiators_{rad_count}"
-            if item.kind is PhotoKind.RADIATORS and rad_count > 1
+            f"radiators_{item.index + 1}"
+            if item.kind is PhotoKind.RADIATORS and item.index
             else item.kind.value
         )
         confidence = item.reading.get("confidence", "low")

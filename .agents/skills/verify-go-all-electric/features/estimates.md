@@ -12,8 +12,10 @@ asks one model to explain the gap and propose EPC fields that may be wrong, whic
   "Verification log (live)" that fills as checks pass or fail.
 - `est-hero` "Two estimates": headline ratio card, "Estimate B — measured" and "Estimate A — fabric"
   ranges, comparison chart, "Why they disagree — ranked".
-- `est-read` "What we read": one row per photo kind and per radiator, VERIFIED / NOT PROVIDED /
-  OPTIONAL / couldn't tell, with the fields read.
+- `est-read` "What we read": one row per photo kind and per radiator ("Radiator k · <label>"),
+  VERIFIED / ENTERED BY YOU / NOT PROVIDED / OPTIONAL / couldn't tell, with the fields read; values
+  the homeowner entered carry "(you)", and "Your entry and the photo disagree." lists both values
+  where they differ.
 - `est-defaults` "Named defaults" lists every assumed value.
 - `est-no-bill` without a gas bill: fabric estimate only, and a statement of what cannot be
   compared.
@@ -40,8 +42,11 @@ Preconditions:
   `click link "Next: Estimates"`. Immediately `shot` shows "Checking your house" with the live log.
   `waitfor "What we read" 90` (only the finished result has it), then `shot` + `snap`: heading "Two
   estimates" (mock adds "OFFLINE DEMO DATA").
-- **Every radiator reaches the analysis.** In "What we read" there is one `radiator k` row per
-  confirmed radiator photo (`fjs 'return (d.body.innerText.match(/radiator \d+/g)||[]).join(",")'`).
+- **Every radiator reaches the analysis.** In "What we read" there is one `Radiator k` row per
+  radiator card with a photo or entered details, however many photos it had
+  (`fjs 'return (d.body.innerText.match(/Radiator \d+/g)||[]).join(",")'`). A details-only card
+  reads ENTERED BY YOU. Mock rows are canned per card: prove the payload in real mode (the
+  `POST /api/analysis` form, not the screen).
 - **Straight to Estimates without photos.** Fresh frame, `click link "Continue"`,
   `click link "Next: Estimates"`. Expected: a result (not an error), Estimate B absent or marked as
   needing a bill, every photo kind NOT PROVIDED, and "Next" offered. Real mode is the meaningful

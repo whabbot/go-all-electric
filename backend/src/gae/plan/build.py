@@ -22,7 +22,7 @@ def _fuse_rating_a(readings: list[InputReading]) -> int | None:
     for item in readings:
         if str(item.kind) != "fuse_cutout":
             continue
-        if item.status not in ("verified", "verified_with_warnings") or not item.reading:
+        if item.status not in ("verified", "verified_with_warnings", "entered") or not item.reading:
             return None
         raw = item.reading.get("rating_a")
         if isinstance(raw, int):

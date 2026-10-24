@@ -4,9 +4,15 @@ import { Alert } from '../components/Alert'
 import { useSession } from '../context/SessionContext'
 
 export function StartScreen() {
-  const { address, setAddress, placeLabel, loadSamSample } = useSession()
-  const [postcode, setPostcode] = useState(isMockMode() ? 'N10 2AB' : '')
+  const { address, setAddress, placeLabel, loadSamSample: loadSample } = useSession()
+  const [postcode, setPostcode] = useState(isMockMode() && !address ? 'N10 2AB' : '')
   const [results, setResults] = useState<EpcAddress[]>([])
+  const loadSamSample = () => {
+    loadSample()
+    setResults([])
+    // As when a house is picked: only the district stays on screen, never the full postcode.
+    setPostcode('')
+  }
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 

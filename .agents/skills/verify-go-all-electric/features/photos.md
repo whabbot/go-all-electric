@@ -3,8 +3,10 @@
 Photos lists six evidence slots (Gas bill, Loft, Boiler data plate, Radiators, Fuse cutout, Outdoor
 unit spot). Picking or taking a photo opens the Redact dialog, where the user can crop and draw
 black boxes over anything identifying before "Use photo" sends only that redacted image for a check.
-Radiators accept several photos at once (up to 8), each redacted in turn, listed, and retaken or
-removed individually; a radiator walkthrough video is an alternative.
+Radiators are added one card at a time (`+ Add radiator`, up to 8): each card has a room label (pick
+list plus a short note, shown only to the homeowner), up to 3 photos of that one radiator (read
+together as one radiator) and an "Add details you know" expander. Boiler data plate and Fuse cutout
+have the same expander. A radiator walkthrough video is an alternative.
 
 ## Sub-features
 
@@ -16,11 +18,21 @@ removed individually; a radiator walkthrough video is an alternative.
 - `photos-redact` crop (`Crop area`, `Crop`, `Undo crop`) and black boxes (`Black out`, `Undo box`);
   the preview is "exactly what will be sent".
 - `photos-use` `Use photo` closes the dialog, marks the slot as checking, then shows the verdict.
-- `photos-multi` Radiators takes several files from one pick: the dialog shows "Photo i of n";
-  `Cancel` skips just that photo; every confirmed photo appears as "Radiator k" with
-  `Retake Radiator k` and `Remove Radiator k`.
-- `photos-limit` more than 8 radiator photos queues only the first that fit and says so.
-- `photos-retake-remove` retake replaces one radiator in place; remove drops it.
+- `photos-cards` `+ Add radiator` adds a "Radiator k" card (focused, scrolled into view) with
+  `Room`, `Note (optional)`, `Add photos of Radiator k` and `Remove Radiator k`; at 8 cards the
+  button is disabled.
+- `photos-multi` one card takes several files from one pick: the dialog shows "Photo i of n";
+  `Skip this photo` skips just that one, `Cancel all` drops the rest of the batch, Escape acts like
+  Skip/Cancel; every confirmed photo appears as "Photo j" on that card, which reads
+  "j of 3 photos: all read together as this one radiator".
+- `photos-limit` more than 3 photos on one card queues only the first that fit and says so; the
+  notice clears when the queue finishes.
+- `photos-retake-remove` `Retake Radiator k photo j` replaces one photo in place;
+  `Remove Radiator k photo j` drops it.
+- `photos-details` "Add details you know" (closed by default) on each radiator card (type with a
+  plain-language picker, panels, fin rows, width and height in mm), on Boiler data plate (make,
+  model, heating and hot-water kW) and on Fuse cutout (rating). Out-of-range values show an inline
+  message. A card or slot with details and no photo counts as done.
 - `photos-video` "Or film your radiators": one video (max 100 MB, 90 s) with a privacy warning.
 - `photos-examples` `See examples` opens "Example photos: <slot>" with Good/Avoid illustrations.
 - `photos-no-bill` without a gas bill the page says you will get the fabric estimate only.
@@ -29,8 +41,9 @@ removed individually; a radiator walkthrough video is an alternative.
 
 - `Continue` on Start, or the step bar link `Photos`, or `Back` from Estimates.
 - Inside the step: the slot's disclosure button (`Gas bill MOST IMPORTANT`, `Radiators RECOMMENDED`,
-  ...), then its `📷 Take photo or upload` file input. On a phone this offers the camera or the
-  gallery.
+  ...), then its `📷 Take photo or upload` file input (`Replace photo` once the slot has one). On a
+  phone this offers the camera or the gallery. Radiators: `+ Add radiator`, then the card's
+  `Take photo or upload` input.
 
 ## Driving it with drive.sh
 
@@ -49,26 +62,39 @@ Preconditions:
   the preview shrinks. `Undo box` / `Undo crop` enable after each.
 - **Use photo.** `click button "Use photo"`. The slot shows `Checking photo…` (role status), then
   its row reads `· Ready` with a ✓ Done badge and the verdict (see [photo-check](./photo-check.md)).
-- **Several radiators at once.** `upload "Radiators" 3`. `coverup` prints
+- **Add a radiator.** `click button "Radiators"`, `click button "+ Add radiator"`. A "Radiator 1"
+  card appears with `Room` focused. Pick a room: `u=$(uid combobox "Room"); $AX fill @$u "Hall"`;
+  the card title reads "Radiator 1 · Hall".
+- **Several photos of one radiator.** `upload "Radiator 1" 3`. `coverup` prints
   `Redact before upload | Photo 1 of 3`. `click button "Use photo"` -> `Photo 2 of 3`;
-  `click button "Cancel"` -> `Photo 3 of 3`; `click button "Use photo"` -> `closed`. The list
-  (`fjs 'return [...d.querySelectorAll(".radiator-list > li")].length'`) holds 2, named after the
-  files picked.
+  `click button "Skip this photo"` -> `Photo 3 of 3`; `click button "Use photo"` -> `closed`. The
+  card reads "2 of 3 photos: all read together as this one radiator".
+- **Cancel the whole batch.** `upload "Radiator 1" 3`, then `click button "Cancel all"`: `coverup`
+  prints `closed` and no photo was added. Escape in the dialog acts like `Skip this photo` (or
+  `Cancel` for a single photo).
+- **Details only.** On a new card, open "Add details you know"
+  (`fjs 'd.querySelectorAll(".radiator-card")[1].querySelector("summary").click()'`), pick a Type by
+  its label (`Double panel, two sets of fins`) and fill Width/Height. The summary shows "N added";
+  the Radiators row reads `· Ready` even with no photo.
 - **Retake one.**
-  `u=$(uid button "Retake Radiator 2"); chrome-devtools-axi upload @$u "$(synth retake)"`. The
-  dialog opens for one photo; after `Use photo` "Radiator 2" shows the new file name and the count
-  is unchanged.
-- **Remove one.** `click button "Remove Radiator 2"`. The count drops by one.
-- **Over the limit.** With 2 radiators, `upload "Radiators" 7`. An alert says "Only the first 6
-  photos queued (maximum 8 radiator photos)." and the dialog shows `Photo 1 of 6`.
+  `u=$(uid textbox "Retake Radiator 1 photo 2"); chrome-devtools-axi upload @$u "$(synth retake)"`
+  (or find the input by that aria-label). The dialog opens for one photo; after `Use photo` the card
+  shows the new file name and the count is unchanged.
+- **Remove one.** `click button "Remove Radiator 1 photo 2"`. The count drops by one;
+  `click button "Remove Radiator 1"` drops the whole card.
+- **Over the limit.** With 1 photo on a card, `upload "Radiator 1" 4`. An alert says "Only the
+  first 2 photos queued (up to 3 per radiator)." and the dialog shows `Photo 1 of 2`; the alert is
+  gone once the queue is done.
 - **Examples.** `click button "Boiler data plate"`, `click button "See examples"`. Dialog "Example
   photos: Boiler data plate" with `Close` focused; Escape closes it.
 - **Skip optional slots.** Leave Outdoor unit spot (OPTIONAL) and Loft empty and press
   `Next: Estimates`; the flow continues.
 - **Back and forward.** From Estimates, `click link "Back"`: every slot still reads `Ready`;
   `click link "Next: Estimates"` returns to the same result without re-running.
-- **Proof.** `shot` + `snap` of the dialog with its progress label, of the radiator list, and `net`
-  (mock: 0 `/api`; real: one `POST /api/photos/check` per confirmed photo).
+- **Proof.** `shot` + `snap` of the dialog with its progress label, of the radiator cards, and `net`
+  (mock: 0 `/api`; real: one `POST /api/photos/check` per confirmed photo). Labels never leave the
+  browser: in real mode the `POST /api/analysis` form has `radiators` + `radiator_index` per photo
+  and one `known` JSON field, with no room or note.
 
 ## Gotchas
 
@@ -78,9 +104,14 @@ Preconditions:
   "same file after Cancel" path, together with `fileinput` showing `"No file chosen"`.
 - Snapshot uids go stale after every change; a stale uid makes `axi upload` silently do nothing.
   Resolve with `uid` right before use.
-- Slot panels render their radiator list only while expanded; a collapsed Radiators slot reports 0.
-- In a several-photo batch `Cancel` skips one photo; there is no button to drop the whole batch, and
-  Escape does not close the Redact dialog.
+- Slot panels render their radiator cards only while expanded; a collapsed Radiators slot reports 0.
+  Cards live in memory only: a Vite hot reload or page reload drops them.
+- `upload "Radiators" N` no longer works (the row has a `+ Add radiator` button, not a file
+  input): add a card, then `upload "Radiator k" N`.
+- A closed "Add details you know" hides its fields from the snapshot, so `uid textbox "Width"`
+  finds the first open card's field.
+- Selects take the option's visible label with `$AX fill`, not its value (`Double panel, two sets
+  of fins`, not `K2`).
 - Cropping (or undoing a crop) removes black boxes drawn before it; draw boxes after cropping.
 - Mock checks are canned: a grey synthetic image comes back "Legible" with Sam's readings. Only real
   mode says anything about the image.

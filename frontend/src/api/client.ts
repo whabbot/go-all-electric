@@ -13,11 +13,15 @@ import type {
   EpcAddress,
   InstallerDraftsRequest,
   InstallerDraftsResult,
+  KnownBoiler,
+  KnownDetails,
+  KnownFuse,
   PhotoCheckResult,
   PhotoKind,
   QuoteCheckResult,
   QuoteSizeContext,
   QuoteUploadGroup,
+  RadiatorUpload,
   RadiatorVideoResult,
   ReviewQuote,
   ReviewResult,
@@ -106,36 +110,45 @@ export async function checkRadiatorVideo(
   return res.json() as Promise<RadiatorVideoResult>
 }
 
+/** Each radiator photo goes with the number of the radiator it shows (0 = radiator 1). */
+function appendRadiators(form: FormData, radiators: RadiatorUpload[]) {
+  radiators.forEach((radiator, index) => {
+    for (const photo of radiator.photos) {
+      form.append('radiators', photo)
+      form.append('radiator_index', String(index))
+    }
+  })
+}
+
+export type KnownExtras = { boiler: KnownBoiler | null; fuse_cutout: KnownFuse | null }
+
 /**
  * One analysis call: EPC record, every photo and the bill (optional), weather, then the maths.
- * Progress and verification-log entries arrive through `onEvent` as they happen.
+ * Radiators are numbered in order; each may have several photos and entered details. Room
+ * labels are not part of `RadiatorUpload`, so they are never sent. Progress and
+ * verification-log entries arrive through `onEvent` as they happen.
  */
 export async function runAnalysis(
   certificateId: string,
   files: Partial<Record<PhotoKind, File>>,
   onEvent: (event: AnalysisEvent) => void,
   radiatorVideo?: File | null,
-  radiatorFiles?: File[],
+  radiators: RadiatorUpload[] = [],
+  extras: KnownExtras = { boiler: null, fuse_cutout: null },
 ): Promise<AnalysisResult> {
-  const radFiles =
-    radiatorFiles && radiatorFiles.length > 0
-      ? radiatorFiles
-      : files.radiators
-        ? [files.radiators]
-        : []
+  const known: KnownDetails = {
+    radiators: radiators.map((r) => r.known),
+    boiler: extras.boiler,
+    fuse_cutout: extras.fuse_cutout,
+  }
   const activeKinds = new Set<PhotoKind>(
     (Object.entries(files) as [PhotoKind, File | undefined][])
-      .filter(([, f]) => Boolean(f))
+      .filter(([k, f]) => Boolean(f) && k !== 'radiators')
       .map(([k]) => k),
   )
-  if (radFiles.length > 0) activeKinds.add('radiators')
   if (isMockMode()) {
     let result: AnalysisResult | null = null
-    for (const event of mockAnalysisEvents(
-      Array.from(activeKinds),
-      Boolean(radiatorVideo),
-      radFiles.length || undefined,
-    )) {
+    for (const event of mockAnalysisEvents(Array.from(activeKinds), Boolean(radiatorVideo), radiators, known)) {
       await delay(event.type === 'log' ? 260 : 120)
       onEvent(event)
       if (event.type === 'result') result = event.result
@@ -149,7 +162,8 @@ export async function runAnalysis(
     if (kind === 'radiators') continue
     if (file) form.append(kind, file)
   }
-  for (const file of radFiles) form.append('radiators', file)
+  appendRadiators(form, radiators)
+  if (radiators.length > 0 || known.boiler || known.fuse_cutout) form.append('known', JSON.stringify(known))
   if (radiatorVideo) form.append('radiator_video', radiatorVideo)
   const res = await apiFetch('/api/analysis', { method: 'POST', body: form })
   if (!res.ok || !res.body) throw await failure(res, 'Analysis')
@@ -208,51 +222,67 @@ export async function checkQuotes(
   return res.json() as Promise<QuoteCheckResult[]>
 }
 
+/** What the review sees of hand-entered values: each one, with the photo reading if it disagreed. */
+export function enteredForReview(analysis: AnalysisResult) {
+  return analysis.readings.flatMap((r) =>
+    Object.entries(r.entered ?? {}).map(([field, entered]) => {
+      const photoRead = r.disagreements?.find((d) => d.field === field)?.read
+      return {
+        input: r.kind,
+        ...(r.kind === 'radiators' && r.index != null ? { radiator: r.index + 1 } : {}),
+        field,
+        entered,
+        ...(photoRead != null ? { photo_read: photoRead } : {}),
+      }
+    }),
+  )
+}
+
 /** The one-context Gemini 4 Argon review. Sends readings and the bundle, never the address. */
 export async function reviewAnalysis(
   analysis: AnalysisResult,
   files: Partial<Record<PhotoKind, File>>,
   quotes: ReviewQuote[],
-  radiatorFiles?: File[],
+  radiators: RadiatorUpload[] = [],
 ): Promise<ReviewResult> {
   if (isMockMode()) {
     await mockDelay(4000, 6000)
     return mockReview(quotes.map((q) => q.quote_id))
   }
-  const reading = (kind: PhotoKind) => analysis.readings.find((r) => r.kind === kind)?.reading ?? null
-  const radiatorReadings = analysis.readings
-    .filter((r) => r.kind === 'radiators' && r.reading != null)
-    .map((r) => r.reading as Record<string, unknown>)
+  // Photo readings only (with entered values applied). Entered-only items reach the review
+  // through `entered`, since they are not a full reading.
+  const usable = (r: { status: string }) => r.status === 'verified' || r.status === 'verified_with_warnings'
+  const reading = (kind: PhotoKind) => {
+    const item = analysis.readings.find((r) => r.kind === kind)
+    return item && usable(item) ? item.reading : null
+  }
+  const radiatorItems = analysis.readings.filter((r) => r.kind === 'radiators' && r.index != null)
+  const radiatorCount = Math.max(0, ...radiatorItems.map((r) => (r.index ?? 0) + 1))
+  // By position: radiator 1 first, null where nothing was read, so photos and readings line up.
+  const radiatorReadings = Array.from(
+    { length: radiatorCount },
+    (_, i) => radiatorItems.find((r) => r.index === i && usable(r))?.reading ?? null,
+  )
   const context = {
     bundle: analysis.bundle,
     epc: analysis.epc,
     boiler: reading('boiler_plate'),
     bill: reading('gas_bill'),
-    radiators:
-      radiatorReadings.length === 0
-        ? null
-        : radiatorReadings.length === 1
-          ? radiatorReadings[0]
-          : radiatorReadings,
+    radiators: radiatorCount > 0 ? radiatorReadings : null,
     radiator_video: analysis.radiator_video ?? null,
     fuse_cutout: reading('fuse_cutout'),
     outdoor_space: reading('outdoor_space'),
     loft: reading('loft'),
+    entered: enteredForReview(analysis),
     quotes: quotes.map((q) => ({ quote_id: q.quote_id, reading: q.reading })),
   }
-  const radFiles =
-    radiatorFiles && radiatorFiles.length > 0
-      ? radiatorFiles
-      : files.radiators
-        ? [files.radiators]
-        : []
   const form = new FormData()
   form.append('context', JSON.stringify(context))
   for (const [kind, file] of Object.entries(files)) {
     if (kind === 'radiators') continue
     if (file) form.append(kind, file)
   }
-  for (const file of radFiles) form.append('radiators', file)
+  appendRadiators(form, radiators)
   quotes.forEach((q, quoteIndex) => {
     for (const page of q.pages) {
       form.append('quotes', page)

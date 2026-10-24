@@ -24,7 +24,7 @@ export function EstimateHero({ analysis, billGap }: { analysis: AnalysisBundle; 
           <strong>{verdictLabel}</strong>
           <p>
             Fabric ÷ measured: <strong className="ratio-central">{check.ratio.central.toFixed(2)}×</strong>{' '}
-            <span className="subtle">
+            <span className="subtle ratio-range">
               (range <span className="range-value">{check.ratio.low.toFixed(2)}–{check.ratio.high.toFixed(2)}×</span>)
             </span>
           </p>

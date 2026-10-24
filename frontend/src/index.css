@@ -1659,6 +1659,10 @@ button.primary {
   background: var(--border);
 }
 
+.reading-status.entered {
+  background: color-mix(in srgb, var(--brand) 18%, transparent);
+}
+
 .review-panel .progress-bar {
   height: 6px;
   border-radius: 999px;
@@ -2231,4 +2235,202 @@ button.primary {
 
 .pack-models a {
   color: var(--color-accent);
+}
+
+/* --- Radiator cards and "Add details you know" ------------------------------------------- */
+
+.capture-slot-add-radiator::before {
+  content: none;
+}
+
+.radiator-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 var(--space-4);
+}
+
+.radiator-card-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.radiator-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.radiator-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.radiator-card-header h3 {
+  margin: 0;
+  font-size: var(--text-base);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.radiator-card-label {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.radiator-card-privacy {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.radiator-card .radiator-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.radiator-card .radiator-list li {
+  padding: 0;
+  border: none;
+}
+
+.radiator-card-add-photo {
+  font-size: var(--text-sm);
+}
+
+.radiator-add {
+  width: 100%;
+  /* Same measure as the cards above it (.screen .card li on wide screens). */
+  max-width: 34em;
+}
+
+.known-details {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-2);
+}
+
+.known-details > summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--brand);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.known-details-count {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+  padding: 0.05rem 0.5rem;
+}
+
+.known-details-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-bottom: var(--space-2);
+}
+
+.known-details-body > .subtle {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.known-field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--space-3);
+}
+
+.known-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.known-field label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.known-field select,
+.known-field input[type='text'] {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.known-field-input {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.known-field-unit {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.known-field--error input {
+  border-color: var(--color-danger);
+}
+
+.known-field-message {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.entered-tag {
+  font-weight: 700;
+  color: var(--brand);
+}
+
+.disagreement {
+  margin-top: var(--space-2);
+  padding: 0.65rem;
+  border-radius: 8px;
+  font-size: var(--text-sm);
+  background: color-mix(in srgb, var(--color-warn) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-warn) 40%, transparent);
+}
+
+.disagreement p {
+  margin: 0 0 var(--space-1);
+}
+
+.disagreement ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.reading-list .disagreement li {
+  border: none;
+  padding: 0;
+}
+
+/* Keep "(range 1.30–2.69×)" together so a lone ")" never wraps at phone width. */
+.ratio-range {
+  white-space: nowrap;
 }

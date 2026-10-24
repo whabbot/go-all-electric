@@ -28,7 +28,7 @@ export const WHY_NEED: Record<WhyNeedId, WhyNeedContent> = {
   radiators: {
     dialogTitle: 'Why we need radiator photos',
     bullets: [
-      'Take one photo per radiator (up to 8) from a front corner, standing and looking down at about 45° so the front face, top grille/convector fins and one end are visible, with a tape measure held across the width.',
+      'Add each radiator (up to 8) and take a photo of it from a front corner, standing and looking down at about 45° so the front face, top grille/convector fins and one end are visible, with a tape measure held across the width.',
       'We read each radiator’s type (counting panels and fin rows from the angled view), take width from the tape measure, estimate height from the visible proportion with the end view, and rate output at ΔT50 from typical catalogue figures.',
       'Each radiator is checked at the 45°C target flow temperature and shown on your target spec and in the verification log.',
       'If you skip it (and skip the walkthrough video), we cannot flag radiator upsizing; flow temperature and grant still come from your estimates.',

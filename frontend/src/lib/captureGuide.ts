@@ -40,7 +40,7 @@ export const CAPTURE_SUMMARY_ITEMS: CaptureSummaryItem[] = [
     id: 'radiators',
     label: 'Radiators',
     status: 'recommended',
-    photoCount: '1 photo per radiator, or film a walkthrough instead',
+    photoCount: 'Add each radiator: a photo or two, or details you know',
     timeHint: 'about 2 min',
   },
   {
@@ -73,15 +73,15 @@ export function captureSummaryForKind(kind: PhotoKind): CaptureSummaryItem {
   return item
 }
 
-/** First checklist slot still missing a photo (radiators may use video instead). */
+/** First checklist slot still missing a photo or entered details (radiators may use video instead). */
 export function firstCaptureSlotNeedingAttention(
-  photos: { kind: PhotoKind; fileName: string | null }[],
+  photos: { kind: PhotoKind; fileName: string | null; entered?: boolean }[],
   radiatorVideo: File | null,
 ): PhotoKind | null {
   for (const item of CAPTURE_SUMMARY_ITEMS) {
     const kind = item.id as PhotoKind
     const slot = photos.find((p) => p.kind === kind)
-    if (!slot) continue
+    if (!slot || slot.entered) continue
     if (kind === 'radiators') {
       if (!slot.fileName && !radiatorVideo) return kind
     } else if (!slot.fileName) {
@@ -112,7 +112,7 @@ export const CAPTURE_GUIDANCE: Record<PhotoKind, CaptureItemGuidance> = {
     oneLine:
       'One shot per radiator from a front corner, standing and looking down at about 45°, so the front face, top grille/fins and one end are visible, with a tape measure held across the width — or use the walkthrough video instead.',
     detail:
-      'Add one photo per radiator (up to 8). Or film a walkthrough video instead: radiators only, up to 90 seconds and 100 MB; metadata is stripped but video is not blacked out like photos.',
+      'Press Add radiator for each radiator (up to 8) and label its room. Two or three photos of the same radiator are read together as that one radiator. Know its type or size? Add the details instead of, or as well as, a photo. Or film a walkthrough video instead: radiators only, up to 90 seconds and 100 MB; metadata is stripped but video is not blacked out like photos.',
     goodReason:
       'Taken from a front corner looking down at ~45° so the front face, top grille/fins and end are all visible, with a tape measure held across the width.',
     badReason:

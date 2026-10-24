@@ -37,5 +37,7 @@ describe('FlowNav sample mode', () => {
     await user.click(screen.getByRole('button', { name: /Load Sam's sample/i }))
     const nav = screen.getByRole('navigation', { name: 'Guided flow' })
     expect(within(nav).getByRole('link', { name: 'Pack' })).toBeInTheDocument()
+    // Only the district stays on screen: the sample's full postcode is not left in the field.
+    expect(screen.getByLabelText('Postcode')).toHaveValue('')
   })
 })
