@@ -404,8 +404,8 @@ Deploy in three steps, reviewing each plan before applying it:
 
    ```sh
    tofu -chdir=deploy/tofu init
-   tofu -chdir=deploy/tofu plan
-   tofu -chdir=deploy/tofu apply
+   tofu -chdir=deploy/tofu plan -out=bootstrap.plan
+   tofu -chdir=deploy/tofu apply bootstrap.plan
    ```
 
    This enables APIs and creates the service accounts, Docker repository, secret IAM,
@@ -426,8 +426,8 @@ Deploy in three steps, reviewing each plan before applying it:
 3. **Deploy that image**:
 
    ```sh
-   tofu -chdir=deploy/tofu plan -var 'image=<printed-image-reference>'
-   tofu -chdir=deploy/tofu apply -var 'image=<printed-image-reference>'
+   tofu -chdir=deploy/tofu plan -var 'image=<printed-image-reference>' -out=deploy.plan
+   tofu -chdir=deploy/tofu apply deploy.plan
    ```
 
    Save the same reference as `image` in your private `terraform.tfvars` immediately
