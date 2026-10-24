@@ -120,40 +120,73 @@ def map_epc(
         default="floor_area_unavailable" if area is None else None,
     )
 
-    dwelling = str(record.get("dwelling_type", "")).lower()
-    # Labels are resolved by the client using schema AND actual assessment type.
+    def geometry_text(value):
+        if isinstance(value, dict):
+            # As with fabric descriptions, use only the English RdSAP value.
+            value = value.get("value") if str(value.get("language", "1")) == "1" else None
+        if not isinstance(value, str):
+            return ""
+        # EPC labels use hyphens, spaces and sometimes typographic dashes.
+        return re.sub(r"[\W_]+", " ", value.casefold()).strip()
+
+    # Look at every available label: generic dwelling text must not hide a more
+    # specific built form, bungalow, or an explicit non-house property type.
     built_form = built_form_label or record.get("built_form", "")
     property_value = property_label or record.get("property_type", "")
+    labels = [geometry_text(v) for v in (record.get("dwelling_type"), built_form, property_value)]
+    dwelling = " ".join(labels)
     unresolved_codes = any(
-        isinstance(value, (int, float)) or (isinstance(value, str) and value.isdigit())
+        isinstance(value, (int, float)) or (isinstance(value, str) and value.strip().isdigit())
         for value in (built_form, property_value)
     )
-    if not dwelling:
-        dwelling = f"{built_form} {property_value}".lower()
+    known_house = bool(re.search(r"\b(?:house|bungalow)\b", dwelling))
+    unsupported = bool(re.search(r"\b(?:flats?|maisonettes?|park homes?)\b", dwelling))
+    unsupported = unsupported or (unresolved_codes and not known_house)
     prop = None
-    unsupported = any(word in dwelling for word in ("flat", "maisonette", "park home"))
-    unsupported = unsupported or (unresolved_codes and not record.get("dwelling_type"))
+    matched_label = ""
     if not unsupported:
-        for label, value in (
-            ("bungalow", PropertyType.BUNGALOW),
-            ("semi-detached", PropertyType.SEMI_DETACHED),
-            ("end-terrace", PropertyType.END_TERRACE),
-            ("mid-terrace", PropertyType.MID_TERRACE),
-            ("detached", PropertyType.DETACHED),
-        ):
-            if label in dwelling:
-                prop = value
-                break
-    if (property_label or built_form_label) and prop is None:
-        unsupported = True
+        # Bungalow wins over attachment form; semi must precede detached.
+        if re.search(r"\bbungalow\b", dwelling):
+            prop = PropertyType.BUNGALOW
+        else:
+            for text in labels:
+                for label, value in (
+                    ("semi detached", PropertyType.SEMI_DETACHED),
+                    ("end terrace", PropertyType.END_TERRACE),
+                    ("mid terrace", PropertyType.MID_TERRACE),
+                    ("detached", PropertyType.DETACHED),
+                ):
+                    if re.search(r"\b" + label + r"\b", text):
+                        prop, matched_label = value, text
+                        break
+                if prop is not None:
+                    break
+    # Unknown form is an assumption only when the EPC establishes a house (or
+    # supplies no geometry at all). Never guess what an undecoded type code means.
+    unsupported = unsupported or (prop is None and bool(dwelling.strip()) and not known_house)
+    geometry_default = None
+    if unsupported:
+        geometry_note = "Unsupported or unresolved form cannot use the house geometry model."
+    elif prop is None:
+        geometry_default = "semi_detached_geometry"
+        geometry_note = (
+            "House form is unknown; assume semi-detached exposed perimeter. Confirm at survey."
+        )
+    elif "enclosed" in matched_label:
+        geometry_default = "enclosed_terrace_geometry"
+        geometry_note = (
+            "Assume the corresponding ordinary terrace exposed perimeter for an enclosed terrace; "
+            "the model does not represent its extra party walls. Confirm at survey."
+        )
+    else:
+        geometry_note = "Dwelling form determines exposed perimeter; confirm at survey."
     put(
         "property_type",
         prop or PropertyType.SEMI_DETACHED,
         "dwelling_type / built_form / property_type (schema and assessment labels)",
-        "Unsupported or unresolved form cannot use the house geometry model."
-        if unsupported
-        else "Dwelling form determines exposed perimeter; unknown form uses a semi assumption.",
-        default="semi_detached_geometry" if prop is None else None,
+        geometry_note,
+        default=geometry_default,
+        level="low" if unsupported else "medium",
     )
     put(
         "storeys",

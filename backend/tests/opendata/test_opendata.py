@@ -77,7 +77,7 @@ def test_new_epc_schema_feeds_existing_maths_and_never_leaks_token():
         )
 
     result = EPCClient(client_for(handle), SecretStr(TOKEN)).certificate("1111-2222-3333-4444-5555")
-    assert len(seen) == 2
+    assert len(seen) == 4
     assert result["fabric_inputs"]["year_built"] == 1930
     assert result["fabric_inputs"]["loft_insulation_mm"] == 100
     assert result["estimate"]["design_load_kw"]["central"] > 0

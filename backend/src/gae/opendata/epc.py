@@ -135,7 +135,7 @@ class EPCClient:
                 }
                 return next(iter(labels)) if len(labels) == 1 else None
             except DataUnavailable:
-                # Undecodable age stays low confidence; unresolved geometry is refused.
+                # Undecodable fields stay unknown; the mapper decides whether house type is known.
                 return None
 
         parts = data.get("sap_building_parts", [])
@@ -151,10 +151,17 @@ class EPCClient:
         age_label = (
             label_for("construction_age_band", next(iter(bands))) if len(bands) == 1 else None
         )
-        property_label = built_form_label = None
-        if not data.get("dwelling_type"):
-            property_label = label_for("property_type", data.get("property_type"))
-            built_form_label = label_for("built_form", data.get("built_form"))
+
+        def geometry_label(name):
+            value = data.get(name)
+            if isinstance(value, str) and not value.strip().isdigit():
+                return value
+            return label_for(name, value)
+
+        # A populated dwelling_type may be just "House"; it must not mask the
+        # schema-resolved attachment form or a non-house property type.
+        property_label = geometry_label("property_type")
+        built_form_label = geometry_label("built_form")
         fields = (
             "address_line_1",
             "address_line_2",
