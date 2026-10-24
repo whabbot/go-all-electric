@@ -97,7 +97,7 @@ function stepAccessible(path: FlowPath, session: Session): boolean {
 
 /** Highest step index the user may open (0-based). */
 export function furthestReachableIndex(session: Session, visited: ReadonlySet<string>): number {
-  if (session.samSampleLoaded || isMockMode()) return FLOW_STEPS.length - 1
+  if (session.samSampleLoaded) return FLOW_STEPS.length - 1
 
   for (let i = 0; i < FLOW_STEPS.length; i++) {
     if (i === 0) continue
