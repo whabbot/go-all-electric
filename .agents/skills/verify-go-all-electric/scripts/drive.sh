@@ -85,13 +85,13 @@ scrolly() { fjs "w.scrollTo(0,$1); return w.scrollY" >/dev/null; sleep 0.3; }
 
 # upload SLOT [COUNT] [PREFIX]: put COUNT synthetic 1200x900 images (default 1) into the file input
 # of the Photos slot whose label contains SLOT ("Gas bill", "Loft", "Boiler data plate",
-# "Radiators", "Fuse cutout", "Outdoor unit spot"). Fires `change` like a real pick; a single-file
-# slot only takes the first. Images are drawn in the page: grey, labelled SYNTHETIC TEST IMAGE.
+# "Fuse cutout", "Outdoor unit spot"), or of one radiator card ("Radiator 2": press
+# "+ Add radiator" first). Fires `change` like a real pick; a single-file slot only takes the first. Images are drawn in the page: grey, labelled SYNTHETIC TEST IMAGE.
 # `$AX upload @uid file` also works but only ever sends one file.
 upload() {
   local n=${2:-1} p=${3:-synthetic} slot; slot=$(_js "$1")
   fjs "const slot=$slot; const li=[...d.querySelectorAll('li')].find(l=>l.querySelector('.capture-guide-label')?.textContent.includes(slot));
-    const inp=li&&li.querySelector('input[type=file]'); if(!inp) return 'MISSING slot '+slot;
+    const inp=/^Radiator [0-9]+$/.test(slot) ? d.querySelector('input[aria-label=\"Add photos of '+slot+'\"]') : li&&li.querySelector('input[type=file]'); if(!inp) return 'MISSING slot '+slot;
     const mk=(i)=>new Promise(r=>{const c=d.createElement('canvas'); c.width=1200; c.height=900; const g=c.getContext('2d');
       g.fillStyle='hsl('+(i*67%360)+',18%,62%)'; g.fillRect(0,0,1200,900); g.fillStyle='#222'; g.font='60px sans-serif';
       g.fillText('SYNTHETIC TEST IMAGE '+i,120,430); g.fillText(slot,120,520);

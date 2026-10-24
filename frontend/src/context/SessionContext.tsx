@@ -13,17 +13,29 @@ import {
   api,
   type AnalysisResult,
   type EpcAddress,
+  type KnownBoiler,
+  type KnownFuse,
   type PhotoCheckResult,
   type PhotoKind,
   type QuoteCheckResult,
   type QuoteUploadGroup,
+  type RadiatorUpload,
   type RadiatorVideoResult,
   type ReviewQuote,
   type ReviewResult,
 } from '../api'
+import {
+  hasEntries,
+  parseKnownBoiler,
+  parseKnownFuse,
+  parseKnownRadiator,
+  radiatorLabel,
+  type DetailInputs,
+} from '../lib/knownDetails'
 import { outwardCode, quoteId } from '../lib/labels'
 
-export const MAX_RADIATOR_PHOTOS = 8
+export const MAX_RADIATORS = 8
+export const MAX_PHOTOS_PER_RADIATOR = 3
 
 export type RadiatorPhotoItem = {
   id: string
@@ -35,11 +47,28 @@ export type RadiatorPhotoItem = {
   error: string | null
 }
 
+/** One radiator: any number of photos of it (read as one radiator), a label and known details. */
+export type RadiatorCard = {
+  id: string
+  /** From the room pick list; '' when not picked. Display only: never sent anywhere. */
+  room: string
+  /** Short optional free text, e.g. "under the window". Display only: never sent anywhere. */
+  note: string
+  photos: RadiatorPhotoItem[]
+  details: DetailInputs
+}
+
+type RadiatorPhotoPatch = Partial<
+  Pick<RadiatorPhotoItem, 'file' | 'fileName' | 'previewUrl' | 'result' | 'checking' | 'error'>
+>
+
 type PhotoSlot = {
   kind: PhotoKind
   label: string
   result: PhotoCheckResult | null
   fileName: string | null
+  /** Details were entered by hand, so the slot counts even without a photo. */
+  entered: boolean
 }
 
 const PHOTO_SLOTS: { kind: PhotoKind; label: string }[] = [
@@ -70,16 +99,23 @@ type Session = {
   /** Files stay in memory for this tab only; they are never written to storage. */
   files: Partial<Record<PhotoKind, File>>
   setPhoto: (kind: PhotoKind, file: File | null, result: PhotoCheckResult | null) => void
-  radiatorPhotos: RadiatorPhotoItem[]
-  radiatorFiles: File[]
-  addRadiatorPhoto: (file: File) => string
-  updateRadiatorPhoto: (
-    id: string,
-    patch: Partial<
-      Pick<RadiatorPhotoItem, 'file' | 'fileName' | 'previewUrl' | 'result' | 'checking' | 'error'>
-    >,
-  ) => void
-  removeRadiatorPhoto: (id: string) => void
+  radiators: RadiatorCard[]
+  addRadiator: () => string
+  updateRadiator: (id: string, patch: Partial<Pick<RadiatorCard, 'room' | 'note' | 'details'>>) => void
+  removeRadiator: (id: string) => void
+  addRadiatorPhoto: (radiatorId: string, file: File) => string
+  updateRadiatorPhoto: (radiatorId: string, photoId: string, patch: RadiatorPhotoPatch) => void
+  removeRadiatorPhoto: (radiatorId: string, photoId: string) => void
+  /** Radiators that count (a photo or a detail), numbered in this order for the analysis. */
+  radiatorUploads: RadiatorUpload[]
+  /** Display labels aligned with `radiatorUploads`; they never leave this tab. */
+  radiatorLabels: (string | null)[]
+  boilerDetails: DetailInputs
+  setBoilerDetails: (d: DetailInputs) => void
+  fuseDetails: DetailInputs
+  setFuseDetails: (d: DetailInputs) => void
+  knownBoiler: KnownBoiler | null
+  knownFuse: KnownFuse | null
   radiatorVideo: File | null
   radiatorVideoResult: RadiatorVideoResult | null
   setRadiatorVideo: (file: File | null, result: RadiatorVideoResult | null) => void
@@ -100,7 +136,7 @@ const SessionContext = createContext<Session | null>(null)
 
 const STORAGE_KEY = 'gae-analysis-v2'
 
-function aggregateRadiatorResult(items: RadiatorPhotoItem[]): PhotoCheckResult | null {
+function aggregateRadiatorResult(items: RadiatorPhotoItem[], radiatorCount: number): PhotoCheckResult | null {
   if (items.length === 0 || items.some((i) => i.checking)) return null
   const withWarn = items.find((i) => i.result && !i.result.legible)
   if (withWarn?.result) return withWarn.result
@@ -123,11 +159,15 @@ function aggregateRadiatorResult(items: RadiatorPhotoItem[]): PhotoCheckResult |
   }
   const lastResult = items[items.length - 1]?.result ?? null
   if (!lastResult) return null
-  if (items.length === 1) return lastResult
+  if (items.length === 1 && radiatorCount === 1) return lastResult
   return {
     ...lastResult,
-    summary: `${items.length} radiator photos ready`,
+    summary: `${radiatorCount} radiator${radiatorCount === 1 ? '' : 's'} ready`,
   }
+}
+
+function counts(card: RadiatorCard): boolean {
+  return card.photos.length > 0 || hasEntries(parseKnownRadiator(card.details).known)
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
@@ -142,10 +182,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   })
   const [files, setFiles] = useState<Partial<Record<PhotoKind, File>>>({})
   const [checks, setChecks] = useState<Partial<Record<PhotoKind, PhotoCheckResult | null>>>({})
-  const [radiatorPhotos, setRadiatorPhotos] = useState<RadiatorPhotoItem[]>([])
+  const [radiators, setRadiators] = useState<RadiatorCard[]>([])
+  const [boilerDetails, setBoilerDetails] = useState<DetailInputs>({})
+  const [fuseDetails, setFuseDetails] = useState<DetailInputs>({})
   const radiatorIdCounter = useRef(0)
-  const radiatorPhotosRef = useRef<RadiatorPhotoItem[]>([])
-  radiatorPhotosRef.current = radiatorPhotos
+  const radiatorsRef = useRef<RadiatorCard[]>([])
+  radiatorsRef.current = radiators
   const [radiatorVideo, setRadiatorVideoFile] = useState<File | null>(null)
   const [radiatorVideoResult, setRadiatorVideoResult] = useState<RadiatorVideoResult | null>(null)
   const [quotes, setQuotesState] = useState<CheckedQuote[]>([])
@@ -156,7 +198,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return () => {
-      for (const item of radiatorPhotosRef.current) URL.revokeObjectURL(item.previewUrl)
+      for (const card of radiatorsRef.current) {
+        for (const item of card.photos) URL.revokeObjectURL(item.previewUrl)
+      }
     }
   }, [])
 
@@ -200,63 +244,89 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setChecks((prev) => ({ ...prev, [kind]: result }))
   }, [])
 
-  const addRadiatorPhoto = useCallback((file: File): string => {
-    const id = `rad-${++radiatorIdCounter.current}`
-    const previewUrl = URL.createObjectURL(file)
-    setRadiatorPhotos((prev) => [
-      ...prev,
-      {
-        id,
-        file,
-        fileName: file.name,
-        previewUrl,
-        result: null,
-        checking: true,
-        error: null,
-      },
-    ])
+  const addRadiator = useCallback((): string => {
+    const id = `radiator-${++radiatorIdCounter.current}`
+    setRadiators((prev) =>
+      prev.length >= MAX_RADIATORS ? prev : [...prev, { id, room: '', note: '', photos: [], details: {} }],
+    )
     return id
   }, [])
 
-  const updateRadiatorPhoto = useCallback(
-    (
-      id: string,
-      patch: Partial<
-        Pick<RadiatorPhotoItem, 'file' | 'fileName' | 'previewUrl' | 'result' | 'checking' | 'error'>
-      >,
-    ) => {
-      setRadiatorPhotos((prev) =>
-        prev.map((item) => {
-          if (item.id !== id) return item
-          if (patch.previewUrl && patch.previewUrl !== item.previewUrl) {
-            URL.revokeObjectURL(item.previewUrl)
-          }
-          return { ...item, ...patch }
-        }),
-      )
+  const updateRadiator = useCallback(
+    (id: string, patch: Partial<Pick<RadiatorCard, 'room' | 'note' | 'details'>>) => {
+      setRadiators((prev) => prev.map((card) => (card.id === id ? { ...card, ...patch } : card)))
     },
     [],
   )
 
-  const removeRadiatorPhoto = useCallback((id: string) => {
-    setRadiatorPhotos((prev) => {
-      const target = prev.find((item) => item.id === id)
-      if (target) URL.revokeObjectURL(target.previewUrl)
-      return prev.filter((item) => item.id !== id)
+  const removeRadiator = useCallback((id: string) => {
+    setRadiators((prev) => {
+      for (const item of prev.find((card) => card.id === id)?.photos ?? []) URL.revokeObjectURL(item.previewUrl)
+      return prev.filter((card) => card.id !== id)
     })
   }, [])
 
-  const radiatorFiles = useMemo(() => {
-    if (radiatorPhotos.length > 0) return radiatorPhotos.map((p) => p.file)
-    return files.radiators ? [files.radiators] : []
-  }, [radiatorPhotos, files.radiators])
+  const addRadiatorPhoto = useCallback((radiatorId: string, file: File): string => {
+    const id = `rad-photo-${++radiatorIdCounter.current}`
+    const previewUrl = URL.createObjectURL(file)
+    setRadiators((prev) =>
+      prev.map((card) =>
+        card.id === radiatorId
+          ? {
+              ...card,
+              photos: [
+                ...card.photos,
+                { id, file, fileName: file.name, previewUrl, result: null, checking: true, error: null },
+              ],
+            }
+          : card,
+      ),
+    )
+    return id
+  }, [])
 
-  const effectiveFiles = useMemo(() => {
-    if (radiatorPhotos.length > 0) {
-      return { ...files, radiators: radiatorPhotos[0].file }
-    }
-    return files
-  }, [files, radiatorPhotos])
+  const updateRadiatorPhoto = useCallback((radiatorId: string, photoId: string, patch: RadiatorPhotoPatch) => {
+    setRadiators((prev) =>
+      prev.map((card) => {
+        if (card.id !== radiatorId) return card
+        return {
+          ...card,
+          photos: card.photos.map((item) => {
+            if (item.id !== photoId) return item
+            if (patch.previewUrl && patch.previewUrl !== item.previewUrl) URL.revokeObjectURL(item.previewUrl)
+            return { ...item, ...patch }
+          }),
+        }
+      }),
+    )
+  }, [])
+
+  const removeRadiatorPhoto = useCallback((radiatorId: string, photoId: string) => {
+    setRadiators((prev) =>
+      prev.map((card) => {
+        if (card.id !== radiatorId) return card
+        const target = card.photos.find((item) => item.id === photoId)
+        if (target) URL.revokeObjectURL(target.previewUrl)
+        return { ...card, photos: card.photos.filter((item) => item.id !== photoId) }
+      }),
+    )
+  }, [])
+
+  const counted = useMemo(() => radiators.filter(counts), [radiators])
+  const radiatorUploads = useMemo(
+    (): RadiatorUpload[] =>
+      counted.map((card) => ({ photos: card.photos.map((p) => p.file), known: parseKnownRadiator(card.details).known })),
+    [counted],
+  )
+  const radiatorLabels = useMemo(() => counted.map((card) => radiatorLabel(card.room, card.note)), [counted])
+  const knownBoiler = useMemo(() => {
+    const { known } = parseKnownBoiler(boilerDetails)
+    return hasEntries(known) ? known : null
+  }, [boilerDetails])
+  const knownFuse = useMemo(() => {
+    const { known } = parseKnownFuse(fuseDetails)
+    return hasEntries(known) ? known : null
+  }, [fuseDetails])
 
   const setRadiatorVideo = useCallback((file: File | null, result: RadiatorVideoResult | null) => {
     setRadiatorVideoFile(file)
@@ -288,7 +358,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       reading: q.result?.verified.reading ?? null,
     }))
     api
-      .reviewAnalysis(analysis, effectiveFiles, reviewQuotes, radiatorFiles)
+      .reviewAnalysis(analysis, files, reviewQuotes, radiatorUploads)
       .then((result) => {
         if (run === reviewRun.current)
           setReview({ status: 'done', result, elapsedMs: Date.now() - startedAt, quoteCount: reviewQuotes.length })
@@ -297,28 +367,28 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (run === reviewRun.current)
           setReview({ status: 'failed', message: e instanceof Error ? e.message : 'Review failed' })
       })
-  }, [analysis, effectiveFiles, quotes, radiatorFiles])
+  }, [analysis, files, quotes, radiatorUploads])
 
   const photos = useMemo(
     () =>
-      PHOTO_SLOTS.map((s) => {
-        if (s.kind === 'radiators' && radiatorPhotos.length > 0) {
+      PHOTO_SLOTS.map((s): PhotoSlot => {
+        if (s.kind === 'radiators') {
+          const radiatorPhotos = counted.flatMap((card) => card.photos)
           return {
             ...s,
-            result: aggregateRadiatorResult(radiatorPhotos),
-            fileName:
-              radiatorPhotos.length === 1
-                ? radiatorPhotos[0].fileName
-                : `${radiatorPhotos.length} radiator photos`,
+            result: aggregateRadiatorResult(radiatorPhotos, counted.length),
+            fileName: radiatorPhotos.length > 0 ? `${counted.length} radiator${counted.length === 1 ? '' : 's'}` : null,
+            entered: counted.length > 0 && radiatorPhotos.length === 0,
           }
         }
         return {
           ...s,
           result: checks[s.kind] ?? null,
           fileName: files[s.kind]?.name ?? null,
+          entered: (s.kind === 'boiler_plate' && knownBoiler != null) || (s.kind === 'fuse_cutout' && knownFuse != null),
         }
       }),
-    [checks, files, radiatorPhotos],
+    [checks, files, counted, knownBoiler, knownFuse],
   )
 
   const district = address ? outwardCode(address.postcode) : analysis?.postcode_district
@@ -330,13 +400,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setAddress,
       placeLabel,
       photos,
-      files: effectiveFiles,
+      files,
       setPhoto,
-      radiatorPhotos,
-      radiatorFiles,
+      radiators,
+      addRadiator,
+      updateRadiator,
+      removeRadiator,
       addRadiatorPhoto,
       updateRadiatorPhoto,
       removeRadiatorPhoto,
+      radiatorUploads,
+      radiatorLabels,
+      boilerDetails,
+      setBoilerDetails,
+      fuseDetails,
+      setFuseDetails,
+      knownBoiler,
+      knownFuse,
       radiatorVideo,
       radiatorVideoResult,
       setRadiatorVideo,
@@ -356,13 +436,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setAddress,
       placeLabel,
       photos,
-      effectiveFiles,
+      files,
       setPhoto,
-      radiatorPhotos,
-      radiatorFiles,
+      radiators,
+      addRadiator,
+      updateRadiator,
+      removeRadiator,
       addRadiatorPhoto,
       updateRadiatorPhoto,
       removeRadiatorPhoto,
+      radiatorUploads,
+      radiatorLabels,
+      boilerDetails,
+      fuseDetails,
+      knownBoiler,
+      knownFuse,
       radiatorVideo,
       radiatorVideoResult,
       setRadiatorVideo,

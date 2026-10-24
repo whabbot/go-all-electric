@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, JsonValue
 
 from gae.gemini.schemas import (
     BoilerPlateReading,
+    EnteredValue,
     FuseCutoutReading,
     GasBillReading,
     LoftReading,
@@ -25,6 +26,7 @@ from gae.gemini.schemas import (
 )
 from gae.plan.schemas import AllElectricPlan
 from gae.survey.fields import NamedDefault
+from gae.survey.known import Disagreement
 
 
 def jsonable(value: Any) -> Any:
@@ -64,7 +66,10 @@ class EpcSummary(BaseModel):
     main_heating: list[str]
 
 
-ReadingStatus = Literal["verified", "verified_with_warnings", "couldnt_tell", "not_provided"]
+# "entered": no photo was read (or it couldn't be), only what the homeowner typed in.
+ReadingStatus = Literal[
+    "verified", "verified_with_warnings", "couldnt_tell", "not_provided", "entered"
+]
 
 
 class InputReading(BaseModel):
@@ -76,6 +81,12 @@ class InputReading(BaseModel):
     warnings: list[str]
     photograph_instead: str | None
     used_for: str
+    # Radiators only: which radiator this is (0 = radiator 1), however many photos it had.
+    index: int | None = None
+    # Values the homeowner entered; they are already applied to `reading`.
+    entered: dict[str, JsonValue] = Field(default_factory=dict)
+    # Where the photo reading differs from an entered value (the entered value is used).
+    disagreements: list[Disagreement] = Field(default_factory=list)
 
 
 class Gap(BaseModel):
@@ -115,9 +126,13 @@ class ReviewContext(BaseModel):
     epc: EpcSummary
     boiler: BoilerPlateReading | None = None
     bill: GasBillReading | None = None
-    radiators: RadiatorReading | list[RadiatorReading] | None = None
+    # One entry per radiator by position (radiator 1 first); null where nothing was read.
+    radiators: RadiatorReading | list[RadiatorReading | None] | None = None
     radiator_video: RadiatorVideoResult | RadiatorVideoReading | None = None
     fuse_cutout: FuseCutoutReading | None = None
     outdoor_space: OutdoorSpaceReading | None = None
     loft: LoftReading | None = None
     quotes: list[ReviewQuote] = Field(default_factory=list, max_length=5)
+    # Values the homeowner entered (already applied to the readings above), with any
+    # photo reading that disagreed, so the review sees both.
+    entered: list[EnteredValue] = Field(default_factory=list, max_length=60)

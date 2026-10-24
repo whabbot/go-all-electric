@@ -31,6 +31,7 @@ from gae.gemini.schemas import (
     PhotoKind,
     ProposedValue,
     QuoteReview,
+    RadiatorReading,
     RangePayload,
     ReviewFlag,
     ReviewRequest,
@@ -134,6 +135,11 @@ Rules:
   size against MATHS.target_spec.size_kw, design flow temperature against running costs in
   MATHS.costs_by_flow_temp, buffer tanks, grant deduction, datasheet mismatches, heat loss.
   Refer to quotes by their quote_id exactly.
+- READINGS.homeowner_entered lists values the homeowner typed in themselves (for example a
+  radiator they measured or the boiler model). They are already used in READINGS and MATHS in
+  place of the photo reading. Where `photo_read` is set, the photo reading disagreed: say so
+  plainly, using both values, and suggest how to settle it; never pick one silently.
+  Radiators are numbered (radiator 1, radiator 2); a radiator may have several photos.
 - questions_to_ask: short questions the homeowner can put to installers.
 - The homeowner reads this on a phone: keep estimates_explanation under 120 words, each flag
   to one or two sentences, and the summary to two sentences. Plain English, no field names.
@@ -226,13 +232,7 @@ def _context(req: ReviewRequest, sheets: list[Datasheet]) -> dict[str, Any]:
             {
                 "boiler": req.boiler.model_dump(mode="json") if req.boiler else None,
                 "gas_bill": req.bill_reading.model_dump(mode="json") if req.bill_reading else None,
-                "radiators": (
-                    [r.model_dump(mode="json") for r in req.radiators] or None
-                    if isinstance(req.radiators, list)
-                    else req.radiators.model_dump(mode="json")
-                    if req.radiators
-                    else None
-                ),
+                "radiators": _radiators(req.radiators),
                 "radiator_video": (
                     req.radiator_video.model_dump(mode="json", exclude={"log"})
                     if req.radiator_video
@@ -245,6 +245,10 @@ def _context(req: ReviewRequest, sheets: list[Datasheet]) -> dict[str, Any]:
                     req.outdoor_space.model_dump(mode="json") if req.outdoor_space else None
                 ),
                 "loft": req.loft.model_dump(mode="json") if req.loft else None,
+                "homeowner_entered": [
+                    e.model_dump(mode="json", exclude_none=True) for e in req.entered
+                ]
+                or None,
             }
         ),
         "QUOTES": _scrub_privacy(
@@ -258,6 +262,20 @@ def _context(req: ReviewRequest, sheets: list[Datasheet]) -> dict[str, Any]:
         ),
         "DATASHEETS": [s.model_dump(mode="json", exclude={"text"}) for s in sheets],
     }
+
+
+def _radiators(
+    radiators: RadiatorReading | list[RadiatorReading | None] | None,
+) -> list[dict[str, Any]] | None:
+    """Readings keyed by radiator number (radiator 1 first), so photos and entries line up."""
+    if isinstance(radiators, RadiatorReading):
+        radiators = [radiators]
+    out = [
+        {"radiator": number, **reading.model_dump(mode="json")}
+        for number, reading in enumerate(radiators or [], start=1)
+        if reading is not None
+    ]
+    return out or None
 
 
 def _scrub_privacy(node: Any) -> Any:
@@ -284,7 +302,8 @@ def _input(req: ReviewRequest, context: dict[str, Any], sheets: list[Datasheet])
     for sheet in sheets:
         blocks.append(text(f"FULL DATASHEET {sheet.id}:\n{sheet.text}"))
     for i, photo in enumerate(req.photos, 1):
-        blocks.append(text(f"PHOTO {i}: {photo.kind}"))
+        which = f" (radiator {photo.radiator})" if photo.radiator else ""
+        blocks.append(text(f"PHOTO {i}: {photo.kind}{which}"))
         blocks.append(media(base64.b64decode(photo.data_base64), photo.mime_type))
     if req.bill:
         blocks.append(text("GAS BILL:"))

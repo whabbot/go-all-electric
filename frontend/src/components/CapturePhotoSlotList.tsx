@@ -1,8 +1,11 @@
 import { useId, type MutableRefObject } from 'react'
 import type { PhotoCheckResult, PhotoKind, RadiatorVideoResult } from '../api'
-import { MAX_RADIATOR_PHOTOS, type RadiatorPhotoItem } from '../context/SessionContext'
+import { MAX_RADIATORS, type RadiatorCard } from '../context/SessionContext'
+import type { DetailInputs } from '../lib/knownDetails'
 import { CaptureExamplesDialog } from './CaptureExamplesDialog'
 import { CaptureWhyNeedDialog } from './CaptureWhyNeedDialog'
+import { BoilerDetails, FuseDetails } from './KnownDetails'
+import { RadiatorCards } from './RadiatorCards'
 import { RadiatorVideoResults } from './RadiatorVideoResults'
 import { WhyNeedTrigger } from './WhyNeedTrigger'
 import type { WhyNeedId } from '../lib/captureWhyNeed'
@@ -20,6 +23,7 @@ type PhotoSlot = {
   label: string
   result: PhotoCheckResult | null
   fileName: string | null
+  entered: boolean
 }
 
 type Props = {
@@ -30,10 +34,19 @@ type Props = {
   photoErrors: Record<string, string>
   onFiles: (kind: PhotoKind, list: FileList | null, input: HTMLInputElement) => void
   fileInputsRef: MutableRefObject<Partial<Record<PhotoKind, HTMLInputElement>>>
-  multiPhotoKinds: PhotoKind[]
-  radiatorPhotos?: RadiatorPhotoItem[]
-  onRetakeRadiatorPhoto?: (id: string, list: FileList | null, input: HTMLInputElement) => void
-  onRemoveRadiatorPhoto?: (id: string) => void
+  radiators: RadiatorCard[]
+  focusRadiatorId: string | null
+  onAddRadiator: () => void
+  onRemoveRadiator: (id: string) => void
+  onRadiatorLabelChange: (id: string, patch: { room?: string; note?: string }) => void
+  onRadiatorDetailsChange: (id: string, details: DetailInputs) => void
+  onAddRadiatorPhotos: (id: string, list: FileList | null, input: HTMLInputElement) => void
+  onRetakeRadiatorPhoto: (id: string, photoId: string, list: FileList | null, input: HTMLInputElement) => void
+  onRemoveRadiatorPhoto: (id: string, photoId: string) => void
+  boilerDetails: DetailInputs
+  onBoilerDetailsChange: (d: DetailInputs) => void
+  fuseDetails: DetailInputs
+  onFuseDetailsChange: (d: DetailInputs) => void
   radiatorVideo: File | null
   radiatorVideoResult: RadiatorVideoResult | null
   videoError: string | null
@@ -48,7 +61,8 @@ type Props = {
 
 function slotDoneState(slot: PhotoSlot, radiatorVideo: File | null): 'empty' | 'checking' | 'ok' | 'warn' {
   if (slot.kind === 'radiators' && !slot.fileName && radiatorVideo) return 'ok'
-  if (!slot.fileName) return 'empty'
+  // Details entered by hand count without a photo.
+  if (!slot.fileName) return slot.entered ? 'ok' : 'empty'
   if (slot.result?.legible) return 'ok'
   if (slot.result) return 'warn'
   return 'checking'
@@ -62,10 +76,19 @@ export function CapturePhotoSlotList({
   photoErrors,
   onFiles,
   fileInputsRef,
-  multiPhotoKinds,
-  radiatorPhotos = [],
+  radiators,
+  focusRadiatorId,
+  onAddRadiator,
+  onRemoveRadiator,
+  onRadiatorLabelChange,
+  onRadiatorDetailsChange,
+  onAddRadiatorPhotos,
   onRetakeRadiatorPhoto,
   onRemoveRadiatorPhoto,
+  boilerDetails,
+  onBoilerDetailsChange,
+  fuseDetails,
+  onFuseDetailsChange,
   radiatorVideo,
   radiatorVideoResult,
   videoError,
@@ -138,7 +161,7 @@ export function CapturePhotoSlotList({
                   {summary.photoCount} · {summary.timeHint}
                   {done === 'ok' ? ' · Ready' : done === 'warn' ? ' · Needs attention' : ''}
                 </p>
-                {slot.result && done !== 'empty' && (
+                {slot.result && done !== 'empty' && !isExpanded && (
                   <p className="capture-slot-verdict subtle">{slot.result.summary}</p>
                 )}
                 {done === 'ok' && (
@@ -146,26 +169,48 @@ export function CapturePhotoSlotList({
                     {kind === 'gas_bill' ? 'Next: add your loft photo when ready.' : 'All set for this slot.'}
                   </p>
                 )}
-                <label className="upload-btn capture-slot-upload">
-                  <input
-                    ref={(el) => {
-                      if (el) fileInputsRef.current[kind] = el
+                {kind === 'radiators' ? (
+                  <button
+                    type="button"
+                    className="upload-btn capture-slot-upload capture-slot-add-radiator"
+                    onClick={() => {
+                      onAddRadiator()
+                      onExpandedKindChange('radiators')
                     }}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    multiple={multiPhotoKinds.includes(kind)}
-                    onChange={(e) => void onFiles(kind, e.target.files, e.currentTarget)}
-                  />
-                  {isChecking ? (
-                    <span role="status">
-                      <span className="inline-spinner" aria-hidden="true" />
-                      Checking photo…
-                    </span>
-                  ) : (
-                    'Take photo or upload'
-                  )}
-                </label>
+                    disabled={radiators.length >= MAX_RADIATORS}
+                  >
+                    {isChecking ? (
+                      <span role="status">
+                        <span className="inline-spinner" aria-hidden="true" />
+                        Checking photo…
+                      </span>
+                    ) : (
+                      '+ Add radiator'
+                    )}
+                  </button>
+                ) : (
+                  <label className="upload-btn capture-slot-upload">
+                    <input
+                      ref={(el) => {
+                        if (el) fileInputsRef.current[kind] = el
+                      }}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={(e) => void onFiles(kind, e.target.files, e.currentTarget)}
+                    />
+                    {isChecking ? (
+                      <span role="status">
+                        <span className="inline-spinner" aria-hidden="true" />
+                        Checking photo…
+                      </span>
+                    ) : slot.fileName ? (
+                      'Replace photo'
+                    ) : (
+                      'Take photo or upload'
+                    )}
+                  </label>
+                )}
               </div>
 
               {isExpanded && (
@@ -195,87 +240,19 @@ export function CapturePhotoSlotList({
                   {photoErrors[kind] && (
                     <p className="error" role="alert">{photoErrors[kind]}</p>
                   )}
-                  {kind === 'radiators' && radiatorPhotos.length > 0 ? (
-                    <div className="radiator-photo-batch">
-                      <p className="file-name">
-                        {radiatorPhotos.length} of {MAX_RADIATOR_PHOTOS} radiator photo
-                        {radiatorPhotos.length === 1 ? '' : 's'} added
-                      </p>
-                      <ul className="radiator-list" aria-label="Uploaded radiator photos">
-                        {radiatorPhotos.map((rad, idx) => {
-                          const radLabel = `Radiator ${idx + 1}`
-                          return (
-                            <li key={rad.id} className="radiator-photo-item">
-                              <img
-                                src={rad.previewUrl}
-                                alt={`${radLabel} preview`}
-                                width={96}
-                                height={72}
-                                className="radiator-photo-thumb"
-                              />
-                              <div className="radiator-photo-body">
-                                <p>
-                                  <strong>{radLabel}</strong>{' '}
-                                  <span className="subtle">({rad.fileName})</span>
-                                </p>
-                                {rad.checking && <p className="subtle">Checking…</p>}
-                                {rad.error && (
-                                  <p className="error" role="alert">
-                                    {rad.error}
-                                  </p>
-                                )}
-                                {rad.result && (
-                                  <div className={`check-result ${rad.result.legible ? 'ok' : 'warn'}`}>
-                                    <p>
-                                      {rad.result.summary}{' '}
-                                      <span className="subtle">
-                                        ({rad.result.model}, {(rad.result.elapsed_ms / 1000).toFixed(1)}s)
-                                      </span>
-                                    </p>
-                                    {!rad.result.matches_expected && (
-                                      <p className="retake">
-                                        {rad.result.kind === 'other'
-                                          ? "This doesn't look like a radiator."
-                                          : `This looks like a ${rad.result.kind.replaceAll('_', ' ')}.`}
-                                      </p>
-                                    )}
-                                    {rad.result.retake_hint && <p className="retake">{rad.result.retake_hint}</p>}
-                                    {rad.result.privacy_warning && (
-                                      <p className="privacy-warn">{rad.result.privacy_warning}</p>
-                                    )}
-                                    {!rad.result.privacy_warning && rad.result.legible && (
-                                      <p className="privacy-ok">Redacted image only — no metadata stored.</p>
-                                    )}
-                                  </div>
-                                )}
-                                <div className="capture-slot-actions">
-                                  <label className="btn upload-btn">
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      capture="environment"
-                                      aria-label={`Retake ${radLabel}`}
-                                      onChange={(e) =>
-                                        void onRetakeRadiatorPhoto?.(rad.id, e.target.files, e.currentTarget)
-                                      }
-                                    />
-                                    Retake
-                                  </label>
-                                  <button
-                                    type="button"
-                                    className="btn"
-                                    aria-label={`Remove ${radLabel}`}
-                                    onClick={() => onRemoveRadiatorPhoto?.(rad.id)}
-                                  >
-                                    Remove
-                                  </button>
-                                </div>
-                              </div>
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    </div>
+                  {kind === 'radiators' ? (
+                    <RadiatorCards
+                      radiators={radiators}
+                      focusId={focusRadiatorId}
+                      photoErrors={photoErrors}
+                      onAddRadiator={onAddRadiator}
+                      onRemoveRadiator={onRemoveRadiator}
+                      onLabelChange={onRadiatorLabelChange}
+                      onDetailsChange={onRadiatorDetailsChange}
+                      onAddPhotos={onAddRadiatorPhotos}
+                      onRetakePhoto={onRetakeRadiatorPhoto}
+                      onRemovePhoto={onRemoveRadiatorPhoto}
+                    />
                   ) : (
                     <>
                       {slot.fileName && <p className="file-name">Redacted photo ready</p>}
@@ -303,6 +280,10 @@ export function CapturePhotoSlotList({
                           )}
                         </div>
                       )}
+                      {kind === 'boiler_plate' && (
+                        <BoilerDetails inputs={boilerDetails} onChange={onBoilerDetailsChange} />
+                      )}
+                      {kind === 'fuse_cutout' && <FuseDetails inputs={fuseDetails} onChange={onFuseDetailsChange} />}
                     </>
                   )}
 

@@ -44,6 +44,7 @@ from gae.opendata.weather import WeatherClient
 from gae.plan.solar import LiveSolarYield
 from gae.settings import Settings, get_settings
 from gae.survey.analysis import AnalysisRefused, Services, run_analysis
+from gae.survey.known import MAX_RADIATORS, KnownDetails
 from gae.survey.schemas import ReviewContext
 
 router = APIRouter(prefix="/api", tags=["Survey"])
@@ -91,7 +92,39 @@ def get_services(
 
 Factory = Annotated[ServicesFactory, Depends(get_services)]
 Upload = Annotated[UploadFile | None, File()]
-MAX_RADIATOR_PHOTOS = 8
+MAX_PHOTOS_PER_RADIATOR = 3
+
+
+def _radiator_groups(
+    uploads: list[UploadFile], index: list[int], known: KnownDetails | None
+) -> list[list[UploadFile]]:
+    """Photos grouped by radiator: several photos of one radiator are one radiator."""
+    if not index and len(uploads) == 1:
+        index = [0]
+    if len(index) != len(uploads):
+        raise HTTPException(422, "Each radiator photo needs a radiator_index")
+    count = max([i + 1 for i in index] + [len(known.radiators) if known else 0])
+    if any(i < 0 for i in index) or count > MAX_RADIATORS:
+        raise HTTPException(422, f"Add at most {MAX_RADIATORS} radiators.")
+    groups: list[list[UploadFile]] = [[] for _ in range(count)]
+    for upload, i in zip(uploads, index, strict=True):
+        groups[i].append(upload)
+    if any(len(g) > MAX_PHOTOS_PER_RADIATOR for g in groups):
+        raise HTTPException(422, f"Add at most {MAX_PHOTOS_PER_RADIATOR} photos per radiator.")
+    return groups
+
+
+def _known(raw: str | None) -> KnownDetails | None:
+    if raw is None:
+        return None
+    try:
+        return KnownDetails.model_validate_json(raw)
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        where = ".".join(str(part) for part in first["loc"])
+        # The message names the rule broken, never echoes the value sent.
+        message = f"Check the details you entered ({where}): {first['msg']}"
+        raise HTTPException(422, message) from None
 
 
 @router.post("/analysis")
@@ -100,15 +133,16 @@ def analyse(
     certificate_id: Annotated[str, Form(pattern=CERTIFICATE_PATTERN)],
     boiler_plate: Upload = None,
     radiators: Annotated[list[UploadFile] | None, File()] = None,
+    radiator_index: Annotated[list[int] | None, Form()] = None,
+    known: Annotated[str | None, Form(max_length=10_000)] = None,
     radiator_video: Upload = None,
     fuse_cutout: Upload = None,
     outdoor_space: Upload = None,
     gas_bill: Upload = None,
     loft: Upload = None,
 ) -> StreamingResponse:
-    rad_uploads = radiators or []
-    if len(rad_uploads) > MAX_RADIATOR_PHOTOS:
-        raise HTTPException(422, f"Upload at most {MAX_RADIATOR_PHOTOS} radiator photos.")
+    entered = _known(known)
+    rad_groups = _radiator_groups(radiators or [], radiator_index or [], entered)
     uploads = {
         PhotoKind.BOILER_PLATE: boiler_plate,
         PhotoKind.FUSE_CUTOUT: fuse_cutout,
@@ -117,9 +151,9 @@ def analyse(
         PhotoKind.LOFT: loft,
     }
     files = {kind: _read(upload) for kind, upload in uploads.items() if upload is not None}
-    rad_files = [_read(upload) for upload in rad_uploads]
+    rad_files = [[_read(upload) for upload in group] for group in rad_groups]
     total_photo_bytes = sum(len(data) for data, _ in files.values()) + sum(
-        len(data) for data, _ in rad_files
+        len(data) for group in rad_files for data, _ in group
     )
     if total_photo_bytes > MAX_REVIEW_BYTES:
         raise HTTPException(413, "Attachments too large for one analysis: 18 MB maximum")
@@ -137,6 +171,7 @@ def analyse(
                     events.put,
                     radiator_video=raw_video,
                     radiator_files=rad_files,
+                    known=entered,
                 )
             events.put({"type": "result", "result": result.model_dump(mode="json")})
         except AnalysisRefused as exc:
@@ -170,9 +205,14 @@ def analyse(
     )
 
 
-def _media(kind: str, upload: UploadFile) -> MediaInput:
+def _media(kind: str, upload: UploadFile, radiator: int | None = None) -> MediaInput:
     data, mime = _read(upload)
-    return MediaInput(kind=kind, data_base64=base64.b64encode(data).decode("ascii"), mime_type=mime)
+    return MediaInput(
+        kind=kind,
+        data_base64=base64.b64encode(data).decode("ascii"),
+        mime_type=mime,
+        radiator=radiator,
+    )
 
 
 @router.post("/analysis/review", response_model=GeminiReviewResult)
@@ -181,6 +221,7 @@ def review_analysis(
     context: Annotated[str, Form(max_length=200_000)],
     boiler_plate: Upload = None,
     radiators: Annotated[list[UploadFile] | None, File()] = None,
+    radiator_index: Annotated[list[int] | None, Form()] = None,
     fuse_cutout: Upload = None,
     outdoor_space: Upload = None,
     gas_bill: Upload = None,
@@ -193,9 +234,7 @@ def review_analysis(
         ctx = ReviewContext.model_validate_json(context)
     except ValidationError:
         raise HTTPException(422, "Send the analysis bundle and readings as context") from None
-    rad_uploads = radiators or []
-    if len(rad_uploads) > MAX_RADIATOR_PHOTOS:
-        raise HTTPException(422, f"Upload at most {MAX_RADIATOR_PHOTOS} radiator photos.")
+    rad_groups = _radiator_groups(radiators or [], radiator_index or [], None)
     quotes = quotes or []
     quote_index = quote_index or []
     if len(quotes) != len(quote_index) or any(not 0 <= i < len(ctx.quotes) for i in quote_index):
@@ -208,8 +247,8 @@ def review_analysis(
     photos: list[MediaInput] = []
     if boiler_plate is not None:
         photos.append(_media("boiler_plate", boiler_plate))
-    for upload in rad_uploads:
-        photos.append(_media("radiators", upload))
+    for number, group in enumerate(rad_groups, start=1):
+        photos.extend(_media("radiators", upload, number) for upload in group)
     for kind, upload in (
         ("fuse_cutout", fuse_cutout),
         ("outdoor_space", outdoor_space),
@@ -229,6 +268,7 @@ def review_analysis(
         fuse_cutout=ctx.fuse_cutout,
         outdoor_space=ctx.outdoor_space,
         loft=ctx.loft,
+        entered=ctx.entered,
         quotes=[
             QuoteInput(
                 quote_id=q.quote_id,

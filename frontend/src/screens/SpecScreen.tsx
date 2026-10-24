@@ -1,9 +1,10 @@
 import { useSession } from '../context/SessionContext'
 import { RadiatorVideoResults } from '../components/RadiatorVideoResults'
 import { ExactValue, HeroKwStack } from '../components/RangeValue'
+import { specRoomName } from '../lib/knownDetails'
 
 export function SpecScreen() {
-  const { analysis, radiatorVideoResult, placeLabel } = useSession()
+  const { analysis, radiatorVideoResult, placeLabel, radiatorLabels } = useSession()
   if (!analysis) return null
 
   const spec = analysis.bundle.target_spec
@@ -49,11 +50,11 @@ export function SpecScreen() {
         <ul className="radiator-list">
           {spec.radiators.map((r) => (
             <li key={r.room} className={`rad-${r.status}`}>
-              <strong>{r.room}</strong>
+              <strong>{specRoomName(r.room, radiatorLabels, analysis.readings)}</strong>
               <span className={`status-pill status-${r.status}`}>{r.status}</span>
               <p>
                 At {r.flow_temp_c}°C: {Math.round(r.output_w)} W output vs {Math.round(r.heat_loss_w)} W loss
-                {r.room === 'Photographed room' || analysis.defaults.some((d) => d.input === 'radiators')
+                {analysis.defaults.some((d) => d.input === 'radiators')
                   ? ' (rating and room loss are named estimates, low confidence)'
                   : ''}
               </p>

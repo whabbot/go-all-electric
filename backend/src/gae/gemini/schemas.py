@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, JsonValue, WithJsonSchema
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, WithJsonSchema, field_validator
 
 from gae.heatpump.costs import CostComparison
 from gae.heatpump.crosscheck import CrossCheck, ReasonCode
@@ -371,6 +371,42 @@ class MediaInput(BaseModel):
     kind: PhotoKind | Literal["quote"]
     data_base64: str = Field(max_length=15_000_000)
     mime_type: str
+    # Radiator photos: which radiator (1 = radiator 1); one radiator may have several photos.
+    radiator: int | None = Field(default=None, ge=1, le=8)
+
+
+EnteredField = Literal[
+    "radiator_type",
+    "panels",
+    "fin_rows",
+    "width_mm",
+    "height_mm",
+    "make",
+    "model",
+    "heating_output_kw",
+    "hot_water_output_kw",
+    "rating_a",
+]
+
+
+class EnteredValue(BaseModel):
+    """A value the homeowner entered by hand. It replaces the photo reading of that field."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    input: Literal["boiler_plate", "radiators", "fuse_cutout"]
+    radiator: int | None = Field(default=None, ge=1, le=8)
+    field: EnteredField
+    entered: float | int | str
+    # What the photo reading said, only when it disagreed with the entered value.
+    photo_read: float | int | str | None = None
+
+    @field_validator("entered", "photo_read")
+    @classmethod
+    def _short(cls, value: float | int | str | None) -> float | int | str | None:
+        if isinstance(value, str) and len(value) > 60:
+            raise ValueError("at most 60 characters")
+        return value
 
 
 class QuoteInput(BaseModel):
@@ -382,16 +418,19 @@ class QuoteInput(BaseModel):
 
 
 class ReviewRequest(BaseModel):
-    photos: list[MediaInput] = Field(default_factory=list, max_length=16)
+    # Boiler, fuse, outdoor and loft photos plus up to 8 radiators x 3 photos.
+    photos: list[MediaInput] = Field(default_factory=list, max_length=28)
     bill: MediaInput | None = None
     epc_record: dict[str, JsonValue] = Field(default_factory=dict)
     boiler: BoilerPlateReading | None = None
     bill_reading: GasBillReading | None = None
-    radiators: RadiatorReading | list[RadiatorReading] | None = None
+    # One entry per radiator by position (radiator 1 first); null where nothing was read.
+    radiators: RadiatorReading | list[RadiatorReading | None] | None = None
     radiator_video: RadiatorVideoResult | RadiatorVideoReading | None = None
     fuse_cutout: FuseCutoutReading | None = None
     outdoor_space: OutdoorSpaceReading | None = None
     loft: LoftReading | None = None
+    entered: list[EnteredValue] = Field(default_factory=list, max_length=60)
     quotes: list[QuoteInput] = Field(default_factory=list, max_length=5)
     maths: MathsBundle
 
