@@ -33,8 +33,6 @@ class Settings(BaseSettings):
 
     gemini_api_key: SecretStr | None = None
     epc_api_token: SecretStr | None = None
-    epc_api_email: SecretStr | None = None
-    epc_api_key: SecretStr | None = None
     mongodb_uri: SecretStr | None = None
     google_solar_api_key: SecretStr | None = None
     # Model ids are not secrets; override to swap models without a code change.

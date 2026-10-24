@@ -3,9 +3,9 @@
 Checked 23 October 2026 against the [official API documentation](https://get-energy-performance-data.communities.gov.uk/api-technical-documentation),
 [OpenAPI](https://raw.githubusercontent.com/communitiesuk/epb-data-warehouse/main/api/api.yml)
 and [schema samples](https://github.com/communitiesuk/epb-data-warehouse/tree/main/spec/fixtures/json_samples).
-The former epc.opendatacommunities.org service retired in May 2026. Its replacement is
-`https://api.get-energy-performance-data.communities.gov.uk`, using `Authorization: Bearer ...`
-from a GOV.UK One Login account. Legacy email/key Basic auth does not work here.
+The GOV.UK “Get energy performance of buildings data” API is hosted at
+`https://api.get-energy-performance-data.communities.gov.uk`. Set `EPC_API_TOKEN` to the bearer
+token from your GOV.UK One Login account page; the client sends `Authorization: Bearer ...`.
 
 Search uses `/api/domestic/search?postcode=...`, follows `pagination.nextPage`, and selects the
 latest `registrationDate` per UPRN, or normalized full address when UPRN is absent. Ties use
@@ -28,7 +28,7 @@ No full certificate, exact home coordinates, photos or bills are persisted by th
 | Property form | `storeys` | Bungalow: 1; house: 2 | `assumed_storeys`, always low; these are not measured storeys |
 | Uniform `sap_building_parts[].construction_age_band`, decoded by `/api/codes/info` with `schemaVersion` and matching `assessmentType` | `year_built` | Closed bands use their start; open-ended bands expose `(null, upper)` or `(lower, null)` in confidence `value_range` and a representative year for maths only. Before/pre-1900 uses an upper bound and representative year of 1899 | `unknown_age_1930` if absent, mixed, undecodable, or code service unavailable; open-ended bands use `open_ended_age_band`, low confidence; representative years are a simplification |
 | Uniform `walls[].description` | `wall_type` | Solid brick/no insulation → solid_brick; solid brick/insulation → solid_insulated; cavity/no insulation → cavity_unfilled; cavity/insulated or filled cavity → cavity_filled; timber frame → timber_frame | `unknown_wall_cavity_unfilled` for ambiguous, missing or differing walls; cannot area-weight extensions |
-| `windows[].description` (legacy `window.description`) | `glazing` | Fully single → single; fully double → double_unknown_date; fully triple → triple | `unknown_glazing_double_u_2_8`; fully double also low because date/U-value unknown; mixed glazing not represented |
+| `windows[].description` (alternative field `window.description`) | `glazing` | Fully single → single; fully double → double_unknown_date; fully triple → triple | `unknown_glazing_double_u_2_8`; fully double also low because date/U-value unknown; mixed glazing not represented |
 | Uniform `roofs[].description` | `loft_insulation_mm` | Pitched, explicit N mm loft insulation → N; pitched/no insulation → 0 | `unknown_roof_zero_loft_depth` for flat, mixed, unknown roofs; this is a model assumption, not observed lack of insulation |
 | Uniform `floors[].description` | `floor_insulated` | No insulation/uninsulated → false; insulated → true | `unknown_floor_uninsulated`; other premises below and differing floors cannot be represented |
 | Uniform `main_heating[].description` | `main_heating_fuel` (metadata) | mains gas, oil, LPG, electric by complete words | `unknown_heating_fuel` → other; fuel is not an argument to `estimate_fabric` |

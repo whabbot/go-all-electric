@@ -1,4 +1,4 @@
-"""2026 MHCLG replacement API. Bearer token, not legacy Basic auth."""
+"""GOV.UK Get energy performance of buildings data API client using a bearer token."""
 
 import re
 from dataclasses import asdict
