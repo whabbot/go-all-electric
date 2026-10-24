@@ -30,7 +30,6 @@ export function CaptureScreen() {
     radiatorVideoResult,
     setRadiatorVideo,
     placeLabel,
-    address,
   } = useSession()
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [pending, setPending] = useState<PendingCoverUp | null>(null)
@@ -272,17 +271,7 @@ export function CaptureScreen() {
         </p>
       )}
 
-      <p className="cta-row">
-        {address || isMockMode() ? (
-          <Link className={`btn primary${anyBusy ? ' disabled' : ''}`} to="/estimates">
-            Run estimates
-          </Link>
-        ) : (
-          <Link className="btn" to="/">
-            Pick a house first
-          </Link>
-        )}
-      </p>
+      {anyBusy && <p className="subtle">Wait for photo checks to finish before continuing.</p>}
     </section>
   )
 }

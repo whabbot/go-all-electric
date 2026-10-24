@@ -1,17 +1,10 @@
-import { Link } from 'react-router-dom'
 import { useSession } from '../context/SessionContext'
 import { RadiatorVideoResults } from '../components/RadiatorVideoResults'
 import { ExactValue, RangeValue } from '../components/RangeValue'
 
 export function SpecScreen() {
   const { analysis, radiatorVideoResult, placeLabel } = useSession()
-  if (!analysis) {
-    return (
-      <p className="warning">
-        Run <Link to="/estimates">estimates</Link> first.
-      </p>
-    )
-  }
+  if (!analysis) return null
 
   const spec = analysis.bundle.target_spec
   const fromBills = analysis.size_basis === 'measured'
@@ -83,9 +76,6 @@ export function SpecScreen() {
         <p>{spec.grant.note}</p>
       </div>
 
-      <p className="cta-row">
-        <Link className="btn primary" to="/quotes">Check installer quotes</Link>
-      </p>
     </section>
   )
 }

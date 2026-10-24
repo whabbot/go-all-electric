@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { api, isMockMode, type QuoteCheckResult, type QuoteSizeContext, type QuoteUploadGroup } from '../api'
 import { ImageCoverUp } from '../components/ImageCoverUp'
 import { ReviewPanel } from '../components/ReviewPanel'
@@ -336,9 +335,6 @@ export function QuotesScreen() {
 
       <ReviewPanel />
 
-      <p className="cta-row">
-        <Link className="btn" to="/plan">See full plan</Link>
-      </p>
     </section>
   )
 }

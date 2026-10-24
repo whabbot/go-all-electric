@@ -60,15 +60,28 @@ body {
   letter-spacing: 0.02em;
 }
 
-.demo-nav {
+.flow-nav {
+  margin-top: 0.35rem;
+}
+
+.flow-progress {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.flow-steps {
   display: flex;
   gap: 0.25rem;
   overflow-x: auto;
-  padding-bottom: 0.15rem;
+  padding: 0 0 0.15rem;
+  margin: 0;
+  list-style: none;
   scrollbar-width: none;
 }
 
-.demo-nav a {
+.flow-steps a,
+.flow-step-upcoming {
   flex-shrink: 0;
   font-size: 0.72rem;
   padding: 0.35rem 0.55rem;
@@ -78,10 +91,32 @@ body {
   border: 1px solid transparent;
 }
 
-.demo-nav a.active {
+.flow-steps a.active {
   color: var(--text);
   background: var(--surface-2);
   border-color: var(--border);
+}
+
+.flow-step-upcoming {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.flow-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.flow-actions-forward {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .app-main {
