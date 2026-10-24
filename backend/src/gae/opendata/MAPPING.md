@@ -18,14 +18,16 @@ The source covers England and Wales only. Postcode search returns `addresses: []
 `/api/certificate?certificate_number=...` returns `data`, with schema-specific snake_case fields.
 RdSAP 21 descriptions are `{value, language}`; earlier versions use strings. Only English
 (language `1`) descriptions are mapped. Numeric dwelling enums are decoded through the provider
-code table for the exact schema and assessment type; unresolved numeric geometry is refused.
+code table for the exact schema and assessment type, even when dwelling text is present.
+Unresolved codes alone cannot establish a house; an explicit House label with an unknown built
+form uses the named low-confidence geometry assumption below.
 No full certificate, exact home coordinates, photos or bills are persisted by this package.
 `raw_summary` is an allowlist of relevant EPC fields, not the complete response.
 
 | Source | Maths input | Mapping | Named low-confidence default / limitation |
 | --- | --- | --- | --- |
 | `total_floor_area` (number or value object), else `sap_building_parts[].sap_floor_dimensions[].total_floor_area` | `floor_area_m2` | Positive finite square metres; root total takes precedence. Sum distinct part/floor identities, never multiply by storeys; repeated identities must agree; missing/invalid dimensions refuse partial totals | `floor_area_unavailable`: null and no estimate; ask for measured area |
-| `dwelling_type`; `built_form` + `property_type` labels if absent (codes resolved with schema and assessment type) | `property_type` | Semi-detached, detached, end-terrace, mid-terrace house; bungalow | `semi_detached_geometry` for absent textual form; unresolved codes, flats/maisonettes/park homes and unsupported decoded forms get no estimate because house geometry is unsupported |
+| All available `dwelling_type`, `built_form`, `property_type` labels, including English `{value, language}` objects (codes resolved with schema and assessment type) | `property_type` | Normalize case, whitespace and hyphens/dashes. Semi-detached, detached, end-terrace, mid-terrace house; bungalow takes precedence over attachment form. Generic dwelling text does not hide a specific built form. | `semi_detached_geometry` for a known House with missing/unrecorded/unresolved form, or wholly absent geometry; low confidence and explicit survey assumption. `enclosed_terrace_geometry`: enclosed end/mid-terraces use the corresponding ordinary terrace perimeter, low confidence because extra party walls are not modelled. Any flat/maisonette/park-home label refuses; unresolved codes without a known house and unsupported decoded types also refuse. |
 | Property form | `storeys` | Bungalow: 1; house: 2 | `assumed_storeys`, always low; these are not measured storeys |
 | Uniform `sap_building_parts[].construction_age_band`, decoded by `/api/codes/info` with `schemaVersion` and matching `assessmentType` | `year_built` | Closed bands use their start; open-ended bands expose `(null, upper)` or `(lower, null)` in confidence `value_range` and a representative year for maths only. Before/pre-1900 uses an upper bound and representative year of 1899 | `unknown_age_1930` if absent, mixed, undecodable, or code service unavailable; open-ended bands use `open_ended_age_band`, low confidence; representative years are a simplification |
 | Uniform `walls[].description` | `wall_type` | Solid brick/no insulation → solid_brick; solid brick/insulation → solid_insulated; cavity/no insulation → cavity_unfilled; cavity/insulated or filled cavity → cavity_filled; timber frame → timber_frame | `unknown_wall_cavity_unfilled` for ambiguous, missing or differing walls; cannot area-weight extensions |
@@ -42,6 +44,29 @@ geometry, air-change and U-value assumptions remain visible in the returned esti
 present the fabric range without these mapping caveats: its ±15% model range does not quantify
 unknown geometry or fabric. Unsupported geometry or missing floor area returns `estimate: null`
 and a specific `reason`.
+
+## Geometry diagnosis and photo independence
+
+The provider code table checked on 24 October 2026 contains built forms `Detached`,
+`Semi-Detached`, `End-Terrace`, `Mid-Terrace`, `Enclosed End-Terrace`,
+`Enclosed Mid-Terrace`, and `Not Recorded`; property types are `House`, `Bungalow`,
+`Flat`, `Maisonette`, and `Park home`. Certificates can supply dwelling text directly
+or as an English `{value, language}` object. Tests use synthetic records only.
+
+Previously a decoded `House` plus `Not Recorded` (or no built form) triggered the
+unsupported-label guard. An unresolved built-form code also refused an otherwise decoded House.
+A populated `dwelling_type` masked the other labels and skipped code resolution, so the same
+incomplete house description could take a different path depending on where it appeared.
+`Semi Detached` also matched the bare `detached` substring, overstating exposed perimeter;
+spaced terrace labels could fall through. Enclosed hyphenated terrace labels already matched,
+but their geometry approximation was not identified as a low-confidence assumption.
+
+The initial Estimate A is `mapping.estimate` from the EPC alone. Photo uploads are read in
+parallel, but neither their count nor their absence changes that mapping or bypasses its
+refusal. Boiler/radiator/loft readings do not change the initial fabric numbers; a later,
+explicit evidence-review conflict proposal is a separate step. The no-photo regression checks
+that a synthetic decoded House with unrecorded form returns Estimate A, and that adding a
+boiler photo or one/two radiator photos leaves it identical.
 
 ## Weather and bills
 

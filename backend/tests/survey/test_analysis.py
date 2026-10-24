@@ -11,9 +11,10 @@ from datetime import date, timedelta
 from threading import Lock
 from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from gae.db.models import SurveyInput
 from gae.gemini.client import Call
@@ -27,6 +28,7 @@ from gae.gemini.schemas import (
     VideoRadiator,
 )
 from gae.main import app
+from gae.opendata.epc import EPCClient
 from gae.opendata.mapping import map_epc
 from gae.opendata.weather import DegreeDays, degree_days_from_daily
 from gae.survey.analysis import Services
@@ -326,6 +328,60 @@ def test_no_bill_means_no_estimate_b_and_says_what_to_provide(harness) -> None:
         for e in events
         if e["type"] == "log"
     )
+
+
+def test_house_with_unrecorded_form_renders_estimate_a_without_photos(harness) -> None:
+    # Synthetic reproduction of the refusal path: a decoded House with no
+    # attachment form, fetched through the real EPC client and analysis route.
+    data = record(
+        dwelling_type=None,
+        property_type=0,
+        built_form=0,
+        schema_type="SAP-Schema-12.0",
+        assessment_type="RdSAP",
+    )
+
+    def handle(request):
+        if request.url.path == "/api/certificate":
+            return httpx.Response(200, json={"data": data})
+        name = request.url.params["code"]
+        label = {"property_type": "House", "built_form": "Not Recorded"}[name]
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "key": "0",
+                        "values": [
+                            {
+                                "value": label,
+                                "schemaVersion": data["schema_type"],
+                                "assessmentType": "RdSAP",
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handle)) as http:
+        harness["epc"] = EPCClient(http, SecretStr("synthetic")).mapped
+        _, events = analyse([])
+        no_photos = result_of(events)
+        assert no_photos["bundle"]["fabric"]["design_load_kw"]["central"] > 0
+        assert no_photos["bundle"]["measured"] is None
+        assert all(r["status"] == "not_provided" for r in no_photos["readings"])
+        assert harness["gemini"].calls == []
+        assert harness["weather"].calls == []
+        geometry = next(d for d in no_photos["defaults"] if d["name"] == "semi_detached_geometry")
+        assert geometry["confidence"] == "low"
+        assert "assume semi-detached" in geometry["note"]
+
+        # Uploading a boiler photo or one/multiple radiator photos cannot change
+        # the EPC-derived Estimate A or turn this geometry refusal on/off.
+        for photos in (["boiler_plate"], ["radiators"], ["radiators", "radiators"]):
+            _, events = analyse(photos)
+            assert result_of(events)["bundle"]["fabric"] == no_photos["bundle"]["fabric"]
 
 
 def test_partial_year_bill_is_couldnt_tell_not_a_guess(harness) -> None:

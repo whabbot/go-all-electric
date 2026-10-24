@@ -152,3 +152,158 @@ def test_plural_windows(description, expected, confidence):
     result = map_epc({"windows": [{"description": description}]})
     assert result.fabric_inputs["glazing"] == expected
     assert result.confidence["glazing"].confidence == confidence
+
+
+@pytest.mark.parametrize(
+    "label, expected",
+    [
+        ("Detached", "detached"),
+        ("Semi-Detached", "semi_detached"),
+        ("Semi Detached", "semi_detached"),
+        ("End-Terrace", "end_terrace"),
+        ("Mid-Terrace", "mid_terrace"),
+        ("Enclosed End-Terrace", "end_terrace"),
+        ("Enclosed Mid-Terrace", "mid_terrace"),
+        ("Not Recorded", "semi_detached"),
+    ],
+)
+def test_decoded_house_forms(label, expected):
+    result = map_epc(
+        {"total_floor_area": 90, "property_type": 0, "built_form": 1},
+        property_label="House",
+        built_form_label=label,
+    )
+    assert result.estimate is not None
+    assert result.fabric_inputs["property_type"] == expected
+    # Exercise the provider's numeric-code path as well as direct label mapping.
+    record = fixture("certificate_nested.json")["data"]
+    record["property_type"] = 0
+    codes = fixture("codes_nested.json")
+    codes["property_type"]["data"][0]["key"] = "0"
+    for value in codes["property_type"]["data"][0]["values"]:
+        if value["schemaVersion"] == record["schema_type"]:
+            value["value"] = "House"
+    for value in codes["built_form"]["data"][0]["values"]:
+        if value["schemaVersion"] == record["schema_type"]:
+            value["value"] = label
+    decoded = certificate_result(record, codes)
+    assert decoded["estimate"] is not None
+    assert decoded["fabric_inputs"]["property_type"] == expected
+    confidence = result.confidence["property_type"]
+    if label.startswith("Enclosed") or label == "Not Recorded":
+        assert confidence.confidence == "low"
+        assert confidence.default is not None
+        assert "assum" in confidence.note.lower()
+    else:
+        assert confidence.confidence == "medium"
+        assert confidence.default is None
+
+
+@pytest.mark.parametrize(
+    "dwelling, expected",
+    [
+        ("Semi Detached house", "semi_detached"),
+        ("  SEMI\u2013DETACHED   HOUSE ", "semi_detached"),
+        ("End terrace house", "end_terrace"),
+        ("Mid terrace house", "mid_terrace"),
+        ("Enclosed Mid-Terrace house", "mid_terrace"),
+        ("Enclosed End-Terrace house", "end_terrace"),
+        ("Semi-detached bungalow", "bungalow"),
+        ("Detached bungalow", "bungalow"),
+    ],
+)
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_dwelling_text_and_english_value_objects(dwelling, expected, wrapped):
+    value = {"value": dwelling, "language": "1"} if wrapped else dwelling
+    result = map_epc({"total_floor_area": 90, "dwelling_type": value})
+    assert result.estimate is not None
+    assert result.fabric_inputs["property_type"] == expected
+    assert result.fabric_inputs["storeys"] == (1 if expected == "bungalow" else 2)
+
+
+@pytest.mark.parametrize("form", [None, "", "Not Recorded", 99, "Unspecified"])
+def test_known_house_with_unknown_form_uses_named_low_confidence_assumption(form):
+    result = map_epc(
+        {"total_floor_area": 90, "property_type": "House", "built_form": form},
+        property_label="House",
+    )
+    assert result.reason is None
+    assert result.estimate is not None
+    assert result.fabric_inputs["property_type"] == "semi_detached"
+    confidence = result.confidence["property_type"]
+    assert confidence.confidence == "low"
+    assert confidence.default == "semi_detached_geometry"
+    assert "assum" in confidence.note.lower()
+    assert "survey" in confidence.note.lower()
+
+
+def test_generic_dwelling_does_not_mask_decoded_form():
+    result = map_epc(
+        {"total_floor_area": 90, "dwelling_type": "House", "built_form": 4},
+        built_form_label="Mid-Terrace",
+    )
+    assert result.estimate is not None
+    assert result.fabric_inputs["property_type"] == "mid_terrace"
+
+
+@pytest.mark.parametrize(
+    "label",
+    [
+        "Ground-floor flat",
+        "Mid-floor flat",
+        "Top-floor flat",
+        "Ground-floor maisonette",
+        "Top-floor maisonette",
+        "Park home",
+        "Park-Home",
+    ],
+)
+@pytest.mark.parametrize("field", ["dwelling_type", "property_type"])
+def test_non_house_types_refuse_even_with_a_house_form(label, field):
+    record = {"total_floor_area": 90, "built_form": "Semi Detached", field: label}
+    assert map_epc(record).estimate is None
+    record[field] = {"value": label, "language": "1"}
+    assert map_epc(record).estimate is None
+
+
+def test_decoded_flat_cannot_be_masked_by_house_dwelling_text():
+    result = map_epc(
+        {"total_floor_area": 90, "dwelling_type": "Detached house", "property_type": 2},
+        property_label="Flat",
+    )
+    assert result.estimate is None
+
+
+def test_house_dwelling_does_not_mask_bungalow_property_type():
+    result = map_epc(
+        {"total_floor_area": 90, "dwelling_type": "Detached", "property_type": 1},
+        property_label="Bungalow",
+    )
+    assert result.fabric_inputs["property_type"] == "bungalow"
+    assert result.fabric_inputs["storeys"] == 1
+
+
+def test_known_house_with_missing_form_through_client():
+    record = fixture("certificate_nested.json")["data"]
+    record["dwelling_type"] = "House"
+    record["property_type"] = 0
+    codes = fixture("codes_nested.json")
+    codes["property_type"]["data"][0]["key"] = "0"
+    for value in codes["property_type"]["data"][0]["values"]:
+        if value["schemaVersion"] == record["schema_type"]:
+            value["value"] = "House"
+    codes["built_form"] = {"data": []}
+    result = certificate_result(record, codes)
+    assert result["estimate"] is not None
+    assert result["confidence"]["property_type"]["confidence"] == "low"
+
+
+def test_client_resolves_form_despite_generic_dwelling_text():
+    record = fixture("certificate_nested.json")["data"]
+    record["dwelling_type"] = "House"
+    record["property_type"] = 0
+    codes = fixture("codes_nested.json")
+    codes["property_type"] = {"data": []}
+    result = certificate_result(record, codes)
+    assert result["estimate"] is not None
+    assert result["fabric_inputs"]["property_type"] == "detached"
