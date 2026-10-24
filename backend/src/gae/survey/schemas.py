@@ -46,12 +46,14 @@ class EpcSummary(BaseModel):
 
     property_type: str
     floor_area_m2: float | None
+    storeys: int = 2
     age_band: str | None
     year_built: int
     wall_type: str
     glazing: str
     loft_insulation_mm: int
     floor_insulated: bool
+    design_outdoor_temp_c: float = -2.0
     main_heating_fuel: str
     current_energy_efficiency_band: str | None
     walls: list[str]

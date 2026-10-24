@@ -42,11 +42,14 @@ from gae.gemini.schemas import (
 from gae.heatpump import constants as c
 from gae.heatpump.fabric import (
     EXPOSED_WALL_FRACTION,
+    FabricEstimate,
     Glazing,
     PropertyType,
     WallType,
     estimate_fabric,
 )
+
+BASELINE_REL_TOL = 0.01
 
 # Digits not glued to a preceding letter, so model codes like "R290" or "WZ50VAA" are skipped.
 NUMBER = re.compile(r"(?<![A-Za-z0-9.])\d[\d,]*(?:\.\d+)?")
@@ -77,6 +80,8 @@ EPC_BUILDING_FIELDS = (
     "wall_type",
     "loft_insulation_mm",
     "floor_insulated",
+    "design_outdoor_temp_c",
+    "indoor_temp_c",
     "main_heating",
     "main_heating_fuel",
     "current_energy_efficiency_band",
@@ -438,6 +443,7 @@ def verify_conflicts(
         return [], []
 
     baseline = _baseline_fabric_inputs(req)
+    baseline_est = _reproduce_baseline_fabric(req, baseline)
     cleaned_proposals: list[InputConflictProposal] = []
     tested: list[TestedConflict] = []
 
@@ -508,6 +514,20 @@ def verify_conflicts(
             )
             continue
 
+        if baseline_est is None:
+            log.add(
+                "check",
+                "conflicts",
+                "code",
+                (
+                    f"re-run fabric.py with {field.value}={value.value}: "
+                    "baseline reproduces Estimate A"
+                ),
+                False,
+                "could not reproduce Estimate A",
+            )
+            continue
+
         where = f"input_conflicts[{i}].evidence_summary"
         summary_text = _clean(where, proposal.evidence_summary, allowed, stripped)
         if not summary_text:
@@ -516,6 +536,7 @@ def verify_conflicts(
         result = _test_single_conflict(
             req=req,
             baseline=baseline,
+            baseline_est=baseline_est,
             field=field,
             source=source,
             summary_text=summary_text,
@@ -601,27 +622,23 @@ def _parse_proposed_value(field: ConflictField, raw: str) -> ProposedValue | Non
 
 
 def _baseline_fabric_inputs(req: ReviewRequest) -> dict[str, Any]:
-    """Reconstruct baseline `estimate_fabric` arguments from `maths.fabric` and `epc_record`."""
+    """Extract `estimate_fabric` arguments from `epc_record` or reconstruct from `maths.fabric`.
+
+    Prefers the exact building fields passed in `epc_record` (`EpcSummary` from the analysis)
+    and always supplies `floor_insulated` explicitly as a `bool` so toggling `year_built` for
+    `air_change_rate` cannot alter floor insulation.
+    """
     fabric = req.maths.fabric
     epc = req.epc_record
 
-    volume_m3 = _float(fabric.get("volume_m3"))
     epc_area = _float(epc.get("floor_area_m2")) or _float(epc.get("total_floor_area"))
-    if volume_m3 and volume_m3 > 0:
-        floor_area_m2 = round(volume_m3 / c.ROOM_HEIGHT_M, 2)
-    elif epc_area and epc_area > 0:
+    volume_m3 = _float(fabric.get("volume_m3"))
+    if epc_area and epc_area > 0:
         floor_area_m2 = epc_area
+    elif volume_m3 and volume_m3 > 0:
+        floor_area_m2 = round(volume_m3 / c.ROOM_HEIGHT_M, 2)
     else:
         floor_area_m2 = 90.0
-
-    roof_area_m2 = _float(fabric.get("roof_area_m2")) or (floor_area_m2 / 2)
-    raw_storeys = epc.get("storeys")
-    if roof_area_m2 > 0:
-        storeys = max(1, round(floor_area_m2 / roof_area_m2))
-    elif isinstance(raw_storeys, int) and not isinstance(raw_storeys, bool) and raw_storeys >= 1:
-        storeys = raw_storeys
-    else:
-        storeys = 2
 
     raw_prop = epc.get("property_type")
     epc_prop: PropertyType | None = None
@@ -631,8 +648,19 @@ def _baseline_fabric_inputs(req: ReviewRequest) -> dict[str, Any]:
         except ValueError:
             epc_prop = None
 
+    roof_area_m2 = _float(fabric.get("roof_area_m2")) or (floor_area_m2 / 2)
+    raw_storeys = epc.get("storeys")
+    if isinstance(raw_storeys, int) and not isinstance(raw_storeys, bool) and raw_storeys >= 1:
+        storeys = raw_storeys
+    elif roof_area_m2 > 0:
+        storeys = max(1, round(floor_area_m2 / roof_area_m2))
+    else:
+        storeys = 1 if epc_prop is PropertyType.BUNGALOW else 2
+
     net_wall = _float(fabric.get("net_wall_area_m2"))
-    if net_wall is not None and roof_area_m2 > 0:
+    if epc_prop is not None:
+        property_type = epc_prop
+    elif net_wall is not None and roof_area_m2 > 0:
         window_area = _float(fabric.get("window_area_m2")) or (
             floor_area_m2 * c.WINDOW_TO_FLOOR_RATIO
         )
@@ -640,34 +668,29 @@ def _baseline_fabric_inputs(req: ReviewRequest) -> dict[str, Any]:
         gross_wall = net_wall + window_area + door_area
         denom = 4 * math.sqrt(roof_area_m2) * c.STOREY_HEIGHT_M * storeys
         target_fraction = gross_wall / denom if denom > 0 else 0.75
-        if epc_prop is not None and abs(EXPOSED_WALL_FRACTION[epc_prop] - target_fraction) < 0.05:
-            property_type = epc_prop
-        else:
-            candidates = [
-                pt
-                for pt in PropertyType
-                if (pt is PropertyType.BUNGALOW) == (storeys == 1 and target_fraction > 0.9)
-            ] or list(PropertyType)
-            property_type = min(
-                candidates,
-                key=lambda pt: abs(EXPOSED_WALL_FRACTION[pt] - target_fraction),
-            )
-    elif epc_prop is not None:
-        property_type = epc_prop
+        candidates = [
+            pt
+            for pt in PropertyType
+            if (pt is PropertyType.BUNGALOW) == (storeys == 1 and target_fraction > 0.9)
+        ] or list(PropertyType)
+        property_type = min(
+            candidates,
+            key=lambda pt: abs(EXPOSED_WALL_FRACTION[pt] - target_fraction),
+        )
     else:
         property_type = PropertyType.SEMI_DETACHED
 
-    built_before_2000 = fabric.get("built_before_2000")
     raw_year = epc.get("year_built")
-    if isinstance(built_before_2000, bool):
-        year_built = 1930 if built_before_2000 else 2005
-    elif isinstance(raw_year, int) and not isinstance(raw_year, bool):
+    built_before_2000 = fabric.get("built_before_2000")
+    if isinstance(raw_year, int) and not isinstance(raw_year, bool):
         year_built = raw_year
+    elif isinstance(built_before_2000, bool):
+        year_built = 1930 if built_before_2000 else 2005
     else:
         year_built = 1930
 
     raw_wall = str(
-        fabric.get("wall_type") or epc.get("wall_type") or WallType.CAVITY_UNFILLED.value
+        epc.get("wall_type") or fabric.get("wall_type") or WallType.CAVITY_UNFILLED.value
     )
     try:
         wall_type = WallType(raw_wall)
@@ -675,27 +698,43 @@ def _baseline_fabric_inputs(req: ReviewRequest) -> dict[str, Any]:
         wall_type = WallType.CAVITY_UNFILLED
 
     raw_glazing = str(
-        fabric.get("glazing") or epc.get("glazing") or Glazing.DOUBLE_UNKNOWN_DATE.value
+        epc.get("glazing") or fabric.get("glazing") or Glazing.DOUBLE_UNKNOWN_DATE.value
     )
     try:
         glazing = Glazing(raw_glazing)
     except ValueError:
         glazing = Glazing.DOUBLE_UNKNOWN_DATE
 
-    raw_loft = fabric.get("loft_insulation_mm")
-    if not isinstance(raw_loft, int | float):
-        raw_loft = epc.get("loft_insulation_mm")
-    loft_insulation_mm = int(raw_loft) if isinstance(raw_loft, int | float) else 100
+    raw_loft = epc.get("loft_insulation_mm")
+    if isinstance(raw_loft, bool) or not isinstance(raw_loft, int | float):
+        raw_loft = fabric.get("loft_insulation_mm")
+    loft_insulation_mm = (
+        int(raw_loft)
+        if isinstance(raw_loft, int | float) and not isinstance(raw_loft, bool)
+        else 100
+    )
 
+    raw_floor_ins = epc.get("floor_insulated")
     elements = fabric.get("element_w_per_k")
     floor_w_per_k = _float(elements.get("floor")) if isinstance(elements, dict) else None
-    raw_floor_ins = epc.get("floor_insulated")
-    if floor_w_per_k is not None and roof_area_m2 > 0:
-        floor_insulated = abs(floor_w_per_k / roof_area_m2 - c.FLOOR_U_INSULATED) < 0.05
-    elif isinstance(raw_floor_ins, bool):
+    if isinstance(raw_floor_ins, bool):
         floor_insulated = raw_floor_ins
+    elif floor_w_per_k is not None and roof_area_m2 > 0:
+        floor_insulated = abs(floor_w_per_k / roof_area_m2 - c.FLOOR_U_INSULATED) < 0.05
     else:
-        floor_insulated = False
+        floor_insulated = bool(year_built >= 2003)
+
+    design_outdoor_temp_c = _float(epc.get("design_outdoor_temp_c"))
+    if design_outdoor_temp_c is None:
+        design_outdoor_temp_c = _float(req.maths.measured.get("design_outdoor_temp_c"))
+    if design_outdoor_temp_c is None:
+        design_outdoor_temp_c = c.LONDON_DESIGN_OUTDOOR_TEMP_C
+
+    indoor_temp_c = _float(epc.get("indoor_temp_c"))
+    if indoor_temp_c is None:
+        indoor_temp_c = _float(req.maths.measured.get("indoor_temp_c"))
+    if indoor_temp_c is None:
+        indoor_temp_c = c.DESIGN_INDOOR_TEMP_C
 
     return {
         "floor_area_m2": floor_area_m2,
@@ -705,12 +744,37 @@ def _baseline_fabric_inputs(req: ReviewRequest) -> dict[str, Any]:
         "wall_type": wall_type,
         "glazing": glazing,
         "loft_insulation_mm": loft_insulation_mm,
-        "floor_insulated": floor_insulated,
+        "floor_insulated": bool(floor_insulated),
+        "indoor_temp_c": indoor_temp_c,
+        "design_outdoor_temp_c": design_outdoor_temp_c,
     }
 
 
+def _reproduce_baseline_fabric(
+    req: ReviewRequest, baseline: dict[str, Any]
+) -> FabricEstimate | None:
+    """Run `estimate_fabric(**baseline)` and confirm it reproduces headline Estimate A within 1%."""
+    try:
+        baseline_est = estimate_fabric(**baseline)
+    except TypeError, ValueError:
+        return None
+
+    headline_htc = _extract_range_central(req.maths.fabric.get("htc_w_per_k"))
+    headline_load = _extract_range_central(req.maths.fabric.get("design_load_kw"))
+    if headline_htc is None or headline_htc <= 0 or headline_load is None or headline_load <= 0:
+        return None
+
+    if not math.isclose(baseline_est.htc_w_per_k.central, headline_htc, rel_tol=BASELINE_REL_TOL):
+        return None
+    if not math.isclose(
+        baseline_est.design_load_kw.central, headline_load, rel_tol=BASELINE_REL_TOL
+    ):
+        return None
+    return baseline_est
+
+
 def _extract_range_central(node: Any) -> float | None:
-    if isinstance(node, int | float):
+    if isinstance(node, int | float) and not isinstance(node, bool):
         return float(node)
     if isinstance(node, dict):
         return _float(node.get("central"))
@@ -720,6 +784,7 @@ def _extract_range_central(node: Any) -> float | None:
 def _test_single_conflict(
     req: ReviewRequest,
     baseline: dict[str, Any],
+    baseline_est: FabricEstimate,
     field: ConflictField,
     source: EvidenceSource,
     summary_text: str,
@@ -727,6 +792,7 @@ def _test_single_conflict(
     direction: EstimateDirection,
 ) -> TestedConflict:
     updated = dict(baseline)
+    updated["floor_insulated"] = bool(baseline["floor_insulated"])
     if field == ConflictField.WALL_TYPE:
         current_value = baseline["wall_type"].value
         updated["wall_type"] = WallType(value.value)
@@ -749,7 +815,7 @@ def _test_single_conflict(
             if baseline["year_built"] < 2000
             else ProposedValue.ACH_1_0.value
         )
-        updated["year_built"] = 2005 if value == ProposedValue.ACH_1_0 else 1930
+        updated["year_built"] = 2001 if value == ProposedValue.ACH_1_0 else 1930
     elif field == ConflictField.PROPERTY_TYPE:
         current_value = baseline["property_type"].value
         updated["property_type"] = PropertyType(value.value)
@@ -760,48 +826,38 @@ def _test_single_conflict(
     else:
         current_value = "unknown"
 
-    baseline_est = estimate_fabric(**baseline)
     rerun = estimate_fabric(**updated)
-    orig_load_dict = req.maths.fabric.get("design_load_kw")
-    if isinstance(orig_load_dict, dict) and _float(orig_load_dict.get("central")) is not None:
-        original_load = RangePayload(
-            low=round(_float(orig_load_dict.get("low")) or baseline_est.design_load_kw.low, 2),
-            central=round(
-                _float(orig_load_dict.get("central")) or baseline_est.design_load_kw.central, 2
-            ),
-            high=round(_float(orig_load_dict.get("high")) or baseline_est.design_load_kw.high, 2),
-        )
-    else:
-        original_load = RangePayload.from_range(baseline_est.design_load_kw)
-
+    original_load = RangePayload.from_range(baseline_est.design_load_kw)
     new_load = RangePayload.from_range(rerun.design_load_kw)
-    original_htc = round(
-        _extract_range_central(req.maths.fabric.get("htc_w_per_k"))
-        or baseline_est.htc_w_per_k.central,
-        2,
-    )
+    original_htc = round(baseline_est.htc_w_per_k.central, 2)
     new_htc = round(rerun.htc_w_per_k.central, 2)
 
     if direction == EstimateDirection.LOWER:
-        direction_matches = new_htc < original_htc - 1e-6
+        direction_matches = rerun.htc_w_per_k.central < baseline_est.htc_w_per_k.central - 1e-6
     else:
-        direction_matches = new_htc > original_htc + 1e-6
+        direction_matches = rerun.htc_w_per_k.central > baseline_est.htc_w_per_k.central + 1e-6
 
     measured_htc = _extract_range_central(req.maths.measured.get("htc_w_per_k"))
     measured_kw = _extract_range_central(req.maths.measured.get("design_load_kw"))
 
     if measured_htc is not None:
-        original_gap_w_per_k = round(abs(original_htc - measured_htc), 2)
-        new_gap_w_per_k = round(abs(new_htc - measured_htc), 2)
+        raw_orig_gap = abs(baseline_est.htc_w_per_k.central - measured_htc)
+        raw_new_gap = abs(rerun.htc_w_per_k.central - measured_htc)
+        original_gap_w_per_k = round(raw_orig_gap, 2)
+        new_gap_w_per_k = round(raw_new_gap, 2)
         original_gap_kw = (
-            round(abs(original_load.central - measured_kw), 2) if measured_kw is not None else None
+            round(abs(baseline_est.design_load_kw.central - measured_kw), 2)
+            if measured_kw is not None
+            else None
         )
         new_gap_kw = (
-            round(abs(new_load.central - measured_kw), 2) if measured_kw is not None else None
+            round(abs(rerun.design_load_kw.central - measured_kw), 2)
+            if measured_kw is not None
+            else None
         )
-        if abs(new_gap_w_per_k - original_gap_w_per_k) < 1e-6:
+        if abs(raw_new_gap - raw_orig_gap) < 1e-6:
             gap_change: Any = "unchanged"
-        elif new_gap_w_per_k < original_gap_w_per_k:
+        elif raw_new_gap < raw_orig_gap:
             gap_change = "shrinks"
         else:
             gap_change = "grows"

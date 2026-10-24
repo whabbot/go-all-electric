@@ -284,12 +284,14 @@ export type AnalysisBundle = {
 export type EpcSummary = {
   property_type: string
   floor_area_m2: number | null
+  storeys?: number
   age_band: string | null
   year_built: number
   wall_type: string
   glazing: string
   loft_insulation_mm: number
   floor_insulated: boolean
+  design_outdoor_temp_c?: number
   main_heating_fuel: string
   current_energy_efficiency_band: string | null
   walls: string[]
@@ -418,42 +420,52 @@ export type ConflictField =
   | 'loft_insulation_mm'
   | 'glazing'
   | 'floor_insulated'
-  | 'air_changes_per_hour'
-  | 'heating_system'
+  | 'air_change_rate'
+  | 'property_type'
+  | 'storeys'
 
 export type EvidenceSource =
   | 'boiler_plate'
   | 'gas_bill'
+  | 'fuse_cutout'
   | 'radiators'
   | 'radiator_video'
-  | 'fuse_cutout'
   | 'outdoor_space'
+  | 'quote'
   | 'epc'
-  | 'quotes'
 
 export type ProposedValue =
   | 'solid_brick'
-  | 'solid_insulated'
   | 'cavity_unfilled'
   | 'cavity_filled'
+  | 'solid_insulated'
   | 'timber_frame'
-  | 'loft_0mm'
-  | 'loft_100mm'
-  | 'loft_200mm'
-  | 'loft_270mm'
+  | '0mm'
+  | '25mm'
+  | '50mm'
+  | '100mm'
+  | '150mm'
+  | '200mm'
+  | '270mm'
   | 'single'
-  | 'double_old'
-  | 'double_post_2002'
+  | 'double_unknown_date'
+  | 'double_pre_2003'
+  | 'double_2003_onwards'
   | 'triple'
-  | 'floor_insulated_true'
-  | 'floor_insulated_false'
-  | 'ach_0_5'
-  | 'ach_1_0'
-  | 'ach_1_5'
-  | 'condensing_boiler'
-  | 'non_condensing_boiler'
+  | 'insulated'
+  | 'uninsulated'
+  | '1.0_ach'
+  | '1.5_ach'
+  | 'detached'
+  | 'semi_detached'
+  | 'end_terrace'
+  | 'mid_terrace'
+  | 'bungalow'
+  | '1_storey'
+  | '2_storeys'
+  | '3_storeys'
 
-export type EstimateDirection = 'lower' | 'higher' | 'unchanged'
+export type EstimateDirection = 'lower' | 'higher'
 
 export type ConflictStatus = 'conflicts_found' | 'no_conflict_found'
 
@@ -472,12 +484,15 @@ export type TestedConflict = {
   current_value: string
   proposed_value: ProposedValue
   expected_direction: EstimateDirection
+  direction_matches: boolean
   original_design_load_kw: Range
-  revised_design_load_kw: Range
-  original_htc_w_per_k: Range
-  revised_htc_w_per_k: Range
+  new_design_load_kw: Range
+  original_htc_w_per_k: number
+  new_htc_w_per_k: number
   original_gap_kw: number | null
-  revised_gap_kw: number | null
+  new_gap_kw: number | null
+  original_gap_w_per_k: number | null
+  new_gap_w_per_k: number | null
   gap_change: 'shrinks' | 'grows' | 'unchanged'
 }
 

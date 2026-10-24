@@ -518,3 +518,33 @@ def test_review_context_includes_all_verified_readings_and_scrubs_privacy(
         assert section in prompt
     for private in ("Synthetic Street", "ZZ1", "100000000001", "0000-1111-2222-3333-4444"):
         assert private not in prompt
+
+
+def test_unreproducible_baseline_is_refused(
+    sam_maths: MathsBundle, lookup: InMemoryDatasheetLookup
+) -> None:
+    req = request(sam_maths)
+    # Floor area in epc_record (140 m2) does not match the headline Estimate A (90 m2) within 1%.
+    req.epc_record = {"floor_area_m2": 140, "wall_type": "cavity_unfilled"}
+    reply = argon_reply(sam_maths)
+    reply.estimates_explanation = "The biggest reason is insulation the EPC missed."
+    reply.quote_reviews = []
+    reply.questions_to_ask = []
+    reply.conflict_status = ConflictStatus.CONFLICTS_FOUND
+    reply.input_conflicts = [
+        InputConflictProposal(
+            field=ConflictField.WALL_TYPE,
+            evidence_source=EvidenceSource.EPC,
+            evidence_summary="EPC assumes unfilled cavity walls.",
+            proposed_value=ProposedValue.CAVITY_FILLED,
+            expected_direction=EstimateDirection.LOWER,
+        )
+    ]
+
+    result = review(FakeGemini([reply]), lookup, req)
+    assert result.tested_conflicts == []
+    assert result.review.input_conflicts == []
+    assert result.review.conflict_status == ConflictStatus.NO_CONFLICT_FOUND
+    (conflict_log,) = [e for e in result.log if e.input == "conflicts"]
+    assert conflict_log.passed is False
+    assert "could not reproduce Estimate A" in conflict_log.action

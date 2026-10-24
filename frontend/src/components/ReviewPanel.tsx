@@ -11,8 +11,9 @@ const FIELD_LABEL: Record<ConflictField, string> = {
   loft_insulation_mm: 'Loft insulation depth',
   glazing: 'Window glazing',
   floor_insulated: 'Floor insulation',
-  air_changes_per_hour: 'Air change rate',
-  heating_system: 'Heating system',
+  air_change_rate: 'Air change rate',
+  property_type: 'Property type',
+  storeys: 'Storeys',
 }
 
 const EVIDENCE_LABEL: Record<EvidenceSource, string> = {
@@ -23,7 +24,7 @@ const EVIDENCE_LABEL: Record<EvidenceSource, string> = {
   fuse_cutout: 'Fuse cutout photo',
   outdoor_space: 'Outdoor unit spot photo',
   epc: 'EPC record',
-  quotes: 'Installer quotes',
+  quote: 'Installer quotes',
 }
 
 const VALUE_LABEL: Record<string, string> = {
@@ -32,39 +33,37 @@ const VALUE_LABEL: Record<string, string> = {
   cavity_unfilled: 'unfilled cavity walls',
   cavity_filled: 'filled cavity walls',
   timber_frame: 'timber frame',
-  loft_0mm: 'no loft insulation (0 mm)',
-  '0': 'no loft insulation (0 mm)',
-  loft_100mm: '100 mm loft insulation',
-  '100': '100 mm loft insulation',
-  loft_200mm: '200 mm loft insulation',
-  '200': '200 mm loft insulation',
-  loft_270mm: '270 mm+ loft insulation',
-  '270': '270 mm+ loft insulation',
+  '0mm': 'no loft insulation (0 mm)',
+  '25mm': '25 mm loft insulation',
+  '50mm': '50 mm loft insulation',
+  '100mm': '100 mm loft insulation',
+  '150mm': '150 mm loft insulation',
+  '200mm': '200 mm loft insulation',
+  '270mm': '270 mm+ loft insulation',
   single: 'single glazing',
-  double_old: 'older double glazing',
   double_unknown_date: 'older double glazing',
-  double_post_2002: 'post-2002 double glazing',
+  double_pre_2003: 'pre-2003 double glazing',
+  double_2003_onwards: 'post-2002 double glazing',
   triple: 'triple glazing',
-  floor_insulated_true: 'insulated floor',
-  True: 'insulated floor',
-  true: 'insulated floor',
-  floor_insulated_false: 'uninsulated floor',
-  False: 'uninsulated floor',
-  false: 'uninsulated floor',
-  ach_0_5: '0.5 air changes/hr (draught-proofed)',
-  '0.5': '0.5 air changes/hr (draught-proofed)',
-  ach_1_0: '1.0 air changes/hr (moderate)',
-  '1.0': '1.0 air changes/hr (moderate)',
-  '1': '1.0 air changes/hr (moderate)',
-  ach_1_5: '1.5 air changes/hr (draughty default)',
-  '1.5': '1.5 air changes/hr (draughty default)',
-  condensing_boiler: 'condensing boiler',
-  non_condensing_boiler: 'older non-condensing boiler',
+  insulated: 'insulated floor',
+  uninsulated: 'uninsulated floor',
+  '1.0_ach': '1.0 air changes/hr (moderate)',
+  '1.5_ach': '1.5 air changes/hr (draughty default)',
+  detached: 'detached',
+  semi_detached: 'semi-detached',
+  end_terrace: 'end-terrace',
+  mid_terrace: 'mid-terrace',
+  bungalow: 'bungalow',
+  '1_storey': '1 storey',
+  '2_storeys': '2 storeys',
+  '3_storeys': '3 storeys',
 }
 
 function formatConflictValue(field: ConflictField, value: string): string {
   if (VALUE_LABEL[value]) return VALUE_LABEL[value]
-  if (field === 'loft_insulation_mm' && /^\d+$/.test(value)) return `${value} mm loft insulation`
+  if (field === 'loft_insulation_mm' && /^\d+(mm)?$/.test(value)) {
+    return `${value.replace('mm', '')} mm loft insulation`
+  }
   return value.replaceAll('_', ' ')
 }
 
@@ -75,8 +74,8 @@ function formatGapChange(c: TestedConflict): string {
       : c.gap_change === 'grows'
         ? 'A-vs-B gap grows'
         : 'A-vs-B gap unchanged'
-  if (c.original_gap_kw != null && c.revised_gap_kw != null) {
-    return `${verb} (${c.original_gap_kw.toFixed(1)} → ${c.revised_gap_kw.toFixed(1)} kW)`
+  if (c.original_gap_kw != null && c.new_gap_kw != null) {
+    return `${verb} (${c.original_gap_kw.toFixed(1)} → ${c.new_gap_kw.toFixed(1)} kW)`
   }
   return verb
 }
@@ -177,10 +176,10 @@ export function ReviewPanel() {
                           Code re-run of Estimate A:{' '}
                           <strong>
                             {c.original_design_load_kw.central.toFixed(1)} kW →{' '}
-                            {c.revised_design_load_kw.central.toFixed(1)} kW
+                            {c.new_design_load_kw.central.toFixed(1)} kW
                           </strong>{' '}
-                          ({c.revised_design_load_kw.low.toFixed(1)}–
-                          {c.revised_design_load_kw.high.toFixed(1)} kW)
+                          ({c.new_design_load_kw.low.toFixed(1)}–
+                          {c.new_design_load_kw.high.toFixed(1)} kW)
                         </span>{' '}
                         <span className={`conflict-gap conflict-gap-${c.gap_change}`}>
                           {formatGapChange(c)}
