@@ -596,11 +596,7 @@ def test_multiple_radiator_photos_produce_separate_readings_and_spec_checks(harn
 
 
 def test_rejects_more_than_max_radiator_photos(harness) -> None:
-    nine_files = [
-        ("radiators", (f"rad-{i}.jpg", JPEG, "image/jpeg")) for i in range(9)
-    ]
-    response = client.post(
-        "/api/analysis", data={"certificate_id": CERTIFICATE}, files=nine_files
-    )
+    nine_files = [("radiators", (f"rad-{i}.jpg", JPEG, "image/jpeg")) for i in range(9)]
+    response = client.post("/api/analysis", data={"certificate_id": CERTIFICATE}, files=nine_files)
     assert response.status_code == 422
     assert "at most 8" in response.json()["detail"]

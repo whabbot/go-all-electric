@@ -408,9 +408,7 @@ def run_analysis(
     t0 = time.monotonic()
     basis = measured.design_load_kw if measured else fabric.design_load_kw
     radiator_readings = [
-        r
-        for res in rad_verified
-        if (r := _reading(res, RadiatorReading)) is not None
+        r for res in rad_verified if (r := _reading(res, RadiatorReading)) is not None
     ]
     rooms = _rooms(radiator_readings, basis.central, defaults)
     if radiator_readings and not rooms:
