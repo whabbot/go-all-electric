@@ -1,5 +1,5 @@
 import type { AnalysisBundle, Gap } from '../api'
-import { RangeValue } from './RangeValue'
+import { HeroKwStack } from './RangeValue'
 
 const MAX_KW = 12
 const SAM_QUOTE_KW = [6, 9, 12]
@@ -43,9 +43,7 @@ export function EstimateHero({ analysis, billGap }: { analysis: AnalysisBundle; 
           <p className="estimate-sub">From your gas bill &amp; degree days</p>
           {measured ? (
             <>
-              <div className="kw-display" data-hero>
-                <RangeValue range={measured.design_load_kw} unit=" kW" decimals={1} />
-              </div>
+              <HeroKwStack range={measured.design_load_kw} decimals={1} />
               <RangeBand range={measured.design_load_kw} color="var(--color-measured)" label="B" />
               {measured.caveats.length > 0 && (
                 <p className="subtle">Caveats: {measured.caveats.map((c) => c.replaceAll('_', ' ')).join(', ')}</p>
@@ -59,9 +57,7 @@ export function EstimateHero({ analysis, billGap }: { analysis: AnalysisBundle; 
         <div className="estimate-card estimate-a card">
           <h2>Estimate A — fabric</h2>
           <p className="estimate-sub">Installer-style from EPC + photos</p>
-          <div className="kw-display" data-hero>
-            <RangeValue range={fabric.design_load_kw} unit=" kW" decimals={1} />
-          </div>
+          <HeroKwStack range={fabric.design_load_kw} decimals={1} />
           <RangeBand range={fabric.design_load_kw} color="var(--color-fabric)" label="A" />
         </div>
       </div>

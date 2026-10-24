@@ -33,6 +33,25 @@ export function RangeValue({ range, unit = '', decimals = 1, className = '', mon
   )
 }
 
+/** Large central kW with range on a second line (fits cards without shrinking). */
+export function HeroKwStack({
+  range,
+  decimals = 1,
+  className = '',
+}: {
+  range: Range
+  decimals?: number
+  className?: string
+}) {
+  const fmt = (n: number) => n.toFixed(decimals)
+  return (
+    <div className={`kw-hero-stack ${className}`} data-hero>
+      <p className="kw-hero-central">{fmt(range.central)} kW</p>
+      <p className="kw-hero-range">{fmt(range.low)}–{fmt(range.high)} kW range</p>
+    </div>
+  )
+}
+
 export function ExactValue({ exact, unit = '', decimals = 0 }: { exact: Exact; unit?: string; decimals?: number }) {
   const isMoney = unit.includes('£')
   const value = isMoney ? formatGBP(exact.value) : exact.value.toFixed(decimals)

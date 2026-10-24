@@ -1,6 +1,6 @@
 import { useSession } from '../context/SessionContext'
 import { RadiatorVideoResults } from '../components/RadiatorVideoResults'
-import { ExactValue, RangeValue } from '../components/RangeValue'
+import { ExactValue, HeroKwStack } from '../components/RangeValue'
 
 export function SpecScreen() {
   const { analysis, radiatorVideoResult, placeLabel } = useSession()
@@ -18,9 +18,7 @@ export function SpecScreen() {
 
       <div className="card highlight">
         <h2>Heat pump size</h2>
-        <p className="kw-display spec-kw-display">
-          <RangeValue range={spec.size_kw} unit=" kW" decimals={0} />
-        </p>
+        <HeroKwStack range={spec.size_kw} decimals={0} className="spec-kw-display" />
         <p className="subtle">
           {fromBills
             ? 'Sized from measured load, not the fabric high estimate.'

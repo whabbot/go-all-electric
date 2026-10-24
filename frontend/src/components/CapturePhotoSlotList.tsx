@@ -130,17 +130,22 @@ export function CapturePhotoSlotList({
                       ✓ Done
                     </span>
                   )}
-                  {summary.reason ? (
-                    <span className="capture-guide-reason subtle">{summary.reason}</span>
-                  ) : null}
-                  <span className="capture-guide-meta">
-                    {summary.photoCount} · {summary.timeHint}
-                    {done === 'ok' ? ' · Ready' : done === 'warn' ? ' · Needs attention' : ''}
-                  </span>
-                  {slot.result && done !== 'empty' && (
-                    <span className="capture-slot-verdict subtle">{slot.result.summary}</span>
-                  )}
                 </button>
+                {summary.reason ? (
+                  <p className="capture-guide-reason subtle">{summary.reason}</p>
+                ) : null}
+                <p className="capture-guide-meta">
+                  {summary.photoCount} · {summary.timeHint}
+                  {done === 'ok' ? ' · Ready' : done === 'warn' ? ' · Needs attention' : ''}
+                </p>
+                {slot.result && done !== 'empty' && (
+                  <p className="capture-slot-verdict subtle">{slot.result.summary}</p>
+                )}
+                {done === 'ok' && (
+                  <p className="capture-slot-next-hint subtle" role="status">
+                    {kind === 'gas_bill' ? 'Next: add your loft photo when ready.' : 'All set for this slot.'}
+                  </p>
+                )}
                 <label className="upload-btn capture-slot-upload">
                   <input
                     ref={(el) => {

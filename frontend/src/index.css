@@ -125,7 +125,7 @@ a:hover {
   justify-content: center;
   width: 1.35rem;
   height: 1.35rem;
-  border-radius: 4px;
+  border-radius: var(--radius-btn);
   background: var(--spark);
   color: var(--ink);
   font-size: var(--text-sm);
@@ -322,7 +322,7 @@ a:hover {
 .lede {
   margin: 0 0 1rem;
   color: var(--text-muted);
-  font-size: 0.95rem;
+  font-size: var(--text-sm);
 }
 
 .subtle {
@@ -466,7 +466,7 @@ button.primary {
 
 .error {
   color: var(--color-danger);
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
 }
 
 .warning {
@@ -528,34 +528,31 @@ button.primary {
 }
 
 .capture-slot-disclosure {
-  display: grid;
-  grid-template-columns: auto 1fr auto auto;
-  grid-template-rows: auto auto auto;
-  gap: 0.15rem 0.5rem;
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
+  gap: var(--space-2);
   width: 100%;
   margin: 0;
-  padding: 0;
+  padding: 0 var(--space-1);
   border: none;
   background: transparent;
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
-  min-height: 44px;
+  min-height: 52px;
+  max-height: 52px;
 }
 
 .capture-slot-chevron {
-  grid-column: 1;
-  grid-row: 1 / span 3;
-  align-self: center;
+  flex-shrink: 0;
   width: 0.55rem;
   height: 0.55rem;
   border-right: 2px solid var(--ink-muted);
   border-bottom: 2px solid var(--ink-muted);
   transform: rotate(-45deg);
   transition: transform 0.15s ease;
-  margin-right: 0.15rem;
 }
 
 .capture-slot-accordion--open .capture-slot-chevron {
@@ -563,15 +560,12 @@ button.primary {
 }
 
 .capture-slot-disclosure .capture-guide-label {
-  grid-column: 2;
-}
-
-.capture-slot-disclosure .capture-guide-status {
-  grid-column: 3;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 700;
 }
 
 .capture-slot-done-badge {
-  grid-column: 4;
   font-size: var(--text-sm);
   font-weight: 700;
   color: var(--color-ok);
@@ -581,15 +575,16 @@ button.primary {
 .capture-slot-disclosure:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-btn);
 }
 
-.capture-slot-disclosure .capture-guide-reason,
-.capture-slot-disclosure .capture-guide-meta,
-.capture-slot-verdict {
-  grid-column: 2 / -1;
-  font-size: var(--text-sm);
+.capture-slot-collapsed .capture-guide-reason,
+.capture-slot-collapsed .capture-guide-meta,
+.capture-slot-verdict,
+.capture-slot-next-hint {
   margin: 0;
+  font-size: var(--text-sm);
+  max-width: 68ch;
 }
 
 .capture-slot-upload {
@@ -611,7 +606,7 @@ button.primary {
 
 .video-capture-option h4 {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: var(--text-sm);
 }
 
 .capture-examples-trigger,
@@ -658,11 +653,11 @@ button.primary {
 
 .capture-why-need-privacy {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
 }
 
 .capture-item-guidance {
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
   margin: 0 0 0.5rem;
   color: var(--text);
 }
@@ -800,7 +795,8 @@ button.primary {
   justify-content: center;
   gap: var(--space-2);
   width: 100%;
-  min-height: 48px;
+  min-height: 52px;
+  max-height: 52px;
   padding: var(--space-3) var(--space-4);
   text-align: center;
   cursor: pointer;
@@ -846,7 +842,7 @@ button.primary {
   margin-top: 0.75rem;
   padding: 0.65rem;
   border-radius: 8px;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
 }
 
 .check-result.ok {
@@ -1090,7 +1086,7 @@ button.primary {
 }
 
 .verdict-banner > strong {
-  font-size: 1.1rem;
+  font-size: var(--text-lg);
   display: block;
   margin-bottom: 0.35rem;
 }
@@ -1102,12 +1098,12 @@ button.primary {
 }
 
 .estimate-card h2 {
-  font-size: 1rem;
+  font-size: var(--text-lg);
   margin: 0;
 }
 
 .estimate-sub {
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   color: var(--text-muted);
   margin: 0.2rem 0 0.75rem;
 }
@@ -1120,17 +1116,25 @@ button.primary {
   color: var(--ink);
 }
 
-.estimate-card .kw-display {
-  font-size: clamp(1.5rem, 5.2vw, 2.65rem);
-  max-width: 100%;
-  overflow-wrap: anywhere;
+.kw-hero-stack {
+  margin: var(--space-3) 0;
 }
 
-.estimate-card .range-value {
-  white-space: normal;
+.kw-hero-central {
+  margin: 0;
+  font-size: clamp(2.5rem, 10vw, 4.5rem);
+  font-weight: 700;
+  line-height: 1.05;
+  color: var(--ink);
 }
 
-.spec-kw-display {
+.kw-hero-range {
+  margin: 0.25rem 0 0;
+  font-size: var(--text-base);
+  color: var(--ink-muted);
+}
+
+.spec-kw-display .kw-hero-central {
   color: var(--color-measured);
 }
 
@@ -1250,7 +1254,7 @@ button.primary {
   background: var(--surface);
   border-left: 4px solid var(--color-accent);
   margin-bottom: 1rem;
-  font-size: 0.95rem;
+  font-size: var(--text-sm);
 }
 
 .chart-wrap {
@@ -1310,7 +1314,7 @@ button.primary {
 }
 
 .video-capture-option h3 {
-  font-size: 0.95rem;
+  font-size: var(--text-sm);
   margin: 0 0 0.35rem;
 }
 
@@ -1371,7 +1375,7 @@ button.primary {
   padding: 0.65rem;
   margin-bottom: 0.5rem;
   border-radius: 8px;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
 }
 
 .flag-red {
@@ -1406,14 +1410,41 @@ button.primary {
   padding-left: 1rem;
 }
 
+.plan-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+}
+
+.plan-legend li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.plan-legend .plan-marker {
+  margin: 0;
+  position: static;
+}
+
 .plan-marker {
   width: 10px;
   height: 10px;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: var(--border);
   margin-top: 0.35rem;
   flex-shrink: 0;
   margin-left: -1.35rem;
+}
+
+.plan-ok .plan-marker,
+.plan-marker.plan-ok {
+  background: var(--color-ok);
 }
 
 .plan-current .plan-marker {
@@ -1435,9 +1466,37 @@ button.primary {
   margin: 0.15rem 0 0.5rem;
 }
 
+.plan-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.plan-legend li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.plan-legend .plan-marker {
+  margin: 0;
+  position: static;
+}
+
+.plan-ok .plan-marker,
+.plan-marker.plan-ok {
+  background: var(--brand);
+}
+
 .plan-headline {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: var(--text-base);
+  font-weight: 600;
 }
 
 .advice-quote {
@@ -1447,6 +1506,13 @@ button.primary {
   text-align: center;
   border: none;
   padding: 0;
+}
+
+@media (max-width: 1023px) {
+  .cost-screen .card,
+  .spec-screen .card {
+    padding: var(--space-3);
+  }
 }
 
 @media (min-width: 480px) {
@@ -1806,7 +1872,7 @@ button.primary {
 .pack-models {
   margin: 0;
   padding-left: 1.1rem;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
 }
 
 .link-btn {
@@ -1937,6 +2003,7 @@ button.primary {
   background: var(--ink);
   transform: translateX(-50%);
   z-index: 2;
+  border-radius: 0;
 }
 
 .shared-kw-quote-tick-line--end {
@@ -2001,8 +2068,40 @@ button.primary {
     max-width: 68ch;
   }
 
-  .estimate-card .kw-display {
-    font-size: clamp(2rem, 3.2vw, 2.75rem);
+  .kw-hero-central {
+    font-size: clamp(3.5rem, 5vw, 4.5rem);
+  }
+
+  .subtle,
+  .plan-order-reason,
+  .plan-headline,
+  .capture-checklist-intro,
+  .capture-slot-collapsed .capture-guide-reason,
+  .capture-slot-collapsed .capture-guide-meta,
+  .flag .evidence,
+  .app-footer small,
+  .cost-screen .card .subtle,
+  .quote-card .subtle {
+    font-size: var(--text-base);
+  }
+
+  .plan-headline {
+    font-size: var(--text-lg);
+  }
+
+  .screen .card p,
+  .screen .card li,
+  .reasons-block p,
+  .quote-results p,
+  .plan-steps p,
+  .verification-log {
+    max-width: 68ch;
+  }
+
+  .log-step,
+  .log-model,
+  .log-counts {
+    font-size: var(--text-sm);
   }
 
   .app-main {

@@ -86,13 +86,14 @@ export function CostScreen() {
               <ReferenceLine
                 x={breakEven}
                 stroke="var(--color-fabric)"
-                strokeWidth={2}
-                strokeDasharray="4 4"
+                strokeWidth={3}
+                strokeDasharray="6 4"
                 label={{
-                  value: `Break-even ~${breakEven.toFixed(0)} °C`,
-                  position: 'insideTopRight',
-                  fill: 'var(--ink)',
-                  fontSize: 14,
+                  value: `Break-even ${breakEven.toFixed(0)} °C`,
+                  position: 'top',
+                  fill: 'var(--color-fabric)',
+                  fontSize: 16,
+                  fontWeight: 600,
                 }}
               />
               <Bar dataKey="savingCentral" radius={[4, 4, 0, 0]}>

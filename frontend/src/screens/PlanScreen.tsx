@@ -14,10 +14,25 @@ function PlanView({ plan }: { plan: AllElectricPlan }) {
       <h1>Your all-electric plan</h1>
       <p className="lede">Supply first, then heat pump and grant, solar, then EV — one sequenced path.</p>
 
+      <ul className="plan-legend" aria-label="Plan step markers">
+        <li><span className="plan-marker plan-flagged" aria-hidden="true" /> Action needed</li>
+        <li><span className="plan-marker plan-current" aria-hidden="true" /> Current focus</li>
+        <li><span className="plan-marker plan-ok" aria-hidden="true" /> Ready / later</li>
+      </ul>
+
       <ol className="plan-steps">
         {plan.steps.map((step) => (
           <li key={step.id} className={`plan-step ${stepClass(step)}`}>
-            <span className="plan-marker" />
+            <span
+              className="plan-marker"
+              aria-label={
+                step.status === 'flagged'
+                  ? 'Action needed'
+                  : step.id === 'heat_pump'
+                    ? 'Current focus'
+                    : 'Ready or later step'
+              }
+            />
             <div>
               <h2>{step.title}</h2>
               <p className="plan-order-reason">{step.order_reason}</p>

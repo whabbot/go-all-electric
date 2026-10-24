@@ -55,6 +55,7 @@ export function FlowNav({ brand }: Props) {
                   aria-current={current ? 'step' : undefined}
                 >
                   {step.label}
+                  {isStepOptional(step.path, flowSession) ? ' (opt)' : ''}
                 </Link>
               </li>
             )
