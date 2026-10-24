@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, isMockMode } from '../api'
 import { ImageCoverUp } from '../components/ImageCoverUp'
 import { RadiatorVideoResults } from '../components/RadiatorVideoResults'
 import { useSession } from '../context/SessionContext'
 import { prepareImageFile } from '../lib/imagePrepare'
+import { CaptureExamplesDialog } from '../components/CaptureExamplesDialog'
+import { CaptureGuideSummary } from '../components/CaptureGuideSummary'
+import { CAPTURE_GUIDANCE } from '../lib/captureGuide'
 import { coverUpGuidance, coverUpTitle } from '../lib/photoGuidance'
 import type { PhotoKind } from '../api'
 
@@ -31,6 +34,8 @@ export function CaptureScreen() {
   const [photoErrors, setPhotoErrors] = useState<Record<string, string>>({})
   const [prepareError, setPrepareError] = useState<string | null>(null)
   const [videoError, setVideoError] = useState<string | null>(null)
+  const [examplesKind, setExamplesKind] = useState<PhotoKind | null>(null)
+  const examplesTriggerRef = useRef<HTMLButtonElement | null>(null)
 
   useEffect(() => {
     return () => {
@@ -120,12 +125,31 @@ export function CaptureScreen() {
         Use your camera or upload. Each photo is stripped of hidden metadata, you redact anything
         identifying, then we check it.
       </p>
+
+      <CaptureGuideSummary />
+
       {prepareError && <p className="warning">{prepareError}</p>}
 
       <div className="photo-grid">
         {photos.map((slot) => (
           <div key={slot.kind} className="photo-slot card">
-            <h2>{slot.label}</h2>
+            <div className="photo-slot-header">
+              <h2>{slot.label}</h2>
+              <button
+                type="button"
+                className="btn capture-examples-trigger"
+                onClick={(e) => {
+                  examplesTriggerRef.current = e.currentTarget
+                  setExamplesKind(slot.kind)
+                }}
+              >
+                See examples
+              </button>
+            </div>
+            <p className="capture-item-guidance">{CAPTURE_GUIDANCE[slot.kind].oneLine}</p>
+            {CAPTURE_GUIDANCE[slot.kind].detail && (
+              <p className="subtle capture-item-detail">{CAPTURE_GUIDANCE[slot.kind].detail}</p>
+            )}
             <label className="upload-btn">
               <input
                 type="file"
@@ -192,6 +216,15 @@ export function CaptureScreen() {
           </div>
         ))}
       </div>
+
+      {examplesKind && (
+        <CaptureExamplesDialog
+          kind={examplesKind}
+          title={photos.find((p) => p.kind === examplesKind)?.label ?? examplesKind}
+          returnFocusTo={examplesTriggerRef.current}
+          onClose={() => setExamplesKind(null)}
+        />
+      )}
 
       {pending && (
         <ImageCoverUp
