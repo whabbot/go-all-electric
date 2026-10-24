@@ -26,3 +26,8 @@ export function formatTempC(c: number): string {
 export function formatKwRange(low: number, high: number): string {
   return `${low}–${high} kW`
 }
+
+/** Low – central – high with en-GB currency formatting. */
+export function formatGBPRange(low: number, central: number, high: number, suffix = ''): string {
+  return `${formatGBP(low)}–${formatGBP(central)}–${formatGBP(high)}${suffix}`
+}

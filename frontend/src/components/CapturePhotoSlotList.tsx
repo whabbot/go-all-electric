@@ -153,10 +153,10 @@ export function CapturePhotoSlotList({
                     onChange={(e) => void onFiles(kind, e.target.files, e.currentTarget)}
                   />
                   {isChecking ? (
-                    <>
+                    <span role="status">
                       <span className="inline-spinner" aria-hidden="true" />
                       Checking photo…
-                    </>
+                    </span>
                   ) : (
                     'Take photo or upload'
                   )}

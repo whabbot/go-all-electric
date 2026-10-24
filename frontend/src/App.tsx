@@ -23,11 +23,14 @@ function App() {
             <FlowStepGate>
               <div className="app-shell">
                 <header className="app-header">
-                  <p className="brand-wordmark">
-                    <span className="brand-bolt" aria-hidden="true">⚡</span>
-                    Go All-Electric
-                  </p>
-                  <FlowNav />
+                  <FlowNav
+                    brand={
+                      <p className="brand-wordmark">
+                        <span className="brand-bolt" aria-hidden="true">⚡</span>
+                        Go All-Electric
+                      </p>
+                    }
+                  />
                 </header>
                 <main className="app-main">
                   <Routes>

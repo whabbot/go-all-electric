@@ -213,7 +213,7 @@ export function QuotesScreen() {
 
   return (
     <section className="screen quotes-screen">
-      <h1>Quote checker</h1>
+      <h1>Quotes</h1>
       {placeLabel && <p className="place-label">{placeLabel}</p>}
       <div className="quotes-upload-header">
         <p className="lede">
@@ -253,19 +253,33 @@ export function QuotesScreen() {
         </ul>
       )}
 
-      <button
-        type="button"
-        className="btn primary"
-        disabled={!allPagesReady || loading}
-        onClick={() => void runCheck(quoteGroups)}
-      >
-        {loading ? 'Checking…' : 'Check quotes'}
-      </button>
-
-      {isMockMode() && (
-        <button type="button" className="btn" disabled={loading} onClick={loadSamDemoQuotes}>
-          Load Sam&apos;s three quotes (demo)
+      <div className="btn-row">
+        <button
+          type="button"
+          className="btn primary"
+          disabled={!allPagesReady || loading}
+          onClick={() => void runCheck(quoteGroups)}
+        >
+          {loading ? 'Checking…' : 'Check quotes'}
         </button>
+
+        {isMockMode() && (
+          <button type="button" className="btn" disabled={loading} onClick={loadSamDemoQuotes}>
+            Load Sam&apos;s three quotes (demo)
+          </button>
+        )}
+      </div>
+
+      {loading && (
+        <div className="quote-check-loading" role="status" aria-live="polite">
+          <span className="inline-spinner" aria-hidden="true" />
+          Checking your quotes against your target size…
+          <ul className="quote-skeleton-list">
+            {quoteGroups.map((g) => (
+              <li key={g.quoteName} className="card quote-skeleton-card" aria-hidden="true" />
+            ))}
+          </ul>
+        </div>
       )}
 
       {current && (
@@ -316,7 +330,10 @@ export function QuotesScreen() {
               <ul className="flags">
                 {q.flags.map((f, i) => (
                   <li key={i} className={`flag flag-${f.severity}`}>
-                    <strong>{f.message}</strong>
+                    <strong>
+                      {f.severity === 'red' ? 'Issue: ' : f.severity === 'amber' ? 'Caution: ' : 'Info: '}
+                      {f.message}
+                    </strong>
                     <span className="evidence">{f.evidence}</span>
                   </li>
                 ))}

@@ -1,10 +1,16 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { FLOW_STEPS } from '../lib/flow'
+import { FLOW_STEPS, isStepOptional } from '../lib/flow'
 import { useFlow } from '../context/FlowContext'
+import { useSession } from '../context/SessionContext'
 
-export function FlowNav() {
-  const { currentIndex, furthestIndex } = useFlow()
+type Props = {
+  brand: ReactNode
+}
+
+export function FlowNav({ brand }: Props) {
+  const { currentPath, currentIndex, furthestIndex } = useFlow()
+  const session = useSession()
   const activeRef = useRef<HTMLAnchorElement | null>(null)
 
   useEffect(() => {
@@ -15,20 +21,31 @@ export function FlowNav() {
   }, [currentIndex])
 
   const progressPct = ((currentIndex + 1) / FLOW_STEPS.length) * 100
+  const flowSession = {
+    address: session.address,
+    analysis: session.analysis,
+    samSampleLoaded: session.samSampleLoaded,
+  }
+  const stepOptional = isStepOptional(currentPath, flowSession)
 
   return (
     <nav className="flow-nav" aria-label="Guided flow">
+      <div className="app-header-top">
+        {brand}
+        <p className="flow-progress" aria-live="polite">
+          Step {currentIndex + 1}/{FLOW_STEPS.length}: {FLOW_STEPS[currentIndex].label}
+          {stepOptional ? ' (optional)' : ''}
+        </p>
+      </div>
       <div className="flow-progress-track" aria-hidden="true">
         <span style={{ width: `${progressPct}%` }} />
       </div>
-      <p className="flow-progress" aria-live="polite">
-        Step {currentIndex + 1} of {FLOW_STEPS.length}: {FLOW_STEPS[currentIndex].label}
-      </p>
       <ol className="flow-steps">
         {FLOW_STEPS.map((step, index) => {
           const reachable = index <= furthestIndex
           const current = index === currentIndex
           const done = reachable && index < currentIndex
+          const optional = isStepOptional(step.path, flowSession)
           if (reachable) {
             return (
               <li key={step.path}>
@@ -39,13 +56,14 @@ export function FlowNav() {
                   aria-current={current ? 'step' : undefined}
                 >
                   {step.label}
+                  {optional ? <span className="flow-step-opt"> · opt</span> : null}
                 </Link>
               </li>
             )
           }
           return (
             <li key={step.path}>
-              <span className="flow-step-upcoming" aria-disabled="true">
+              <span className="flow-step-upcoming" aria-disabled="true" title="Complete earlier steps first">
                 {step.label}
               </span>
             </li>

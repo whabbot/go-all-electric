@@ -155,13 +155,9 @@ function SharedKwAxis({
           }}
         />
         {quoteKw.map((kw) => (
-          <div
-            key={kw}
-            className="shared-kw-quote-tick"
-            style={{ left: `${(kw / MAX_KW) * 100}%` }}
-            title={`${kw} kW quote`}
-          >
-            <span>{kw}</span>
+          <div key={kw} className="shared-kw-quote-mark" style={{ left: `${(kw / MAX_KW) * 100}%` }}>
+            <span className="shared-kw-quote-tick" aria-hidden="true" />
+            <span className="shared-kw-quote-label">{kw}</span>
           </div>
         ))}
       </div>

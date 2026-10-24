@@ -41,7 +41,10 @@ export function VerificationLogPanel({
       <div className="log-head">
         <h3>{title}</h3>
         <p className="log-counts">
-          {entries.length} steps · <span className="log-fail-count">{failed} failed check{failed === 1 ? '' : 's'}</span>{' '}
+          {entries.length} steps ·{' '}
+          <span className={failed > 0 ? 'log-fail-count' : 'log-ok-count'}>
+            {failed} failed check{failed === 1 ? '' : 's'}
+          </span>{' '}
           · {rereads} re-read{rereads === 1 ? '' : 's'}
         </p>
       </div>

@@ -23,7 +23,7 @@ function FlowShell({ initialPath = '/' }: { initialPath?: string }) {
       <MemoryRouter initialEntries={[initialPath]}>
         <FlowProvider>
           <FlowStepGate>
-            <FlowNav />
+            <FlowNav brand={<span>Go All-Electric</span>} />
             <Routes>
               <Route path="/" element={<StartScreen />} />
               <Route path="/capture" element={<p>Capture step</p>} />
@@ -79,7 +79,7 @@ describe('FlowNav', () => {
           <FlowProvider>
             <PickHouse />
             <FlowStepGate>
-              <FlowNav />
+              <FlowNav brand={<span>Go All-Electric</span>} />
               <Routes>
                 <Route path="/" element={<StartScreen />} />
                 <Route path="/capture" element={<p>Capture step</p>} />

@@ -23,7 +23,7 @@ export function CostScreen() {
     const gap = analysis.gaps.find((g) => g.input === 'gas_bill')
     return (
       <section className="screen cost-screen">
-        <h1>Will it be cheaper?</h1>
+        <h1>Costs</h1>
         <div className="cannot-compare">
           <strong>Couldn&apos;t tell without a usable gas bill</strong>
           <p>Running costs compare against what you actually spend on gas, so we need your bill.</p>
@@ -52,7 +52,7 @@ export function CostScreen() {
 
   return (
     <section className="screen cost-screen">
-      <h1>Will it be cheaper?</h1>
+      <h1>Costs</h1>
       {placeLabel && <p className="place-label">{placeLabel}</p>}
       <p className="lede prose-measure">
         Annual saving vs gas at the price cap — every bar is a range; central value shown.
@@ -65,13 +65,13 @@ export function CostScreen() {
       <div className="cost-layout">
         <div className="chart-wrap">
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={chartData} margin={{ top: 12, right: 8, left: 4, bottom: 8 }}>
+            <BarChart data={chartData} margin={{ top: 12, right: 8, left: 28, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis dataKey="flow" tickFormatter={(v) => `${v} °C`}>
                 <Label value="Flow temperature" offset={-2} position="insideBottom" />
               </XAxis>
-              <YAxis tickFormatter={(v) => formatGBP(Number(v))}>
-                <Label value="Annual saving vs gas" angle={-90} position="insideLeft" style={{ textAnchor: 'middle' }} />
+              <YAxis tickFormatter={(v) => formatGBP(Number(v))} width={72}>
+                <Label value="Annual saving vs gas" angle={-90} position="insideLeft" offset={12} style={{ textAnchor: 'middle' }} />
               </YAxis>
               <Tooltip
                 formatter={(value, _name, item) => {
@@ -109,10 +109,10 @@ export function CostScreen() {
                 <span className="conf conf-high">known from bills</span>
               </p>
               <p>
-                Heat pump: <RangeValue range={c.heat_pump_cost_gbp} unit=" £/yr" decimals={0} />
+                Heat pump: <RangeValue range={c.heat_pump_cost_gbp} unit="/yr" money decimals={0} />
               </p>
               <p>
-                Saving: <RangeValue range={c.annual_saving_gbp} unit=" £/yr" decimals={0} />
+                Saving: <RangeValue range={c.annual_saving_gbp} unit="/yr" money decimals={0} />
               </p>
             </li>
           ))}

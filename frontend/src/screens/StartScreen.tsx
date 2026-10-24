@@ -52,7 +52,22 @@ export function StartScreen() {
           </button>
         </div>
         {error && (
-          <Alert variant="error" title="Could not find EPC records">
+          <Alert
+            variant="error"
+            title="Could not find EPC records"
+            action={
+              <>
+                <button type="button" className="btn" onClick={() => void search()}>
+                  Try again
+                </button>
+                {isMockMode() && (
+                  <button type="button" className="btn primary" onClick={loadSamSample}>
+                    Use Sam&apos;s sample
+                  </button>
+                )}
+              </>
+            }
+          >
             {error}
           </Alert>
         )}
