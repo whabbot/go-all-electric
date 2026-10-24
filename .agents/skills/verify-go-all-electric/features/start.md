@@ -54,7 +54,6 @@ Preconditions:
 - Mock search matches on the first four characters of the postcode (anything starting `N10 2` finds
   Sam's houses); under five characters returns nothing.
 - Flats are refused by design in real mode; pick a house.
-- "Load Sam's sample (demo)" leaves `N10 2AB` in the field although the page says only the district
-  is shown from here on.
+- "Load Sam's sample (demo)" clears the postcode input; only the district is shown after selection.
 - The live site has an access-code screen; local real mode does not (no `ACCESS_CODE_HASH`). Do not
   test sign-in against the deployed site.

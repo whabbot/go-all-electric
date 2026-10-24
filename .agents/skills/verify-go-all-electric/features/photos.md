@@ -74,7 +74,9 @@ Preconditions:
   `Cancel` for a single photo).
 - **Details only.** On a new card, open "Add details you know"
   (`fjs 'd.querySelectorAll(".radiator-card")[1].querySelector("summary").click()'`), pick a Type by
-  its label (`Double panel, two sets of fins`) and fill Width/Height. The summary shows "N added";
+  its label (`Double panel, two sets of fins`), then `fill Width 900 "Radiator 2"` and
+  `fill Height 600 "Radiator 2"`. Only card 2 changes; card 1’s closed fields stay empty.
+  The summary shows "N added";
   the Radiators row reads `· Ready` even with no photo.
 - **Retake one.**
   `u=$(uid textbox "Retake Radiator 1 photo 2"); chrome-devtools-axi upload @$u "$(synth retake)"`
@@ -108,8 +110,9 @@ Preconditions:
   Cards live in memory only: a Vite hot reload or page reload drops them.
 - `upload "Radiators" N` no longer works (the row has a `+ Add radiator` button, not a file
   input): add a card, then `upload "Radiator k" N`.
-- A closed "Add details you know" hides its fields from the snapshot, so `uid textbox "Width"`
-  finds the first open card's field.
+- Open the target card’s "Add details you know" before filling. `fill Width 900` uses the only
+  visible Width input; `fill Width 900 "Radiator 2"` restricts it to that card. Closed details
+  are excluded. Multiple visible matches fail instead of silently choosing another card.
 - Selects take the option's visible label with `$AX fill`, not its value (`Double panel, two sets
   of fins`, not `K2`).
 - Cropping (or undoing a crop) removes black boxes drawn before it; draw boxes after cropping.

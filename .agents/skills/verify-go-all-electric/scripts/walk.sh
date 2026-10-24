@@ -23,8 +23,9 @@ phone() {
   upload "Boiler data plate"; shot p07-redact; blackout; shot p07-redact-box
   click button "Use photo"; into '.capture-slot-accordion--checking'; shot p08-checking
   sleep 1.6; shot p09-checked
-  upload "Radiators" 3; shot p10-radiators-1of3
-  click button "Use photo"; click button "Cancel"; click button "Use photo"; sleep 1.6
+  click button "Radiators"; click button "+ Add radiator"
+  upload "Radiator 1" 3; shot p10-radiators-1of3
+  click button "Use photo"; click button "Skip this photo"; click button "Use photo"; sleep 1.6
   into '.radiator-list'; shot p11-radiators-list
   upload "Gas bill"; click button "Use photo"; sleep 1.6
   click link "Next: Estimates"; sleep 0.3; shot p12-estimates-running

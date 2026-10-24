@@ -5,11 +5,15 @@
 #   frame 390 844 /               # phone width (axi cannot resize below ~500 px, so use the iframe)
 #   desk /                        # 1280x800 top-level page (no iframe)
 #   click button "Load Sam's sample (demo)"
-#   upload "Radiators" 3          # three synthetic images into the Radiators slot's file input
+#   click button "Radiators"; click button "+ Add radiator"
+#   upload "Radiator 1" 3         # three synthetic images into this radiator card
 #   shot 01-dialog; snap 01-dialog
 #
 # Works in bash and zsh. Needs launch.sh to have run in this worktree (it sources .verify/run/env,
 # which sets GAE_URL and this worktree's own CHROME_DEVTOOLS_AXI_SESSION).
+
+# Stop command sequences at the first failed helper. Source in a dedicated verification shell.
+set -e
 
 _GAE_DRIVE_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-${(%):-%x}}")" && pwd -P)
 _GAE_WT=$(git -C "$_GAE_DRIVE_DIR" rev-parse --show-toplevel)
@@ -31,15 +35,21 @@ evidence() {
 # frame W H PATH: load the app at PATH inside a WxH iframe (/__frame.html). Clears sessionStorage
 # first (fresh session); add a 4th arg `keep` to keep it.
 frame() {
-  $AX resize 1300 950 >/dev/null 2>&1
   local keep=""; [ "${4:-}" = keep ] && keep="&keep"
-  $AX open "$GAE_URL/__frame.html?w=$1&h=$2&path=$3$keep" >/dev/null; sleep 1.5
+  $AX open "$GAE_URL/__frame.html?w=$1&h=$2&path=$3$keep" >/dev/null
+  $AX resize 1300 950 >/dev/null; sleep 1.5
 }
 # desk PATH: load the app as a normal 1280x800 page (no iframe).
-desk() { $AX resize 1280 800 >/dev/null 2>&1; $AX open "$GAE_URL$1" >/dev/null; sleep 1.5; }
+desk() { $AX open "$GAE_URL$1" >/dev/null; $AX resize 1280 800 >/dev/null; sleep 1.5; }
 
 # fjs BODY: run JS against the app; `d` is its document, `w` its window, `f` the iframe (or null).
-fjs() { $AX eval "() => { const f=document.getElementById('f'); const w=f?f.contentWindow:window, d=w.document; $1 }" | sed -n 's/^result: //p' | _gae_unquote; }
+fjs() {
+  local result raw
+  raw=$($AX eval "() => { const f=document.getElementById('f'); const w=f?f.contentWindow:window, d=w.document; $1 }" ) || return
+  result=$(printf '%s\n' "$raw" | sed -n 's/^result: //p' | _gae_unquote)
+  case "$result" in MISSING* | AMBIGUOUS*) printf '%s\n' "$result" >&2; return 1 ;; esac
+  printf '%s\n' "$result"
+}
 # axi prints results JSON-encoded (strings twice); print plain text.
 _gae_unquote() { python3 -c 'import json,sys
 s=sys.stdin.read().strip()
@@ -54,18 +64,43 @@ print(v if isinstance(v,str) else json.dumps(v))'; }
 _js() { python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$1"; }
 
 # uid ROLE NAME: the snapshot uid of the first ROLE whose accessible name starts with NAME.
-uid() { $AX snapshot 2>/dev/null | grep -m1 -F "$1 \"$2" | sed 's/.*uid=\([^ ]*\).*/\1/'; }
+uid() {
+  local snapshot u
+  snapshot=$($AX snapshot --full) || return
+  u=$(printf '%s\n' "$snapshot" | grep -m1 -F "$1 \"$2" | sed 's/.*uid=\([^ ]*\).*/\1/')
+  [ -n "$u" ] || { echo "MISSING $1 \"$2\"" >&2; return 1; }
+  printf '%s\n' "$u"
+}
 # click ROLE NAME: a real (trusted) click on that element by role and accessible name.
 click() {
-  local u; u=$(uid "$1" "$2")
-  [ -n "$u" ] || { echo "MISSING $1 \"$2\""; return 1; }
+  local u; u=$(uid "$1" "$2") || return
   $AX click "@$u" >/dev/null && sleep 0.6 && echo "clicked $1 \"$2\""
 }
 # tap TEXT: JS click on the first visible button/link/label whose text is (or contains) TEXT.
 # Use when the accessible name is ambiguous; prefer `click`.
-tap() { local t; t=$(_js "$1"); fjs "const t=$t; const all=[...d.querySelectorAll('button,a,label,[role=button]')].filter(e=>e.offsetParent); const el=all.find(e=>e.textContent.trim()===t)||all.find(e=>e.textContent.includes(t)); if(!el) return 'MISSING '+t; el.click(); return 'ok'"; sleep 0.6; }
-# fill LABEL VALUE: set an input by its <label> text (React-safe). Synthetic/sample values only.
-fill() { local l v; l=$(_js "$1"); v=$(_js "$2"); fjs "const l=[...d.querySelectorAll('label')].find(x=>x.textContent.trim()===$l); const i=l&&(l.control||d.getElementById(l.htmlFor)); if(!i) return 'MISSING '+$l; Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype,'value').set.call(i,$v); i.dispatchEvent(new Event('input',{bubbles:true})); return 'ok'"; }
+tap() { local t; t=$(_js "$1"); fjs "const t=$t; const all=[...d.querySelectorAll('button,a,label,[role=button]')].filter(e=>e.offsetParent); const el=all.find(e=>e.textContent.trim()===t)||all.find(e=>e.textContent.includes(t)); if(!el) return 'MISSING '+t; el.click(); return 'ok'" || return; sleep 0.6; }
+# fill LABEL VALUE [SCOPE]: set a unique visible input, optionally within a card/region heading.
+# Visibility includes offscreen controls, but excludes closed details and hidden ancestors.
+fill() {
+  local l v scope result
+  l=$(_js "$1"); v=$(_js "$2"); scope=$(_js "${3:-}")
+  result=$(fjs "const label=$l, scope=$scope;
+    const visible=e=>e.checkVisibility({checkVisibilityCSS:true,checkOpacity:true}) && e.getClientRects().length>0;
+    let root=d;
+    if(scope){
+      const headings=[...d.querySelectorAll('h1,h2,h3,h4,h5,h6,[role=heading]')].filter(e=>visible(e) && (e.textContent.trim()===scope || e.textContent.trim().startsWith(scope+' ·')));
+      if(headings.length!==1) return (headings.length?'AMBIGUOUS':'MISSING')+' scope '+scope;
+      root=headings[0].closest('li,section,article,[role=region],[role=group]');
+      if(!root) return 'MISSING card/region for '+scope;
+    }
+    const inputs=[...new Set([...root.querySelectorAll('label')].filter(e=>e.textContent.trim()===label).map(e=>e.control||d.getElementById(e.htmlFor)).filter(e=>e && e.tagName==='INPUT' && root.contains(e) && visible(e) && !e.disabled && !e.readOnly))];
+    if(inputs.length!==1) return (inputs.length?'AMBIGUOUS':'MISSING')+' visible input '+label+(scope?' in '+scope:'');
+    const i=inputs[0]; i.scrollIntoView({block:'center'});
+    Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype,'value').set.call(i,$v);
+    i.dispatchEvent(new w.Event('input',{bubbles:true})); return 'ok'") || return
+  printf '%s\n' "$result"
+  [ "$result" = ok ]
+}
 # go PATH: client-side navigation that keeps in-memory state (like a link click, not a reload).
 go() { fjs "w.history.pushState({}, '', '$1'); w.dispatchEvent(new PopStateEvent('popstate')); w.scrollTo(0,0); return w.location.pathname"; sleep 0.8; }
 # where: current app path.
@@ -79,7 +114,7 @@ waitfor() {
   echo "TIMEOUT waiting for \"$1\""; return 1
 }
 # into SELECTOR: scroll the first match into view.
-into() { fjs "const el=d.querySelector($(_js "$1")); if(!el) return 'MISSING'; el.scrollIntoView({block:'center'}); return 'ok'" >/dev/null; sleep 0.3; }
+into() { fjs "const el=d.querySelector($(_js "$1")); if(!el) return 'MISSING'; el.scrollIntoView({block:'center'}); return 'ok'" >/dev/null || return; sleep 0.3; }
 # scrolly PX: scroll the app to PX from the top.
 scrolly() { fjs "w.scrollTo(0,$1); return w.scrollY" >/dev/null; sleep 0.3; }
 
@@ -97,7 +132,7 @@ upload() {
       g.fillText('SYNTHETIC TEST IMAGE '+i,120,430); g.fillText(slot,120,520);
       c.toBlob(b=>r(new File([b],'$p-'+i+'.png',{type:'image/png'})),'image/png')});
     return Promise.all(Array.from({length:$n},(_, i)=>mk(i+1))).then(fs=>{const dt=new DataTransfer(); fs.forEach(x=>dt.items.add(x));
-      inp.files=dt.files; inp.dispatchEvent(new Event('change',{bubbles:true})); return 'queued '+fs.length+' (multiple='+inp.multiple+')'})"
+      inp.files=dt.files; inp.dispatchEvent(new Event('change',{bubbles:true})); return 'queued '+fs.length+' (multiple='+inp.multiple+')'})" || return
   sleep 1.2
 }
 # coverup: one-line state of the Redact dialog ("closed", or title + "Photo i of n").
@@ -118,13 +153,18 @@ im.save(out)' "$1" "${2:-1200}" "${3:-900}" "$GAE_STATE/fixtures/$1.png" && echo
 # pick SLOT FILE: choose FILE through the slot's real file input (CDP file chooser, one file only),
 # the closest thing to a user picking from the gallery. Use `upload` for several files at once.
 pick() {
-  local u; u=$($AX snapshot 2>/dev/null | awk -v s="button \"$1" 'index($0,s){f=1} f&&/button "📷/{sub(/.*uid=/,""); sub(/ .*/,""); print; exit}')
+  local u; u=$($AX snapshot --full 2>/dev/null | awk -v s="button \"$1" 'index($0,s){f=1} f&&/button "📷/{sub(/.*uid=/,""); sub(/ .*/,""); print; exit}')
   [ -n "$u" ] || { echo "MISSING file input for slot $1"; return 1; }
   $AX upload "@$u" "$2" >/dev/null && sleep 1.2 && echo "picked $(basename "$2") for $1"
 }
 # fileinput SLOT: the slot's file input value as the browser shows it ("No file chosen" = cleared,
 # so picking the same file again will fire `change`).
-fileinput() { $AX snapshot 2>/dev/null | awk -v s="button \"$1" 'index($0,s){f=1} f&&/button "📷/{sub(/.*value=/,""); print; exit}'; }
+fileinput() {
+  local value
+  value=$($AX snapshot --full | awk -v s="button \"$1" 'index($0,s){f=1} f&&/button "📷/{sub(/.*value=/,""); print; exit}')
+  [ -n "$value" ] || { echo "MISSING file input for slot $1" >&2; return 1; }
+  printf '%s\n' "$value"
+}
 
 # drag X1 Y1 X2 Y2: drag across the Redact dialog's image, corners as fractions (0-1) of the
 # canvas. Press "Crop area" or "Black out" first to pick what the drag draws.
@@ -137,10 +177,10 @@ drag() {
       ev('pointermove',$3,$4); await tick(); ev('pointerup',$3,$4); await tick(); return 'dragged' })()"
 }
 # blackout: draw one black box over the middle of the image.
-blackout() { tap "Black out" >/dev/null; drag 0.3 0.35 0.7 0.65; }
+blackout() { tap "Black out" >/dev/null || return; drag 0.3 0.35 0.7 0.65; }
 # crop: select a central area that stays inside the image whatever its aspect, then press Crop
 # (the preview shrinks to it).
-crop() { tap "Crop area" >/dev/null; drag 0.2 0.35 0.8 0.65; tap "Crop"; }
+crop() { tap "Crop area" >/dev/null || return; drag 0.2 0.35 0.8 0.65 || return; tap "Crop"; }
 
 # shot NAME [full]: screenshot the app (the iframe in frame mode) to $EV/NAME.png.
 shot() {
@@ -148,7 +188,7 @@ shot() {
   local u
   if [ "$(fjs "return f ? 'frame' : 'page'")" = frame ]; then
     [ "${2:-}" = full ] && fjs "f.dataset.h=f.style.height; f.style.height=d.documentElement.scrollHeight+'px'; return 1" >/dev/null && sleep 0.5
-    u=$($AX snapshot 2>/dev/null | grep -m1 'Iframe' | sed 's/.*uid=\([^ ]*\).*/\1/')
+    u=$($AX snapshot --full 2>/dev/null | grep -m1 'Iframe' | sed 's/.*uid=\([^ ]*\).*/\1/')
     $AX screenshot "$EV/$1.png" --uid "@$u" >/dev/null
     [ "${2:-}" = full ] && fjs "f.style.height=f.dataset.h; return 1" >/dev/null
   else
@@ -157,7 +197,7 @@ shot() {
   echo "saved $EV/$1.png"
 }
 # snap NAME: save the ARIA snapshot (accessible names, roles, state) to $EV/NAME.aria.txt.
-snap() { mkdir -p "$EV"; $AX snapshot 2>/dev/null | sed '/^help\[/,$d' >"$EV/$1.aria.txt"; echo "saved $EV/$1.aria.txt"; }
+snap() { mkdir -p "$EV"; $AX snapshot --full 2>/dev/null | sed '/^help\[/,$d' >"$EV/$1.aria.txt"; echo "saved $EV/$1.aria.txt"; }
 # net NAME: the /api requests this run's backend served since the last `net` (or `evidence`),
 # from its access log, to $EV/NAME.api.txt, plus the browser's network list to
 # $EV/NAME.network.txt. Count the /api lines from the backend log: in frame mode the browser list
@@ -165,7 +205,7 @@ snap() { mkdir -p "$EV"; $AX snapshot 2>/dev/null | sed '/^help\[/,$d' >"$EV/$1.
 net() {
   mkdir -p "$EV"
   local mark; mark=$(cat "$EV/.apimark" 2>/dev/null || echo 0)
-  tail -n +"$((mark + 1))" "$GAE_STATE/backend.log" | grep -E '"(GET|POST|PUT|DELETE) /api/' | grep -v '/api/access' >"$EV/$1.api.txt"
+  tail -n +"$((mark + 1))" "$GAE_STATE/backend.log" | grep -E '"(GET|POST|PUT|DELETE) /api/' | grep -v '/api/access' >"$EV/$1.api.txt" || true
   wc -l <"$GAE_STATE/backend.log" | tr -d ' ' >"$EV/.apimark"
   $AX network 2>/dev/null | sed '/^help\[/,$d' >"$EV/$1.network.txt"
   echo "saved $EV/$1.api.txt ($(wc -l <"$EV/$1.api.txt" | tr -d ' ') /api requests)"; sed 's/^/  /' "$EV/$1.api.txt"
