@@ -524,8 +524,10 @@ button.primary {
   border-radius: 4px;
 }
 
+.capture-slot-disclosure .capture-guide-reason,
+.capture-slot-disclosure .capture-guide-meta,
 .capture-slot-verdict {
-  grid-column: 1 / -1;
+  grid-column: 2 / -1;
   font-size: 0.85rem;
   margin: 0;
 }

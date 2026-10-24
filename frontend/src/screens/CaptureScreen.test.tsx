@@ -91,7 +91,7 @@ describe('CaptureScreen guide', () => {
     if (!loftToggle) throw new Error('loft disclosure missing')
     await user.click(loftToggle)
 
-    expect(screen.getByRole('heading', { name: 'Loft (optional)' })).toBeInTheDocument()
+    expect(loftToggle).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText(CAPTURE_GUIDANCE.loft.oneLine)).toBeInTheDocument()
 
     const examplesTriggers = screen.getAllByRole('button', { name: 'See examples' })
