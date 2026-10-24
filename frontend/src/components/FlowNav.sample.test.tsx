@@ -25,7 +25,7 @@ describe('FlowNav sample mode', () => {
         <MemoryRouter initialEntries={['/']}>
           <FlowProvider>
             <FlowStepGate>
-              <FlowNav />
+              <FlowNav brand={<span>Go All-Electric</span>} />
               <Routes>
                 <Route path="/" element={<StartScreen />} />
               </Routes>

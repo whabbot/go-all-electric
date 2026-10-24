@@ -23,7 +23,7 @@ function FlowShell({ initialPath = '/' }: { initialPath?: string }) {
       <MemoryRouter initialEntries={[initialPath]}>
         <FlowProvider>
           <FlowStepGate>
-            <FlowNav />
+            <FlowNav brand={<span>Go All-Electric</span>} />
             <Routes>
               <Route path="/" element={<StartScreen />} />
               <Route path="/capture" element={<p>Capture step</p>} />
@@ -48,7 +48,7 @@ describe('FlowNav', () => {
 
   it('redirects a direct URL to a locked step onto the furthest reachable step', () => {
     render(<FlowShell initialPath="/pack" />)
-    expect(screen.getByRole('heading', { name: /Sam's heat pump puzzle/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /^Go All-Electric$/i })).toBeInTheDocument()
   })
 
   it('keeps session inputs when navigating back', async () => {
@@ -79,7 +79,7 @@ describe('FlowNav', () => {
           <FlowProvider>
             <PickHouse />
             <FlowStepGate>
-              <FlowNav />
+              <FlowNav brand={<span>Go All-Electric</span>} />
               <Routes>
                 <Route path="/" element={<StartScreen />} />
                 <Route path="/capture" element={<p>Capture step</p>} />

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import {
   canAdvanceFrom,
+  FLOW_STEPS,
   isStepOptional,
   nextPath,
   prevPath,
@@ -8,6 +9,10 @@ import {
 } from '../lib/flow'
 import { useFlow } from '../context/FlowContext'
 import { useSession } from '../context/SessionContext'
+
+function stepLabel(path: FlowPath): string {
+  return FLOW_STEPS.find((s) => s.path === path)?.label ?? 'Next step'
+}
 
 export function FlowStepActions() {
   const { currentPath, visited } = useFlow()
@@ -28,6 +33,9 @@ export function FlowStepActions() {
   if (optional && currentPath === '/cost') skipTarget = '/spec'
   if (optional && currentPath === '/quotes' && session.analysis?.plan) skipTarget = '/plan'
 
+  const forwardLabel =
+    currentPath === '/' ? 'Continue' : next ? `Next: ${stepLabel(next)}` : 'Next'
+
   return (
     <div className="flow-actions" aria-label="Step navigation">
       {back ? (
@@ -45,7 +53,7 @@ export function FlowStepActions() {
         )}
         {next && canNext && (
           <Link className="btn primary" to={next}>
-            {currentPath === '/' ? 'Continue' : 'Next'}
+            {forwardLabel}
           </Link>
         )}
         {!next && currentPath === '/pack' && canNext && <span className="subtle">End of flow</span>}

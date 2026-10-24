@@ -258,7 +258,7 @@ export function CaptureScreen() {
 
   return (
     <section className="screen capture-screen">
-      <h1>Capture</h1>
+      <h1>Photos</h1>
       {placeLabel ? (
         <p className="place-label">{placeLabel}</p>
       ) : (

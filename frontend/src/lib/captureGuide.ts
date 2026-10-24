@@ -92,9 +92,7 @@ export function firstCaptureSlotNeedingAttention(
 }
 
 export const CAPTURE_CHECKLIST_HEADING = "What you'll need"
-export const CAPTURE_CHECKLIST_INTRO =
-  'About 5–10 minutes total. Each photo is checked after you redact anything identifying.'
-export const CAPTURE_CHECKLIST_TOTAL = `${CAPTURE_SUMMARY_ITEMS.length} capture steps · about 5–10 min total`
+export const CAPTURE_CHECKLIST_INTRO = `${CAPTURE_SUMMARY_ITEMS.length} capture steps · about 5–10 minutes total. Each photo is checked after you redact anything identifying.`
 
 export type CaptureItemGuidance = {
   oneLine: string

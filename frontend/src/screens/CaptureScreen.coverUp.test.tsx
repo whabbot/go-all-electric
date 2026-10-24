@@ -75,8 +75,7 @@ async function openRadiatorsAndGetPhotoInput(user: ReturnType<typeof userEvent.s
     .find((el) => el.classList.contains('capture-slot-disclosure'))
   if (!toggle) throw new Error('radiators disclosure missing')
   await user.click(toggle)
-  const heading = screen.getByRole('heading', { name: 'Radiators' })
-  const slot = heading.closest('.capture-slot-accordion')
+  const slot = toggle.closest('.capture-slot-accordion')
   const input = slot?.querySelector('input[type="file"][accept="image/*"]')
   if (!input) throw new Error('radiator file input missing')
   return input as HTMLInputElement

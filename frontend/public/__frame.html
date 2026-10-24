@@ -1,0 +1,14 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>frame</title>
+<style>html,body{margin:0;background:#888}iframe{display:block;border:0;background:#fff}</style>
+<iframe id="f"></iframe>
+<script>
+  // Every capture starts from a fresh session (the app caches the analysis in sessionStorage).
+  if (!new URLSearchParams(location.search).has('keep')) sessionStorage.clear()
+  const q = new URLSearchParams(location.search)
+  const f = document.getElementById('f')
+  f.style.width = (q.get('w') || '390') + 'px'
+  f.style.height = (q.get('h') || '844') + 'px'
+  f.src = q.get('path') || '/'
+</script>

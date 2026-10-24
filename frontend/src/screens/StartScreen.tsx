@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api, isMockMode, type EpcAddress } from '../api'
+import { Alert } from '../components/Alert'
 import { useSession } from '../context/SessionContext'
 
 export function StartScreen() {
@@ -25,14 +26,13 @@ export function StartScreen() {
 
   return (
     <section className="screen start-screen">
-      <h1>Sam&apos;s heat pump puzzle</h1>
-      <p className="lede">
-        A 1930s semi in London, a gas combi, and three installer quotes: <strong>6 kW</strong>,{' '}
-        <strong>9 kW</strong>, and <strong>12 kW</strong>. Which size is right — and will a heat pump
-        actually be cheaper?
+      <h1>Go All-Electric</h1>
+      <p className="hero-tagline">
+        Plan your move off gas — heat pump, solar, and EV charging in the right order.
       </p>
-      <p className="lede subtle">
-        Your gas bills have already measured your house; we use that to check the installer&apos;s maths.
+      <p className="lede">
+        Your gas bills have already measured your house. Go All-Electric checks installer maths against
+        that real use, sizes the kit, and lays out costs — then you decide what to do next.
       </p>
 
       <div className="card">
@@ -50,7 +50,26 @@ export function StartScreen() {
             {loading ? 'Looking…' : 'Find EPC'}
           </button>
         </div>
-        {error && <p className="error">{error}</p>}
+        {error && (
+          <Alert
+            variant="error"
+            title="Could not find EPC records"
+            action={
+              <>
+                <button type="button" className="btn" onClick={() => void search()}>
+                  Try again
+                </button>
+                {isMockMode() && (
+                  <button type="button" className="btn primary" onClick={loadSamSample}>
+                    Use Sam&apos;s sample
+                  </button>
+                )}
+              </>
+            }
+          >
+            {error}
+          </Alert>
+        )}
 
         {address ? (
           <div className="selected-house">

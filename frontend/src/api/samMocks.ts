@@ -339,7 +339,7 @@ export const SAM_PLAN: AllElectricPlan = {
         'Size and flow temperature come from your house; the grant depends on your current fuel.',
       status: 'info',
       headline:
-        'Target 5-7 kW at up to 45C flow, with a BUS grant of £7,500 (Boiler Upgrade Scheme grant when replacing a gas boiler (illustrative eligibility).).',
+        'Target 5–7 kW at up to 45 °C flow, with a BUS grant of £7,500 (Boiler Upgrade Scheme — illustrative eligibility).',
     },
     {
       id: 'solar',
@@ -381,7 +381,7 @@ export const SAM_PLAN: AllElectricPlan = {
     grant_gbp: 7500,
     grant_note: 'Boiler Upgrade Scheme grant when replacing a gas boiler (illustrative eligibility).',
     message:
-      'Target 5-7 kW at up to 45C flow, with a BUS grant of £7,500 (Boiler Upgrade Scheme grant when replacing a gas boiler (illustrative eligibility).).',
+      'Target 5–7 kW at up to 45 °C flow, with a BUS grant of £7,500 (Boiler Upgrade Scheme — illustrative eligibility).',
   },
   solar: {
     status: 'ok',
@@ -711,10 +711,10 @@ export function mockReview(quoteIds: string[]): ReviewResult {
       ],
       quote_reviews: quoteIds.map((id) => ({
         quote_id: id,
-        flags: [{ severity: 'amber', message: 'Ask how the size was chosen.', evidence: 'Target size 5-7 kW.' }],
+        flags: [{ severity: 'amber', message: 'Ask how the size was chosen.', evidence: 'Target size 5–7 kW.' }],
       })),
       questions_to_ask: ['Can I see the room-by-room heat loss calculation?'],
-      summary: 'A 5-7 kW unit at 45°C or below fits what your bills show.',
+      summary: 'A 5–7 kW unit at 45 °C or below fits what your bills show.',
     },
     tested_conflicts: [
       {

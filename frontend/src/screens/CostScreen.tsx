@@ -4,6 +4,8 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  ErrorBar,
+  Label,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -12,6 +14,7 @@ import {
 } from 'recharts'
 import { useSession } from '../context/SessionContext'
 import { RangeValue } from '../components/RangeValue'
+import { formatGBP } from '../lib/format'
 
 export function CostScreen() {
   const { analysis, placeLabel } = useSession()
@@ -20,7 +23,7 @@ export function CostScreen() {
     const gap = analysis.gaps.find((g) => g.input === 'gas_bill')
     return (
       <section className="screen cost-screen">
-        <h1>Will it be cheaper?</h1>
+        <h1>Costs</h1>
         <div className="cannot-compare">
           <strong>Couldn&apos;t tell without a usable gas bill</strong>
           <p>Running costs compare against what you actually spend on gas, so we need your bill.</p>
@@ -40,59 +43,92 @@ export function CostScreen() {
     savingCentral: c.annual_saving_gbp.central,
     savingLow: c.annual_saving_gbp.low,
     savingHigh: c.annual_saving_gbp.high,
+    savingSpread: [
+      c.annual_saving_gbp.central - c.annual_saving_gbp.low,
+      c.annual_saving_gbp.high - c.annual_saving_gbp.central,
+    ] as [number, number],
     positive: c.annual_saving_gbp.central >= 0,
   }))
 
   return (
     <section className="screen cost-screen">
-      <h1>Will it be cheaper?</h1>
+      <h1>Costs</h1>
       {placeLabel && <p className="place-label">{placeLabel}</p>}
-      <p className="lede">
+      <p className="lede prose-measure">
         Annual saving vs gas at the price cap — every bar is a range; central value shown.
       </p>
 
-      <div className="break-even-callout">
+      <div className="break-even-callout prose-measure">
         Above about <strong>{breakEven.toFixed(0)} °C</strong> flow, the heat pump costs more than gas.
       </div>
 
-      <div className="chart-wrap">
-        <ResponsiveContainer width="100%" height={280}>
-          <BarChart data={chartData} margin={{ top: 12, right: 8, left: 0, bottom: 8 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-            <XAxis dataKey="flow" tickFormatter={(v) => `${v}°C`} />
-            <YAxis tickFormatter={(v) => `£${v}`} />
-            <Tooltip
-              formatter={(value) => [`£${Number(value ?? 0).toFixed(0)}`, 'Central saving']}
-              labelFormatter={(l) => `Flow ${l}°C`}
-            />
-            <ReferenceLine y={0} stroke="var(--text-muted)" />
-            <ReferenceLine x={breakEven} stroke="var(--color-accent)" strokeDasharray="4 4" label="Break-even" />
-            <Bar dataKey="savingCentral" radius={[4, 4, 0, 0]}>
-              {chartData.map((entry) => (
-                <Cell key={entry.flow} fill={entry.positive ? 'var(--color-ok)' : 'var(--color-warn)'} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      <div className="cost-layout">
+        <div className="chart-wrap">
+          <p className="chart-axis-caption">Annual saving vs gas (£/yr)</p>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={chartData} margin={{ top: 20, right: 8, left: 8, bottom: 32 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis
+                type="number"
+                dataKey="flow"
+                domain={['dataMin', 'dataMax']}
+                tickFormatter={(v) => `${v} °C`}
+              >
+                <Label value="Flow temperature" offset={8} position="insideBottom" />
+              </XAxis>
+              <YAxis tickFormatter={(v) => formatGBP(Number(v))} width={80} />
+              <Tooltip
+                formatter={(value, _name, item) => {
+                  const row = item.payload as (typeof chartData)[number]
+                  return [
+                    `${formatGBP(row.savingLow)} – ${formatGBP(row.savingHigh)} (central ${formatGBP(Number(value ?? 0))})`,
+                    'Saving range',
+                  ]
+                }}
+                labelFormatter={(l) => `Flow ${l} °C`}
+              />
+              <ReferenceLine y={0} stroke="var(--text-muted)" />
+              <ReferenceLine
+                x={breakEven}
+                stroke="var(--color-fabric)"
+                strokeWidth={3}
+                strokeDasharray="6 4"
+                label={{
+                  value: `break-even ≈ ${breakEven.toFixed(0)} °C`,
+                  position: 'top',
+                  fill: 'var(--color-fabric)',
+                  fontSize: 16,
+                  fontWeight: 600,
+                }}
+              />
+              <Bar dataKey="savingCentral" radius={[4, 4, 0, 0]}>
+                <ErrorBar dataKey="savingSpread" width={4} stroke="var(--ink)" />
+                {chartData.map((entry) => (
+                  <Cell key={entry.flow} fill={entry.positive ? 'var(--color-ok)' : 'var(--color-warn)'} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
 
-      <ul className="cost-table">
-        {costs.map((c) => (
-          <li key={c.design_flow_temp_c} className="card">
-            <h3>{c.design_flow_temp_c} °C flow</h3>
-            <p>
-              Gas: <strong>£{c.gas_cost_gbp.value.toFixed(0)}</strong>{' '}
-              <span className="conf conf-high">known from bills</span>
-            </p>
-            <p>
-              Heat pump: <RangeValue range={c.heat_pump_cost_gbp} unit=" £/yr" decimals={0} />
-            </p>
-            <p>
-              Saving: <RangeValue range={c.annual_saving_gbp} unit=" £/yr" decimals={0} />
-            </p>
-          </li>
-        ))}
-      </ul>
+        <ul className="cost-table">
+          {costs.map((c) => (
+            <li key={c.design_flow_temp_c} className="card">
+              <h3>{c.design_flow_temp_c} °C flow</h3>
+              <p>
+                Gas: <strong>{formatGBP(c.gas_cost_gbp.value)}</strong>{' '}
+                <span className="conf conf-high">known from bills</span>
+              </p>
+              <p>
+                Heat pump: <RangeValue range={c.heat_pump_cost_gbp} unit="/yr" money decimals={0} />
+              </p>
+              <p>
+                Saving: <RangeValue range={c.annual_saving_gbp} unit="/yr" money decimals={0} />
+              </p>
+            </li>
+          ))}
+        </ul>
+      </div>
 
     </section>
   )

@@ -50,19 +50,20 @@ export function PackDraft({ id, title, description, initialText, downloadFileNam
       <label className="pack-review">
         <input
           type="checkbox"
+          className="pack-review-checkbox"
           checked={reviewed}
           onChange={(e) => setReviewed(e.target.checked)}
         />
         I&apos;ve reviewed this draft
       </label>
-      <p className="cta-row pack-actions">
+      <div className="btn-row pack-actions">
         <button type="button" className="btn" disabled={!reviewed} onClick={() => void onCopy()}>
           Copy
         </button>
         <button type="button" className="btn" disabled={!reviewed} onClick={onDownload}>
           Download .txt
         </button>
-      </p>
+      </div>
       {copyNote && <p className="subtle">{copyNote}</p>}
     </article>
   )
