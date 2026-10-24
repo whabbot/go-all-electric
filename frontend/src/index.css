@@ -1286,11 +1286,72 @@ button.primary {
   border-bottom: 1px solid var(--border);
 }
 
+.radiator-photo-batch {
+  margin: var(--space-3) 0 var(--space-4);
+}
+
+.radiator-photo-batch > .file-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+}
+
+.radiator-photo-batch .radiator-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.radiator-photo-batch .radiator-list li {
+  padding: 0;
+  border: none;
+}
+
+.radiator-photo-item {
+  display: grid;
+  grid-template-columns: 6rem 1fr;
+  gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.radiator-photo-thumb {
+  width: 6rem;
+  height: 4.5rem;
+  object-fit: cover;
+  border-radius: var(--radius-btn);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.radiator-photo-body {
+  min-width: 0;
+}
+
+.radiator-photo-body .capture-slot-actions {
+  margin-top: var(--space-2);
+}
+
+.radiator-photo-body .upload-btn {
+  width: auto;
+  min-height: 44px;
+  max-height: 44px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.radiator-photo-body .upload-btn::before {
+  content: none;
+}
+
 .status-pill {
   font-size: var(--text-sm);
   text-transform: uppercase;
   padding: 0.15rem 0.4rem;
-  border-radius: 4px;
+  border-radius: var(--radius-pill);
   margin-left: 0.5rem;
 }
 
