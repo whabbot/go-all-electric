@@ -63,12 +63,20 @@ hot-reloads frontend edits; **the backend does not reload**: after editing `back
 evidence photos-multi-radiator                                 # sets $EV for this proof
 frame 390 844 /                                                # phone width, fresh session
 click button "Load Sam's sample (demo)"; click link "Continue"
-upload "Radiators" 3; coverup                                  # -> Redact before upload | Photo 1 of 3
-click button "Use photo"; click button "Cancel"; click button "Use photo"
+click button "Radiators"; click button "+ Add radiator"
+upload "Radiator 1" 3; coverup                                  # -> Redact before upload | Photo 1 of 3
+click button "Use photo"; click button "Skip this photo"; click button "Use photo"
 shot 01-radiators; snap 01-radiators; net 01
 ```
 
-`drive.sh` wraps `chrome-devtools-axi`. Helpers (all print one short line):
+`drive.sh` wraps `chrome-devtools-axi` and enables `set -e`: source it in a dedicated verification
+shell. A missing control, ambiguous fill or `waitfor` timeout returns non-zero and stops the
+remaining commands in a sequence, including commands separated by `;`. Do not wrap a whole
+sequence in `if`, `!` or `||`: shells suppress errexit there. Resolve failures before continuing.
+`uid`, `click`, file-input lookup and saved snapshots use `snapshot --full`; `waitfor` reads the
+app document's visible text directly, without snapshot truncation.
+
+Helpers (all print one short line):
 
 | Helper | Does |
 | --- | --- |
@@ -76,8 +84,8 @@ shot 01-radiators; snap 01-radiators; net 01
 | `desk PATH` | Loads the app as a plain 1280x800 page. |
 | `click ROLE NAME` | Real click on the element whose role and accessible name start with `NAME`, resolved from a fresh snapshot (works inside the iframe). Prefer this. |
 | `tap TEXT` | JS click on the first visible button/link/label with that text. Fallback for ambiguous names. |
-| `fill LABEL VALUE` | Sets a labelled input (`fill Postcode "N10 2AB"`). Sample or synthetic values only. |
-| `upload SLOT [N] [PREFIX]` | Puts `N` synthetic images into a Photos slot's file input in one pick (several files at once). `SLOT` is the slot label: `Gas bill`, `Loft`, `Boiler data plate`, `Radiators`, `Fuse cutout`, `Outdoor unit spot`. |
+| `fill LABEL VALUE [SCOPE]` | Sets one visible, editable labelled input (`fill Postcode "N10 2AB"`). Optional card/region heading: `fill Width 900 "Radiator 2"` (also matches "Radiator 2 · Hall"). Open its details first. Hidden fields are excluded; multiple visible matches fail, so use a scope. Sample or synthetic values only. |
+| `upload SLOT [N] [PREFIX]` | Puts `N` synthetic images into a Photos slot's file input in one pick (several files at once). `SLOT` is the slot label: `Gas bill`, `Loft`, `Boiler data plate`, `Radiator 1` (add its card first), `Fuse cutout`, `Outdoor unit spot`. |
 | `synth NAME` / `pick SLOT FILE` | Writes a synthetic PNG to `.verify/run/fixtures/`; `pick` chooses it through the slot's real file chooser (CDP, one file). Use `pick` to re-choose the **same file** after Cancel. |
 | `fileinput SLOT` | The slot input's value as the browser shows it: `"No file chosen"` means re-picking the same file will fire `change`. |
 | `coverup` | State of the Redact dialog: `closed`, or its title and `Photo i of n`. |
