@@ -9,15 +9,15 @@ import dataclasses
 import json
 from datetime import UTC, date, datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import BaseModel, Field, JsonValue, WithJsonSchema
 
 from gae.heatpump.costs import CostComparison
 from gae.heatpump.crosscheck import CrossCheck, ReasonCode
 from gae.heatpump.fabric import FabricEstimate
 from gae.heatpump.measured import MeasuredEstimate
-from gae.heatpump.ranges import Confidence
+from gae.heatpump.ranges import Confidence, Range
 from gae.heatpump.spec import TargetSpec
 
 
@@ -358,8 +358,234 @@ class ReviewRequest(BaseModel):
     epc_record: dict[str, JsonValue] = Field(default_factory=dict)
     boiler: BoilerPlateReading | None = None
     bill_reading: GasBillReading | None = None
+    radiators: RadiatorReading | None = None
+    radiator_video: RadiatorVideoResult | RadiatorVideoReading | None = None
+    fuse_cutout: FuseCutoutReading | None = None
+    outdoor_space: OutdoorSpaceReading | None = None
     quotes: list[QuoteInput] = Field(default_factory=list, max_length=5)
     maths: MathsBundle
+
+
+class ConflictField(StrEnum):
+    """EPC building fields and fabric-model assumptions taken by `estimate_fabric`."""
+
+    WALL_TYPE = "wall_type"
+    LOFT_INSULATION_MM = "loft_insulation_mm"
+    GLAZING = "glazing"
+    FLOOR_INSULATED = "floor_insulated"
+    AIR_CHANGE_RATE = "air_change_rate"
+    PROPERTY_TYPE = "property_type"
+    STOREYS = "storeys"
+
+
+class EvidenceSource(StrEnum):
+    """Survey inputs that may show an EPC field or fabric assumption is outdated."""
+
+    BOILER_PLATE = "boiler_plate"
+    GAS_BILL = "gas_bill"
+    FUSE_CUTOUT = "fuse_cutout"
+    RADIATORS = "radiators"
+    RADIATOR_VIDEO = "radiator_video"
+    OUTDOOR_SPACE = "outdoor_space"
+    QUOTE = "quote"
+    EPC = "epc"
+
+
+class ProposedValue(StrEnum):
+    """Closed set of corrected values across all `ConflictField` options (never free numbers)."""
+
+    # wall_type
+    SOLID_BRICK = "solid_brick"
+    CAVITY_UNFILLED = "cavity_unfilled"
+    CAVITY_FILLED = "cavity_filled"
+    SOLID_INSULATED = "solid_insulated"
+    TIMBER_FRAME = "timber_frame"
+    # loft_insulation_mm
+    LOFT_0MM = "0mm"
+    LOFT_25MM = "25mm"
+    LOFT_50MM = "50mm"
+    LOFT_100MM = "100mm"
+    LOFT_150MM = "150mm"
+    LOFT_200MM = "200mm"
+    LOFT_270MM = "270mm"
+    # glazing
+    SINGLE = "single"
+    DOUBLE_UNKNOWN_DATE = "double_unknown_date"
+    DOUBLE_PRE_2003 = "double_pre_2003"
+    DOUBLE_2003_ONWARDS = "double_2003_onwards"
+    TRIPLE = "triple"
+    # floor_insulated
+    INSULATED = "insulated"
+    UNINSULATED = "uninsulated"
+    # air_change_rate
+    ACH_1_0 = "1.0_ach"
+    ACH_1_5 = "1.5_ach"
+    # property_type
+    DETACHED = "detached"
+    SEMI_DETACHED = "semi_detached"
+    END_TERRACE = "end_terrace"
+    MID_TERRACE = "mid_terrace"
+    BUNGALOW = "bungalow"
+    # storeys
+    STOREYS_1 = "1_storey"
+    STOREYS_2 = "2_storeys"
+    STOREYS_3 = "3_storeys"
+
+
+ALLOWED_VALUES_BY_FIELD: dict[ConflictField, tuple[ProposedValue, ...]] = {
+    ConflictField.WALL_TYPE: (
+        ProposedValue.SOLID_BRICK,
+        ProposedValue.CAVITY_UNFILLED,
+        ProposedValue.CAVITY_FILLED,
+        ProposedValue.SOLID_INSULATED,
+        ProposedValue.TIMBER_FRAME,
+    ),
+    ConflictField.LOFT_INSULATION_MM: (
+        ProposedValue.LOFT_0MM,
+        ProposedValue.LOFT_25MM,
+        ProposedValue.LOFT_50MM,
+        ProposedValue.LOFT_100MM,
+        ProposedValue.LOFT_150MM,
+        ProposedValue.LOFT_200MM,
+        ProposedValue.LOFT_270MM,
+    ),
+    ConflictField.GLAZING: (
+        ProposedValue.SINGLE,
+        ProposedValue.DOUBLE_UNKNOWN_DATE,
+        ProposedValue.DOUBLE_PRE_2003,
+        ProposedValue.DOUBLE_2003_ONWARDS,
+        ProposedValue.TRIPLE,
+    ),
+    ConflictField.FLOOR_INSULATED: (
+        ProposedValue.INSULATED,
+        ProposedValue.UNINSULATED,
+    ),
+    ConflictField.AIR_CHANGE_RATE: (
+        ProposedValue.ACH_1_0,
+        ProposedValue.ACH_1_5,
+    ),
+    ConflictField.PROPERTY_TYPE: (
+        ProposedValue.DETACHED,
+        ProposedValue.SEMI_DETACHED,
+        ProposedValue.END_TERRACE,
+        ProposedValue.MID_TERRACE,
+        ProposedValue.BUNGALOW,
+    ),
+    ConflictField.STOREYS: (
+        ProposedValue.STOREYS_1,
+        ProposedValue.STOREYS_2,
+        ProposedValue.STOREYS_3,
+    ),
+}
+
+
+class EstimateDirection(StrEnum):
+    LOWER = "lower"
+    HIGHER = "higher"
+
+
+class ConflictStatus(StrEnum):
+    NO_CONFLICT_FOUND = "no_conflict_found"
+    CONFLICTS_FOUND = "conflicts_found"
+
+
+_ConflictFieldSchema = Annotated[
+    ConflictField | str,
+    WithJsonSchema(
+        {
+            "type": "string",
+            "enum": [f.value for f in ConflictField],
+            "description": "EPC field or fabric-model assumption in doubt.",
+        }
+    ),
+]
+_EvidenceSourceSchema = Annotated[
+    EvidenceSource | str,
+    WithJsonSchema(
+        {
+            "type": "string",
+            "enum": [s.value for s in EvidenceSource],
+            "description": "Provided input or photo that shows the conflict.",
+        }
+    ),
+]
+_ProposedValueSchema = Annotated[
+    ProposedValue | str,
+    WithJsonSchema(
+        {
+            "type": "string",
+            "enum": [v.value for v in ProposedValue],
+            "description": "Corrected value from the closed set for that field.",
+        }
+    ),
+]
+_EstimateDirectionSchema = Annotated[
+    EstimateDirection | str,
+    WithJsonSchema(
+        {
+            "type": "string",
+            "enum": [d.value for d in EstimateDirection],
+            "description": "Which direction this correction should move Estimate A.",
+        }
+    ),
+]
+_ConflictStatusSchema = Annotated[
+    ConflictStatus | str,
+    WithJsonSchema(
+        {
+            "type": "string",
+            "enum": [s.value for s in ConflictStatus],
+            "description": "Whether any input conflict is suspected from the evidence.",
+        }
+    ),
+]
+
+
+class InputConflictProposal(BaseModel):
+    """One suspected EPC or fabric-input conflict proposed by Argon for code to test."""
+
+    field: _ConflictFieldSchema
+    evidence_source: _EvidenceSourceSchema
+    evidence_summary: str = Field(
+        description="Plain English: what the evidence shows in words (no unverified numbers)."
+    )
+    proposed_value: _ProposedValueSchema
+    expected_direction: _EstimateDirectionSchema
+
+
+class RangePayload(BaseModel):
+    low: float
+    central: float
+    high: float
+
+    @classmethod
+    def from_range(cls, r: Range) -> RangePayload:
+        return cls(
+            low=round(r.low, 2),
+            central=round(r.central, 2),
+            high=round(r.high, 2),
+        )
+
+
+class TestedConflict(BaseModel):
+    """A proposal verified by code by re-running `estimate_fabric` with that single correction."""
+
+    field: ConflictField
+    evidence_source: EvidenceSource
+    evidence_summary: str
+    current_value: str
+    proposed_value: ProposedValue
+    expected_direction: EstimateDirection
+    direction_matches: bool
+    original_design_load_kw: RangePayload
+    new_design_load_kw: RangePayload
+    original_htc_w_per_k: float
+    new_htc_w_per_k: float
+    original_gap_kw: float | None = None
+    new_gap_kw: float | None = None
+    original_gap_w_per_k: float | None = None
+    new_gap_w_per_k: float | None = None
+    gap_change: Literal["shrinks", "grows", "unchanged"]
 
 
 class ReviewFlag(BaseModel):
@@ -380,6 +606,11 @@ class ArgonReview(BaseModel):
         description="Plain English: why Estimate A (fabric) and B (measured) differ."
     )
     cited_reason_codes: list[ReasonCode]
+    conflict_status: _ConflictStatusSchema = ConflictStatus.NO_CONFLICT_FOUND
+    input_conflicts: list[InputConflictProposal] = Field(
+        default_factory=list,
+        description="Suspected EPC or fabric-input conflicts supported by provided evidence.",
+    )
     quote_reviews: list[QuoteReview]
     questions_to_ask: list[str]
     summary: str
@@ -393,6 +624,7 @@ class StrippedClaim(BaseModel):
 
 class ReviewResult(BaseModel):
     review: ArgonReview
+    tested_conflicts: list[TestedConflict] = Field(default_factory=list)
     stripped: list[StrippedClaim]
     datasheets_used: list[str]
     model: str

@@ -201,6 +201,10 @@ def review_analysis(
         epc_record=ctx.epc.model_dump(mode="json"),
         boiler=ctx.boiler,
         bill_reading=ctx.bill,
+        radiators=ctx.radiators,
+        radiator_video=ctx.radiator_video,
+        fuse_cutout=ctx.fuse_cutout,
+        outdoor_space=ctx.outdoor_space,
         quotes=[
             QuoteInput(
                 quote_id=q.quote_id,

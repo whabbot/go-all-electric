@@ -202,9 +202,11 @@ needs a paid-tier key). Uploads are multipart, held in memory for the request an
 - `POST /api/analysis` (accepts an optional `radiator_video` alongside or instead of radiator
   photos) and `POST /api/analysis/review` run the whole survey; see
   [Run the demo locally](#run-the-demo-locally).
-- `POST /api/review` (JSON) sends photos, bill, EPC record, full matched datasheets, every quote and
-  the maths-core outputs to one Gemini 4 Argon interaction, then removes any statement whose
-  numbers do not trace back to those inputs.
+- `POST /api/review` (JSON) sends every verified reading (boiler plate, gas bill, fuse cutout,
+  radiator photo and walkthrough video, outdoor space, quotes), allowlisted EPC building fields,
+  full matched datasheets, the maths-core outputs and redacted photos to one Gemini 4 Argon
+  interaction, validates any proposed EPC input conflicts by re-running `fabric.py` in code, and
+  removes any statement whose numbers do not trace back to those inputs.
 
 `kind` is one of `boiler_plate`, `radiators`, `fuse_cutout`, `outdoor_space`, `gas_bill`.
 
@@ -256,8 +258,15 @@ in a `VITE_*` variable, because Vite bundles those into the browser build.
   in the datasheet library and within its catalogue output, quote line items add up). A failed
   check gets one more careful look; if that fails too the answer is "couldn't tell" plus what to
   photograph instead, never a guess.
-- The review explains; it does not calculate. Every number it writes must match the maths core or
-  the user's own documents, otherwise the statement is removed and listed.
+- The review explains and proposes; it does not calculate. When Estimate A and Estimate B disagree,
+  Argon reasons across all provided evidence and proposes which EPC field or fabric assumption may
+  be wrong (using closed enums of fields, evidence sources and allowed corrected values, or
+  `no_conflict_found`). Code validates each proposal, checks that the cited evidence input was
+  actually provided in this run, and re-runs `fabric.py` with that single correction applied to
+  report the revised Estimate A and whether the A-vs-B gap shrinks, grows or is unchanged (headline
+  estimates stay untouched; tested what-ifs can be confirmed or dismissed in session state only).
+  Every number Argon writes in free text must match the maths core or the user's own documents,
+  otherwise the statement is removed and listed.
 - Answers are ranges with stated caveats, never a single confident number. Where the two estimates
   disagree, the app says why instead of averaging them.
 - When data is missing (no summer bills, no efficiency on the data plate), the maths falls back to
@@ -267,7 +276,7 @@ in a `VITE_*` variable, because Vite bundles those into the browser build.
 
 | Source | Use | Status |
 | --- | --- | --- |
-| Gemini 4 Argon (`gemini-4-argon`) via the Interactions API, `google-genai>=2.3.0` | Reads gas bills and installer quotes (`thinking_level` medium); watches radiator walkthrough videos (`thinking_level` high, verified in code with one re-read and photo requests for uncertain radiators); every re-read after a failed code check (high); one-context review of all evidence (high) | Built |
+| Gemini 4 Argon (`gemini-4-argon`) via the Interactions API, `google-genai>=2.3.0` | Reads gas bills and installer quotes (`thinking_level` medium); watches radiator walkthrough videos (`thinking_level` high, verified in code with one re-read and photo requests for uncertain radiators); every re-read after a failed code check (high); one-context review of all evidence with closed-enum EPC conflict proposals verified by re-running `fabric.py` in code (high); drafts per-quote installer emails with number-trace verification and deterministic template fallback (medium) | Built |
 | Gemini 3.8 Flash (`gemini-3.8-flash`) via the Interactions API | Instant photo check on upload (`thinking_level` low, about 3-4 s); first read of data plates, radiators, fuse cutouts and outdoor space (medium) | Built |
 | [Get energy performance of buildings data](https://get-energy-performance-data.communities.gov.uk/guidance/energy-certificate-data-apis) (MHCLG, England/Wales) | Latest EPC per matching address, floor area, dwelling form, age band, fabric and heating descriptions | Built; bearer token authentication |
 | [postcodes.io](https://postcodes.io/docs/api/lookup-postcode/) | Postcode centroid for weather requests; no exact home coordinates stored | Built; no key |

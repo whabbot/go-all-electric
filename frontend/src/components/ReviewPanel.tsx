@@ -1,9 +1,84 @@
 import { useEffect, useState } from 'react'
+import type { ConflictField, EvidenceSource, TestedConflict } from '../api'
 import { useSession } from '../context/SessionContext'
 import { VerificationLogPanel } from './VerificationLog'
 
 /** Gemini 4 Argon at high thinking takes 1.5-2 minutes for the whole context. */
 const EXPECTED_MS = 105_000
+
+const FIELD_LABEL: Record<ConflictField, string> = {
+  wall_type: 'Wall insulation',
+  loft_insulation_mm: 'Loft insulation depth',
+  glazing: 'Window glazing',
+  floor_insulated: 'Floor insulation',
+  air_change_rate: 'Air change rate',
+  property_type: 'Property type',
+  storeys: 'Storeys',
+}
+
+const EVIDENCE_LABEL: Record<EvidenceSource, string> = {
+  boiler_plate: 'Boiler data plate photo',
+  gas_bill: 'Gas bill',
+  radiators: 'Radiator photo',
+  radiator_video: 'Radiator walkthrough video',
+  fuse_cutout: 'Fuse cutout photo',
+  outdoor_space: 'Outdoor unit spot photo',
+  epc: 'EPC record',
+  quote: 'Installer quotes',
+}
+
+const VALUE_LABEL: Record<string, string> = {
+  solid_brick: 'uninsulated solid brick',
+  solid_insulated: 'insulated solid walls',
+  cavity_unfilled: 'unfilled cavity walls',
+  cavity_filled: 'filled cavity walls',
+  timber_frame: 'timber frame',
+  '0mm': 'no loft insulation (0 mm)',
+  '25mm': '25 mm loft insulation',
+  '50mm': '50 mm loft insulation',
+  '100mm': '100 mm loft insulation',
+  '150mm': '150 mm loft insulation',
+  '200mm': '200 mm loft insulation',
+  '270mm': '270 mm+ loft insulation',
+  single: 'single glazing',
+  double_unknown_date: 'older double glazing',
+  double_pre_2003: 'pre-2003 double glazing',
+  double_2003_onwards: 'post-2002 double glazing',
+  triple: 'triple glazing',
+  insulated: 'insulated floor',
+  uninsulated: 'uninsulated floor',
+  '1.0_ach': '1.0 air changes/hr (moderate)',
+  '1.5_ach': '1.5 air changes/hr (draughty default)',
+  detached: 'detached',
+  semi_detached: 'semi-detached',
+  end_terrace: 'end-terrace',
+  mid_terrace: 'mid-terrace',
+  bungalow: 'bungalow',
+  '1_storey': '1 storey',
+  '2_storeys': '2 storeys',
+  '3_storeys': '3 storeys',
+}
+
+function formatConflictValue(field: ConflictField, value: string): string {
+  if (VALUE_LABEL[value]) return VALUE_LABEL[value]
+  if (field === 'loft_insulation_mm' && /^\d+(mm)?$/.test(value)) {
+    return `${value.replace('mm', '')} mm loft insulation`
+  }
+  return value.replaceAll('_', ' ')
+}
+
+function formatGapChange(c: TestedConflict): string {
+  const verb =
+    c.gap_change === 'shrinks'
+      ? 'A-vs-B gap shrinks'
+      : c.gap_change === 'grows'
+        ? 'A-vs-B gap grows'
+        : 'A-vs-B gap unchanged'
+  if (c.original_gap_kw != null && c.new_gap_kw != null) {
+    return `${verb} (${c.original_gap_kw.toFixed(1)} → ${c.new_gap_kw.toFixed(1)} kW)`
+  }
+  return verb
+}
 
 function ElapsedBar({ startedAt }: { startedAt: number }) {
   const [now, setNow] = useState(() => Date.now())
@@ -34,9 +109,10 @@ function ElapsedBar({ startedAt }: { startedAt: number }) {
 }
 
 export function ReviewPanel() {
-  const { analysis, review, startReview, quotes } = useSession()
+  const { analysis, review, startReview, quotes, conflictDecisions, setConflictDecision } = useSession()
   if (!analysis) return null
   const checked = quotes.filter((q) => q.result).length
+  const testedConflicts = review.status === 'done' ? (review.result.tested_conflicts ?? []) : []
 
   return (
     <section className="card review-panel">
@@ -44,8 +120,8 @@ export function ReviewPanel() {
       <p className="subtle">
         Gemini 4 Argon reads every photo, the bill, the EPC building fields, matched datasheets,{' '}
         {checked > 0 ? `${checked} quote${checked === 1 ? '' : 's'}` : 'any checked quotes'} and our maths together,
-        and explains them. It never sees your address. It doesn&apos;t calculate: any sentence with a number we
-        can&apos;t trace is removed and listed below.
+        and proposes which EPC input might be wrong so code can test it. It never sees your address. It doesn&apos;t
+        calculate: any sentence with a number we can&apos;t trace is removed and listed below.
       </p>
 
       {review.status === 'idle' && (
@@ -69,6 +145,85 @@ export function ReviewPanel() {
           </p>
           <h3>Why the estimates differ</h3>
           <p>{review.result.review.estimates_explanation}</p>
+          {testedConflicts.length > 0 && (
+            <div className="conflict-section">
+              <h3>What if the EPC is wrong here?</h3>
+              <p className="subtle">
+                Gemini proposed these EPC conflicts from your evidence; code re-ran Estimate A on each one. Headline
+                estimates stay unchanged.
+              </p>
+              <ul className="conflict-list">
+                {testedConflicts.map((c) => {
+                  const key = `${c.field}:${c.proposed_value}`
+                  const decision = conflictDecisions[key] ?? null
+                  return (
+                    <li
+                      key={key}
+                      className={`conflict-card${decision ? ` conflict-${decision}` : ''}`}
+                    >
+                      <div className="conflict-head">
+                        <strong>
+                          {FIELD_LABEL[c.field]}: {formatConflictValue(c.field, c.current_value)} →{' '}
+                          {formatConflictValue(c.field, c.proposed_value)}
+                        </strong>
+                        <span className="conflict-source">
+                          Evidence: {EVIDENCE_LABEL[c.evidence_source]}
+                        </span>
+                      </div>
+                      <p className="conflict-summary">{c.evidence_summary}</p>
+                      <p className="conflict-rerun">
+                        <span>
+                          Code re-run of Estimate A:{' '}
+                          <strong>
+                            {c.original_design_load_kw.central.toFixed(1)} kW →{' '}
+                            {c.new_design_load_kw.central.toFixed(1)} kW
+                          </strong>{' '}
+                          ({c.new_design_load_kw.low.toFixed(1)}–
+                          {c.new_design_load_kw.high.toFixed(1)} kW)
+                        </span>{' '}
+                        <span className={`conflict-gap conflict-gap-${c.gap_change}`}>
+                          {formatGapChange(c)}
+                        </span>
+                      </p>
+                      <div className="conflict-actions">
+                        <button
+                          type="button"
+                          className={`btn conflict-btn${decision === 'confirmed' ? ' primary' : ''}`}
+                          aria-pressed={decision === 'confirmed'}
+                          onClick={() =>
+                            setConflictDecision(key, decision === 'confirmed' ? null : 'confirmed')
+                          }
+                        >
+                          {decision === 'confirmed' ? 'Confirmed' : 'Confirm'}
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn conflict-btn${decision === 'dismissed' ? ' active' : ''}`}
+                          aria-pressed={decision === 'dismissed'}
+                          onClick={() =>
+                            setConflictDecision(key, decision === 'dismissed' ? null : 'dismissed')
+                          }
+                        >
+                          {decision === 'dismissed' ? 'Dismissed' : 'Dismiss'}
+                        </button>
+                        {decision && (
+                          <span className="subtle conflict-decision-note">
+                            {decision === 'confirmed'
+                              ? 'Confirmed for this session only.'
+                              : 'Dismissed for this session only.'}
+                          </span>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+          {testedConflicts.length === 0 &&
+            review.result.review.conflict_status === 'no_conflict_found' && (
+              <p className="subtle">No EPC input conflicts found across your photos and readings.</p>
+            )}
           {review.result.review.summary && (
             <>
               <h3>Summary</h3>

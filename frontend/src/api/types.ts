@@ -284,12 +284,14 @@ export type AnalysisBundle = {
 export type EpcSummary = {
   property_type: string
   floor_area_m2: number | null
+  storeys?: number
   age_band: string | null
   year_built: number
   wall_type: string
   glazing: string
   loft_insulation_mm: number
   floor_insulated: boolean
+  design_outdoor_temp_c?: number
   main_heating_fuel: string
   current_energy_efficiency_band: string | null
   walls: string[]
@@ -413,9 +415,92 @@ export type ReviewFlag = {
   evidence: string
 }
 
+export type ConflictField =
+  | 'wall_type'
+  | 'loft_insulation_mm'
+  | 'glazing'
+  | 'floor_insulated'
+  | 'air_change_rate'
+  | 'property_type'
+  | 'storeys'
+
+export type EvidenceSource =
+  | 'boiler_plate'
+  | 'gas_bill'
+  | 'fuse_cutout'
+  | 'radiators'
+  | 'radiator_video'
+  | 'outdoor_space'
+  | 'quote'
+  | 'epc'
+
+export type ProposedValue =
+  | 'solid_brick'
+  | 'cavity_unfilled'
+  | 'cavity_filled'
+  | 'solid_insulated'
+  | 'timber_frame'
+  | '0mm'
+  | '25mm'
+  | '50mm'
+  | '100mm'
+  | '150mm'
+  | '200mm'
+  | '270mm'
+  | 'single'
+  | 'double_unknown_date'
+  | 'double_pre_2003'
+  | 'double_2003_onwards'
+  | 'triple'
+  | 'insulated'
+  | 'uninsulated'
+  | '1.0_ach'
+  | '1.5_ach'
+  | 'detached'
+  | 'semi_detached'
+  | 'end_terrace'
+  | 'mid_terrace'
+  | 'bungalow'
+  | '1_storey'
+  | '2_storeys'
+  | '3_storeys'
+
+export type EstimateDirection = 'lower' | 'higher'
+
+export type ConflictStatus = 'conflicts_found' | 'no_conflict_found'
+
+export type InputConflictProposal = {
+  field: ConflictField
+  evidence_source: EvidenceSource
+  evidence_summary: string
+  proposed_value: ProposedValue
+  expected_direction: EstimateDirection
+}
+
+export type TestedConflict = {
+  field: ConflictField
+  evidence_source: EvidenceSource
+  evidence_summary: string
+  current_value: string
+  proposed_value: ProposedValue
+  expected_direction: EstimateDirection
+  direction_matches: boolean
+  original_design_load_kw: Range
+  new_design_load_kw: Range
+  original_htc_w_per_k: number
+  new_htc_w_per_k: number
+  original_gap_kw: number | null
+  new_gap_kw: number | null
+  original_gap_w_per_k: number | null
+  new_gap_w_per_k: number | null
+  gap_change: 'shrinks' | 'grows' | 'unchanged'
+}
+
 export type ArgonReview = {
   estimates_explanation: string
   cited_reason_codes: ReasonCode[]
+  conflict_status?: ConflictStatus
+  input_conflicts?: InputConflictProposal[]
   quote_reviews: { quote_id: string; flags: ReviewFlag[] }[]
   questions_to_ask: string[]
   summary: string
@@ -430,6 +515,7 @@ export type StrippedClaim = {
 
 export type ReviewResult = {
   review: ArgonReview
+  tested_conflicts?: TestedConflict[]
   stripped: StrippedClaim[]
   datasheets_used: string[]
   model: string

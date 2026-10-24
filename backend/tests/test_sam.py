@@ -66,3 +66,97 @@ def test_sam_cost_depends_on_flow_temperature(sam_measured: MeasuredEstimate) ->
 
     assert saving(40) > 0
     assert saving(55) < 0
+
+
+def test_sam_argon_conflict_proposal_is_tested_by_code(
+    sam_fabric: FabricEstimate, sam_measured: MeasuredEstimate
+) -> None:
+    from gae.gemini.client import FakeGemini
+    from gae.gemini.datasheets import InMemoryDatasheetLookup
+    from gae.gemini.review import (
+        _baseline_fabric_inputs,
+        _reproduce_baseline_fabric,
+        review,
+    )
+    from gae.gemini.schemas import (
+        ArgonReview,
+        ConflictField,
+        ConflictStatus,
+        EstimateDirection,
+        EvidenceSource,
+        InputConflictProposal,
+        MathsBundle,
+        ProposedValue,
+        ReviewRequest,
+    )
+    from gae.heatpump.fabric import Element, estimate_fabric
+
+    bundle = MathsBundle.from_core(
+        sam_measured,
+        sam_fabric,
+        cross_check(sam_fabric, sam_measured),
+        [],
+        target_spec(
+            measured_design_load_kw=sam_measured.design_load_kw, current_fuel=HeatingFuel.GAS
+        ),
+    )
+    reply = ArgonReview(
+        estimates_explanation="Your bills read lower than the EPC fabric estimate.",
+        cited_reason_codes=[ReasonCode.MISSED_INSULATION],
+        conflict_status=ConflictStatus.CONFLICTS_FOUND,
+        input_conflicts=[
+            InputConflictProposal(
+                field=ConflictField.WALL_TYPE,
+                evidence_source=EvidenceSource.EPC,
+                evidence_summary=(
+                    "EPC assumes unfilled cavity walls; filled cavities explain the lower bills."
+                ),
+                proposed_value=ProposedValue.CAVITY_FILLED,
+                expected_direction=EstimateDirection.LOWER,
+            )
+        ],
+        quote_reviews=[],
+        questions_to_ask=[],
+        summary="Your bills point to filled cavities.",
+    )
+    req = ReviewRequest(
+        epc_record={
+            "property_type": "semi_detached",
+            "floor_area_m2": 90,
+            "storeys": 2,
+            "year_built": 1930,
+            "wall_type": "cavity_unfilled",
+            "glazing": "double_unknown_date",
+            "loft_insulation_mm": 100,
+            "floor_insulated": False,
+            "design_outdoor_temp_c": -2.0,
+        },
+        maths=bundle,
+    )
+
+    # The baseline used for the re-run reproduces the headline Estimate A for Sam.
+    baseline = _baseline_fabric_inputs(req)
+    assert baseline["floor_insulated"] is False
+    baseline_est = _reproduce_baseline_fabric(req, baseline)
+    assert baseline_est is not None
+    assert baseline_est.htc_w_per_k.central == pytest.approx(sam_fabric.htc_w_per_k.central)
+    assert baseline_est.design_load_kw.central == pytest.approx(sam_fabric.design_load_kw.central)
+
+    # Toggling ACH via year_built only changes ventilation and never alters floor insulation.
+    ach_updated = {**baseline, "year_built": 2001}
+    ach_est = estimate_fabric(**ach_updated)
+    assert ach_est.air_change_rate == 1.0
+    assert ach_est.element_w_per_k[Element.FLOOR] == pytest.approx(
+        sam_fabric.element_w_per_k[Element.FLOOR]
+    )
+
+    result = review(FakeGemini([reply]), InMemoryDatasheetLookup([]), req)
+    (tested,) = result.tested_conflicts
+    assert tested.field == ConflictField.WALL_TYPE
+    assert tested.proposed_value == ProposedValue.CAVITY_FILLED
+    assert tested.original_htc_w_per_k == pytest.approx(sam_fabric.htc_w_per_k.central, abs=0.01)
+    assert tested.original_design_load_kw.central == pytest.approx(
+        sam_fabric.design_load_kw.central, abs=0.01
+    )
+    assert tested.gap_change == "shrinks"
+    assert tested.new_design_load_kw.central < sam_fabric.design_load_kw.central

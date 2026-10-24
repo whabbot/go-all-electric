@@ -12,9 +12,13 @@ from pydantic import BaseModel, Field, JsonValue
 
 from gae.gemini.schemas import (
     BoilerPlateReading,
+    FuseCutoutReading,
     GasBillReading,
+    OutdoorSpaceReading,
     PhotoKind,
     QuoteReading,
+    RadiatorReading,
+    RadiatorVideoReading,
     RadiatorVideoResult,
     VerificationLogEntry,
 )
@@ -42,12 +46,14 @@ class EpcSummary(BaseModel):
 
     property_type: str
     floor_area_m2: float | None
+    storeys: int = 2
     age_band: str | None
     year_built: int
     wall_type: str
     glazing: str
     loft_insulation_mm: int
     floor_insulated: bool
+    design_outdoor_temp_c: float = -2.0
     main_heating_fuel: str
     current_energy_efficiency_band: str | None
     walls: list[str]
@@ -108,4 +114,8 @@ class ReviewContext(BaseModel):
     epc: EpcSummary
     boiler: BoilerPlateReading | None = None
     bill: GasBillReading | None = None
+    radiators: RadiatorReading | None = None
+    radiator_video: RadiatorVideoResult | RadiatorVideoReading | None = None
+    fuse_cutout: FuseCutoutReading | None = None
+    outdoor_space: OutdoorSpaceReading | None = None
     quotes: list[ReviewQuote] = Field(default_factory=list, max_length=5)

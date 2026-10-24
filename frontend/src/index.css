@@ -1201,6 +1201,98 @@ button.primary {
   text-decoration-color: var(--color-danger);
 }
 
+.conflict-section {
+  margin: 0.85rem 0 1rem;
+}
+
+.conflict-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.conflict-card {
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.88rem;
+}
+
+.conflict-card.conflict-confirmed {
+  border-color: var(--color-ok);
+  background: color-mix(in srgb, var(--color-ok) 8%, var(--surface));
+}
+
+.conflict-card.conflict-dismissed {
+  opacity: 0.72;
+}
+
+.conflict-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.conflict-source {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.conflict-summary {
+  margin: 0.35rem 0;
+}
+
+.conflict-rerun {
+  margin: 0.35rem 0 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+  align-items: center;
+}
+
+.conflict-gap {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+}
+
+.conflict-gap-shrinks {
+  background: color-mix(in srgb, var(--color-ok) 25%, transparent);
+}
+
+.conflict-gap-grows {
+  background: color-mix(in srgb, var(--color-warn) 25%, transparent);
+}
+
+.conflict-gap-unchanged {
+  background: var(--border);
+}
+
+.conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.conflict-btn {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.8rem;
+}
+
+.conflict-btn.active {
+  border-color: var(--text-muted);
+  background: var(--surface-2);
+}
+
+.conflict-decision-note {
+  font-size: 0.78rem;
+}
+
 .cannot-compare {
   padding: 1rem;
   border-radius: var(--radius);
