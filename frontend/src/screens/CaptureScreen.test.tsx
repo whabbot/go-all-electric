@@ -74,7 +74,7 @@ describe('CaptureScreen guide', () => {
     expect(triggers).toHaveLength(2)
   })
 
-  it('includes the optional Loft slot after Gas bill in the checklist, with guidance, examples SVG, and why-need dialog', async () => {
+  it('includes the optional Loft slot after Gas bill in the checklist, with guidance, example photos, and why-need dialog', async () => {
     const user = userEvent.setup()
     renderCapture()
 
@@ -99,7 +99,7 @@ describe('CaptureScreen guide', () => {
     await user.click(examplesTriggers[0])
     const examplesDialog = screen.getByRole('dialog', { name: 'Example photos: Loft (optional)' })
     expect(examplesDialog).toBeInTheDocument()
-    expect(examplesDialog.querySelectorAll('svg')).toHaveLength(2)
+    expect(examplesDialog.querySelectorAll('img')).toHaveLength(2)
     expect(screen.getByText(CAPTURE_GUIDANCE.loft.goodReason, { exact: false })).toBeInTheDocument()
     expect(screen.getByText(CAPTURE_GUIDANCE.loft.badReason, { exact: false })).toBeInTheDocument()
     await user.keyboard('{Escape}')
@@ -136,6 +136,7 @@ describe('CaptureScreen guide', () => {
     const user = userEvent.setup()
     renderCapture()
     const trigger = screen.getAllByRole('button', { name: 'See examples' })[0]
+    expect(document.querySelectorAll('.capture-example-photo')).toHaveLength(0)
     trigger.focus()
     expect(trigger).toHaveFocus()
 

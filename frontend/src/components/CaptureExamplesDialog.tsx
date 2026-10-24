@@ -1,7 +1,7 @@
 import type { PhotoKind } from '../api'
+import { CAPTURE_EXAMPLES } from '../lib/captureExamples'
 import { CAPTURE_GUIDANCE } from '../lib/captureGuide'
 import { AccessibleModalDialog } from './AccessibleModalDialog'
-import { CaptureExampleDiagram } from './CaptureExampleDiagrams'
 
 type Props = {
   kind: PhotoKind
@@ -12,6 +12,7 @@ type Props = {
 
 export function CaptureExamplesDialog({ kind, title, onClose, returnFocusTo }: Props) {
   const guidance = CAPTURE_GUIDANCE[kind]
+  const examples = CAPTURE_EXAMPLES[kind]
 
   return (
     <AccessibleModalDialog
@@ -23,15 +24,33 @@ export function CaptureExamplesDialog({ kind, title, onClose, returnFocusTo }: P
     >
       <div className="capture-examples-grid">
         <figure>
-          <CaptureExampleDiagram kind={kind} variant="good" />
+          <img
+            className="capture-example-photo"
+            src={examples.good.src}
+            alt={examples.good.alt}
+            width="800"
+            height="600"
+            loading="lazy"
+            decoding="async"
+          />
           <figcaption>
             <strong>Good</strong> — {guidance.goodReason}
+            <span className="capture-example-illustration">Illustration · fictional example</span>
           </figcaption>
         </figure>
         <figure>
-          <CaptureExampleDiagram kind={kind} variant="bad" />
+          <img
+            className="capture-example-photo"
+            src={examples.bad.src}
+            alt={examples.bad.alt}
+            width="800"
+            height="600"
+            loading="lazy"
+            decoding="async"
+          />
           <figcaption>
             <strong>Avoid</strong> — {guidance.badReason}
+            <span className="capture-example-illustration">Illustration · fictional example</span>
           </figcaption>
         </figure>
       </div>
