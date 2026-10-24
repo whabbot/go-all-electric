@@ -2,18 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, isMockMode } from '../api'
 import { ImageCoverUp } from '../components/ImageCoverUp'
-import { RadiatorVideoResults } from '../components/RadiatorVideoResults'
+import { CapturePhotoSlotList } from '../components/CapturePhotoSlotList'
 import { useSession } from '../context/SessionContext'
 import { resetFileInput } from '../lib/fileInputReset'
 import { prepareImageFile } from '../lib/imagePrepare'
-import { CaptureExamplesDialog } from '../components/CaptureExamplesDialog'
-import { CaptureGuideSummary } from '../components/CaptureGuideSummary'
-import { CaptureWhyNeedDialog } from '../components/CaptureWhyNeedDialog'
-import { WhyNeedTrigger } from '../components/WhyNeedTrigger'
 import type { WhyNeedId } from '../lib/captureWhyNeed'
-import { CAPTURE_GUIDANCE } from '../lib/captureGuide'
-import { coverUpGuidance, coverUpTitle } from '../lib/photoGuidance'
 import type { PhotoKind } from '../api'
+import { firstCaptureSlotNeedingAttention } from '../lib/captureGuide'
+import { coverUpGuidance, coverUpTitle } from '../lib/photoGuidance'
 
 const VIDEO_MAX_BYTES = 100 * 1024 * 1024
 
@@ -47,6 +43,10 @@ export function CaptureScreen() {
   const examplesTriggerRef = useRef<HTMLButtonElement | null>(null)
   const [whyNeedId, setWhyNeedId] = useState<WhyNeedId | null>(null)
   const whyNeedTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const [expandedKind, setExpandedKind] = useState<PhotoKind | null>(() =>
+    firstCaptureSlotNeedingAttention(photos, radiatorVideo),
+  )
+  const prevBusyRef = useRef(busy)
 
   useEffect(() => {
     coverQueueRef.current = coverCurrent ? [coverCurrent, ...coverStack] : coverStack
@@ -57,6 +57,15 @@ export function CaptureScreen() {
       for (const item of coverQueueRef.current) URL.revokeObjectURL(item.url)
     }
   }, [])
+
+  useEffect(() => {
+    for (const kind of Object.keys(busy)) {
+      if (prevBusyRef.current[kind] && !busy[kind]) {
+        setExpandedKind(kind as PhotoKind)
+      }
+    }
+    prevBusyRef.current = busy
+  }, [busy])
 
   const revokeCoverQueue = (current: PendingCoverUp | null, stack: PendingCoverUp[]) => {
     if (current?.url) URL.revokeObjectURL(current.url)
@@ -87,6 +96,7 @@ export function CaptureScreen() {
     resetFileInput(input)
     if (picked.length === 0) return
     setPrepareError(null)
+    setExpandedKind(kind)
     revokeCoverQueue(coverCurrent, coverStack)
     setCoverCurrent(null)
     setCoverStack([])
@@ -127,6 +137,7 @@ export function CaptureScreen() {
     advanceCoverQueue()
     setPhotoErrors((errors) => ({ ...errors, [kind]: '' }))
     setBusy((b) => ({ ...b, [kind]: true }))
+    setExpandedKind(kind)
     // Only the redacted, re-encoded file is kept (in memory) and later sent for analysis.
     setPhoto(kind, redacted, null)
     try {
@@ -146,6 +157,7 @@ export function CaptureScreen() {
   const onVideoFile = async (file: File | null) => {
     if (!file) return
     setVideoError(null)
+    setExpandedKind('radiators')
     if (file.size === 0) {
       setVideoError('Empty video file.')
       return
@@ -187,133 +199,28 @@ export function CaptureScreen() {
         identifying, then we check it.
       </p>
 
-      <CaptureGuideSummary />
-
       {prepareError && <p className="warning">{prepareError}</p>}
 
-      <div className="photo-grid">
-        {photos.map((slot) => (
-          <div key={slot.kind} className="photo-slot card">
-            <div className="photo-slot-header">
-              <h2>{slot.label}</h2>
-              <div className="capture-slot-actions">
-                <WhyNeedTrigger
-                  onActivate={(el) => {
-                    whyNeedTriggerRef.current = el
-                    setWhyNeedId(slot.kind)
-                  }}
-                />
-                <button
-                  type="button"
-                  className="btn capture-examples-trigger"
-                  onClick={(e) => {
-                    examplesTriggerRef.current = e.currentTarget
-                    setExamplesKind(slot.kind)
-                  }}
-                >
-                  See examples
-                </button>
-              </div>
-            </div>
-            <p className="capture-item-guidance">{CAPTURE_GUIDANCE[slot.kind].oneLine}</p>
-            {CAPTURE_GUIDANCE[slot.kind].detail && (
-              <p className="subtle capture-item-detail">{CAPTURE_GUIDANCE[slot.kind].detail}</p>
-            )}
-            <label className="upload-btn">
-              <input
-                ref={(el) => {
-                  if (el) fileInputsRef.current[slot.kind] = el
-                }}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                multiple={MULTI_PHOTO_KINDS.includes(slot.kind)}
-                onChange={(e) => void onFiles(slot.kind, e.target.files, e.currentTarget)}
-              />
-              {busy[slot.kind] ? 'Checking…' : 'Take photo or upload'}
-            </label>
-            {photoErrors[slot.kind] && <p className="error" role="alert">{photoErrors[slot.kind]}</p>}
-            {slot.fileName && <p className="file-name">Redacted photo ready</p>}
-            {slot.result && (
-              <div className={`check-result ${slot.result.legible ? 'ok' : 'warn'}`}>
-                <p>
-                  {slot.result.summary}{' '}
-                  <span className="subtle">
-                    ({slot.result.model}, {(slot.result.elapsed_ms / 1000).toFixed(1)}s)
-                  </span>
-                </p>
-                {!slot.result.matches_expected && (
-                  <p className="retake">
-                    {slot.result.kind === 'other'
-                      ? `This doesn't look like a ${slot.label.replace(' (optional)', '').toLowerCase()}.`
-                      : `This looks like a ${slot.result.kind.replaceAll('_', ' ')}.`}
-                  </p>
-                )}
-                {slot.result.retake_hint && <p className="retake">{slot.result.retake_hint}</p>}
-                {slot.result.privacy_warning && (
-                  <p className="privacy-warn">{slot.result.privacy_warning}</p>
-                )}
-                {!slot.result.privacy_warning && slot.result.legible && (
-                  <p className="privacy-ok">Redacted image only — no metadata stored.</p>
-                )}
-              </div>
-            )}
-
-            {slot.kind === 'radiators' && (
-              <div className="video-capture-option">
-                <div className="video-capture-header">
-                  <h3>Or film your radiators</h3>
-                  <WhyNeedTrigger
-                    onActivate={(el) => {
-                      whyNeedTriggerRef.current = el
-                      setWhyNeedId('radiator_video')
-                    }}
-                  />
-                </div>
-                <p className="privacy-warn">
-                  Video is not covered up like photos: film radiators only, close, with no windows,
-                  people or house numbers.
-                </p>
-                <p className="subtle">
-                  GPS, device and timestamp metadata are stripped server-side before Gemini sees the
-                  video (max 90 s, 100 MB). Uncertain radiators become photo requests, never guesses.
-                </p>
-                <label className="upload-btn">
-                  <input
-                    type="file"
-                    accept="video/mp4,video/quicktime,video/webm,video/*"
-                    capture="environment"
-                    onChange={(e) => void onVideoFile(e.target.files?.[0] ?? null)}
-                  />
-                  {busy.radiator_video ? 'Watching video…' : 'Film radiators or upload video'}
-                </label>
-                {radiatorVideo && !busy.radiator_video && (
-                  <p className="file-name">Radiator walkthrough video ready</p>
-                )}
-                {videoError && <p className="error">{videoError}</p>}
-                {radiatorVideoResult && <RadiatorVideoResults result={radiatorVideoResult} />}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {examplesKind && (
-        <CaptureExamplesDialog
-          kind={examplesKind}
-          title={photos.find((p) => p.kind === examplesKind)?.label ?? examplesKind}
-          returnFocusTo={examplesTriggerRef.current}
-          onClose={() => setExamplesKind(null)}
-        />
-      )}
-
-      {whyNeedId && (
-        <CaptureWhyNeedDialog
-          id={whyNeedId}
-          returnFocusTo={whyNeedTriggerRef.current}
-          onClose={() => setWhyNeedId(null)}
-        />
-      )}
+      <CapturePhotoSlotList
+        photos={photos}
+        expandedKind={expandedKind}
+        onExpandedKindChange={setExpandedKind}
+        busy={busy}
+        photoErrors={photoErrors}
+        onFiles={onFiles}
+        fileInputsRef={fileInputsRef}
+        multiPhotoKinds={MULTI_PHOTO_KINDS}
+        radiatorVideo={radiatorVideo}
+        radiatorVideoResult={radiatorVideoResult}
+        videoError={videoError}
+        onVideoFile={onVideoFile}
+        examplesKind={examplesKind}
+        setExamplesKind={setExamplesKind}
+        examplesTriggerRef={examplesTriggerRef}
+        whyNeedId={whyNeedId}
+        setWhyNeedId={setWhyNeedId}
+        whyNeedTriggerRef={whyNeedTriggerRef}
+      />
 
       {coverCurrent && (
         <ImageCoverUp

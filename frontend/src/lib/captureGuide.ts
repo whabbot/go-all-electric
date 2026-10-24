@@ -65,6 +65,37 @@ export const CAPTURE_STATUS_LABEL: Record<CaptureNeedStatus, string> = {
   recommended: 'Recommended',
 }
 
+export function captureSummaryForKind(kind: PhotoKind): CaptureSummaryItem {
+  const item = CAPTURE_SUMMARY_ITEMS.find((i) => i.id === kind)
+  if (!item) {
+    throw new Error(`No capture summary for ${kind}`)
+  }
+  return item
+}
+
+/** First checklist slot still missing a photo (radiators may use video instead). */
+export function firstCaptureSlotNeedingAttention(
+  photos: { kind: PhotoKind; fileName: string | null }[],
+  radiatorVideo: File | null,
+): PhotoKind | null {
+  for (const item of CAPTURE_SUMMARY_ITEMS) {
+    const kind = item.id as PhotoKind
+    const slot = photos.find((p) => p.kind === kind)
+    if (!slot) continue
+    if (kind === 'radiators') {
+      if (!slot.fileName && !radiatorVideo) return kind
+    } else if (!slot.fileName) {
+      return kind
+    }
+  }
+  return null
+}
+
+export const CAPTURE_CHECKLIST_HEADING = "What you'll need"
+export const CAPTURE_CHECKLIST_INTRO =
+  'About 5–10 minutes total. Each photo is checked after you redact anything identifying.'
+export const CAPTURE_CHECKLIST_TOTAL = `${CAPTURE_SUMMARY_ITEMS.length} capture steps · about 5–10 min total`
+
 export type CaptureItemGuidance = {
   oneLine: string
   detail?: string
