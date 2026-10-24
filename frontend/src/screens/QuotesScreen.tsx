@@ -8,6 +8,8 @@ import { useSession } from '../context/SessionContext'
 import { quoteId } from '../lib/labels'
 import { prepareImageFile } from '../lib/imagePrepare'
 import { pdfFileToPageImages } from '../lib/pdfToImages'
+import { CaptureWhyNeedDialog } from '../components/CaptureWhyNeedDialog'
+import { WhyNeedTrigger } from '../components/WhyNeedTrigger'
 import { QUOTE_PAGE_GUIDANCE } from '../lib/photoGuidance'
 
 type QuoteQueueItem = {
@@ -96,6 +98,8 @@ export function QuotesScreen() {
   const [stack, setStack] = useState<QuoteQueueItem[]>([])
   const [current, setCurrent] = useState<QuoteQueueItem | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
+  const [whyNeedOpen, setWhyNeedOpen] = useState(false)
+  const whyNeedTriggerRef = useRef<HTMLButtonElement | null>(null)
 
   const quoteGroups = useMemo(() => groupRedactedPages(redactedPages), [redactedPages])
 
@@ -207,10 +211,18 @@ export function QuotesScreen() {
     <section className="screen quotes-screen">
       <h1>Quote checker</h1>
       {placeLabel && <p className="place-label">{placeLabel}</p>}
-      <p className="lede">
-        Upload up to three installer quotes (PDF or photo). Each page is redacted on your device
-        before anything is sent. Flags are prompts for questions — not sent to anyone.
-      </p>
+      <div className="quotes-upload-header">
+        <p className="lede">
+          Upload up to three installer quotes (PDF or photo). Each page is redacted on your device
+          before anything is sent. Flags are prompts for questions — not sent to anyone.
+        </p>
+        <WhyNeedTrigger
+          onActivate={(el) => {
+            whyNeedTriggerRef.current = el
+            setWhyNeedOpen(true)
+          }}
+        />
+      </div>
 
       <label className="upload-btn card">
         <input
@@ -276,6 +288,14 @@ export function QuotesScreen() {
             : 'Run the estimates first to check quote sizes against your bills.'}
         </p>
       )}
+      {whyNeedOpen && (
+        <CaptureWhyNeedDialog
+          id="installer_quotes"
+          returnFocusTo={whyNeedTriggerRef.current}
+          onClose={() => setWhyNeedOpen(false)}
+        />
+      )}
+
       {checkError && <p className="error">{checkError}</p>}
 
       {results && (
