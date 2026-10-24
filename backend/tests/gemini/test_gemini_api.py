@@ -197,6 +197,20 @@ def test_gemini_failure_is_a_clean_502(gemini) -> None:
     response = client.post("/api/photos/check", **photo())
     assert response.status_code == 502
     assert "SECRET-DETAIL" not in response.text
+    assert response.json()["detail"] == "Gemini couldn't read this right now; please try again"
+
+
+def test_gemini_quota_failure_gives_distinct_message(gemini) -> None:
+    gemini.replies.append(
+        GeminiError(
+            "Your billing account has exceeded its monthly spending cap",
+            upstream_status=429,
+        )
+    )
+    response = client.post("/api/photos/check", **photo())
+    assert response.status_code == 502
+    assert "Gemini quota/billing limit reached" in response.json()["detail"]
+    assert "Your billing account" not in response.text
 
 
 def test_without_a_key_routes_say_not_configured() -> None:

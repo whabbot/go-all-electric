@@ -145,25 +145,43 @@ def run_analysis(
     def read(kind: PhotoKind, data: bytes, mime: str) -> VerifiedReading | None:
         try:
             return extract(
-                services.gemini, services.datasheets, kind, data, mime, log=LiveLog(kind, record)
+                services.gemini,
+                services.datasheets,
+                kind,
+                data,
+                mime,
+                log=LiveLog(kind, record),
+                purpose=f"/api/analysis:{kind.value}",
             )
-        except GeminiError:
-            code_log.add(
-                "fail", kind, "code", "Gemini call failed", False, "couldn't tell: try again"
+        except GeminiError as exc:
+            detail = (
+                "Gemini quota/billing limit reached"
+                if exc.upstream_status == 429
+                else "Gemini call failed"
             )
+            code_log.add("fail", kind, "code", detail, False, "couldn't tell: try again")
             return None
 
     def read_video(data: bytes, mime: str) -> RadiatorVideoResult | None:
         try:
             return extract_radiator_video(
-                services.gemini, data, mime, log=LiveLog("radiator_video", record)
+                services.gemini,
+                data,
+                mime,
+                log=LiveLog("radiator_video", record),
+                purpose="/api/analysis:radiators_video",
             )
-        except GeminiError:
+        except GeminiError as exc:
+            detail = (
+                "Gemini quota/billing limit reached"
+                if exc.upstream_status == 429
+                else "Gemini call failed"
+            )
             code_log.add(
                 "fail",
                 "radiator_video",
                 "code",
-                "Gemini call failed",
+                detail,
                 False,
                 "couldn't tell: try again",
             )

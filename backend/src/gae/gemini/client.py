@@ -14,12 +14,16 @@ sends the image again rather than chaining turns.
 import base64
 import contextlib
 import io
+import json
+import sys
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
+import httpx
 from google import genai
+from google.genai._gaos.utils import RetryConfig
 from pydantic import BaseModel, SecretStr, ValidationError
 
 ThinkingLevel = Literal["low", "medium", "high"]
@@ -34,6 +38,10 @@ INLINE_VIDEO_MAX_BYTES = 18 * 1024 * 1024
 
 class GeminiError(RuntimeError):
     """A Gemini call failed. Messages never include request content or the key."""
+
+    def __init__(self, message: str, *, upstream_status: int | None = None):
+        super().__init__(message)
+        self.upstream_status = upstream_status
 
 
 class GeminiNotConfigured(GeminiError):
@@ -107,6 +115,8 @@ class StructuredModel(Protocol):
         thinking_level: ThinkingLevel,
         system_instruction: str | None = None,
         timeout_s: float = 60.0,
+        purpose: str = "generate",
+        attempt: int = 1,
     ) -> T: ...
 
 
@@ -122,6 +132,12 @@ class GeminiClient:
         if not api_key.get_secret_value().strip():
             raise GeminiNotConfigured("GEMINI_API_KEY is not set")
         self._client = genai.Client(api_key=api_key.get_secret_value())
+        # `GeminiNextGenInteractions` otherwise defaults to 3 retries (`max_retries=3`, 4 attempts)
+        # and sleeps for the full upstream `Retry-After` header (e.g. 30 s per 429), turning a
+        # 15 s check into a ~96 s hang. Fail fast on a single attempt so callers control retries.
+        sdk_config = getattr(self._client.interactions, "sdk_configuration", None)
+        if sdk_config is not None:
+            sdk_config.retry_config = RetryConfig("none", None, False)
         self.lead_model = lead_model
         self.fast_model = fast_model
         self.max_output_tokens = max_output_tokens
@@ -138,7 +154,14 @@ class GeminiClient:
         thinking_level: ThinkingLevel,
         system_instruction: str | None = None,
         timeout_s: float = 60.0,
+        purpose: str = "generate",
+        attempt: int = 1,
     ) -> T:
+        started = time.monotonic()
+        deadline = started + timeout_s
+        outcome = "ok"
+        error_class: str | None = None
+        upstream_status: int | None = None
         config: dict[str, Any] = {"thinking_level": thinking_level}
         long_decode = (self.max_output_tokens or 0) > LONG_DECODE_TOKENS
         if self.max_output_tokens:
@@ -162,29 +185,59 @@ class GeminiClient:
             kwargs["system_instruction"] = system_instruction
         uploaded_names: list[str] = []
         try:
-            kwargs["input"] = self._prepare_inputs(input, uploaded_names, timeout_s)
-            interaction = self._client.interactions.create(**kwargs)
-            if long_decode:
-                interaction = self._wait(interaction, timeout_s)
-        except GeminiError:
-            raise
-        except Exception as exc:
-            # The SDK's message can echo request fields; keep only the type.
-            raise GeminiError(f"Gemini call to {model} failed ({type(exc).__name__})") from None
+            try:
+                kwargs["input"] = self._prepare_inputs(input, uploaded_names, deadline)
+                if uploaded_names:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError("Gemini call timed out during file upload")
+                    kwargs["timeout"] = remaining
+                interaction = self._client.interactions.create(**kwargs)
+                if long_decode:
+                    interaction = self._wait(interaction, deadline)
+            except GeminiError as exc:
+                error_class = type(exc).__name__
+                upstream_status = exc.upstream_status
+                outcome = "timeout" if "timed out" in str(exc) else error_class
+                raise
+            except Exception as exc:
+                error_class = type(exc).__name__
+                upstream_status = _upstream_status(exc)
+                outcome = "timeout" if _is_timeout(exc, upstream_status) else error_class
+                # The SDK's message can echo request fields; keep only the type.
+                raise GeminiError(
+                    f"Gemini call to {model} failed ({error_class})",
+                    upstream_status=upstream_status,
+                ) from None
+            finally:
+                for name in uploaded_names:
+                    with contextlib.suppress(Exception):
+                        self._client.files.delete(name=name)
+            reply = _output_text(interaction)
+            if not reply:
+                outcome = "validation_failure"
+                error_class = "GeminiError"
+                raise GeminiError(f"{model} returned no text")
+            try:
+                return schema.model_validate_json(reply)
+            except ValidationError:
+                outcome = "validation_failure"
+                error_class = "ValidationError"
+                raise GeminiError(f"{model} reply did not match {schema.__name__}") from None
         finally:
-            for name in uploaded_names:
-                with contextlib.suppress(Exception):
-                    self._client.files.delete(name=name)
-        reply = _output_text(interaction)
-        if not reply:
-            raise GeminiError(f"{model} returned no text")
-        try:
-            return schema.model_validate_json(reply)
-        except ValidationError:
-            raise GeminiError(f"{model} reply did not match {schema.__name__}") from None
+            _log_gemini_call(
+                purpose=purpose,
+                model=model,
+                thinking_level=thinking_level,
+                latency_ms=round((time.monotonic() - started) * 1000),
+                outcome=outcome,
+                attempts=attempt,
+                error_class=error_class,
+                upstream_status=upstream_status,
+            )
 
     def _prepare_inputs(
-        self, input: Sequence[Block], uploaded_names: list[str], timeout_s: float
+        self, input: Sequence[Block], uploaded_names: list[str], deadline: float
     ) -> list[Block]:
         """Keep video inline under 18 MB; use Files API above that and record for deletion."""
         prepared: list[Block] = []
@@ -205,12 +258,14 @@ class GeminiClient:
                 if not name:
                     raise GeminiError("Files API upload returned no file name")
                 uploaded_names.append(str(name))
-                deadline = time.monotonic() + timeout_s
                 state = _file_state(uploaded)
                 while "PROCESSING" in state:
-                    if time.monotonic() > deadline:
-                        raise GeminiError("Uploaded video processing timed out")
-                    time.sleep(1.0)
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError("Uploaded video processing timed out")
+                    time.sleep(min(1.0, remaining))
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("Uploaded video processing timed out")
                     uploaded = self._client.files.get(name=name)
                     state = _file_state(uploaded)
                 if "FAILED" in state:
@@ -223,16 +278,65 @@ class GeminiClient:
                 prepared.append(block)
         return prepared
 
-    def _wait(self, interaction: Any, timeout_s: float) -> Any:
-        deadline = time.monotonic() + timeout_s
+    def _wait(self, interaction: Any, deadline: float) -> Any:
         while interaction.status in ("in_progress", "queued"):
-            if time.monotonic() > deadline:
-                raise GeminiError("Background interaction timed out")
-            time.sleep(5)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("Background interaction timed out")
+            time.sleep(min(5.0, remaining))
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Background interaction timed out")
             interaction = self._client.interactions.get(id=interaction.id)
         if interaction.status != "completed":
             raise GeminiError(f"Background interaction ended {interaction.status}")
         return interaction
+
+
+def _upstream_status(exc: BaseException) -> int | None:
+    for candidate in (
+        getattr(exc, "status_code", None),
+        getattr(exc, "code", None),
+        getattr(getattr(exc, "response", None), "status_code", None),
+    ):
+        if isinstance(candidate, int) and not isinstance(candidate, bool):
+            return candidate
+    return None
+
+
+def _is_timeout(exc: BaseException, status: int | None) -> bool:
+    if isinstance(exc, TimeoutError | httpx.TimeoutException):
+        return True
+    if "Timeout" in type(exc).__name__:
+        return True
+    return status in (408, 504)
+
+
+def _log_gemini_call(
+    *,
+    purpose: str,
+    model: str,
+    thinking_level: ThinkingLevel,
+    latency_ms: int,
+    outcome: str,
+    attempts: int,
+    error_class: str | None = None,
+    upstream_status: int | None = None,
+) -> None:
+    """Emit one structured JSON log line to stdout per Gemini call (no content or PII)."""
+    record: dict[str, Any] = {
+        "severity": "INFO" if outcome == "ok" else "ERROR",
+        "message": f"gemini {purpose} {outcome}",
+        "purpose": purpose,
+        "model": model,
+        "thinking_level": thinking_level,
+        "latency_ms": latency_ms,
+        "outcome": outcome,
+        "attempts": attempts,
+    }
+    if outcome != "ok":
+        record["error_class"] = error_class
+        record["upstream_status"] = upstream_status
+    print(json.dumps(record), file=sys.stdout, flush=True)
 
 
 def _file_state(uploaded: Any) -> str:
@@ -260,6 +364,8 @@ class Call:
     thinking_level: ThinkingLevel
     input: list[Block]
     system_instruction: str | None
+    purpose: str = "generate"
+    attempt: int = 1
 
     @property
     def prompt(self) -> str:
@@ -291,8 +397,18 @@ class FakeGemini:
         thinking_level: ThinkingLevel,
         system_instruction: str | None = None,
         timeout_s: float = 60.0,
+        purpose: str = "generate",
+        attempt: int = 1,
     ) -> T:
-        call = Call(model, schema.__name__, thinking_level, list(input), system_instruction)
+        call = Call(
+            model,
+            schema.__name__,
+            thinking_level,
+            list(input),
+            system_instruction,
+            purpose=purpose,
+            attempt=attempt,
+        )
         self.calls.append(call)
         if not self.replies:
             raise AssertionError(f"FakeGemini has no reply left for {schema.__name__}")

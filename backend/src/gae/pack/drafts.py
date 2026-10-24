@@ -298,6 +298,7 @@ def draft_one(
             thinking_level="medium",
             system_instruction=SYSTEM,
             timeout_s=120,
+            purpose="/api/pack/installer-drafts",
         )
     except GeminiError:
         return fallback("Gemini couldn't draft this right now")

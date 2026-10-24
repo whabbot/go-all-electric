@@ -134,9 +134,15 @@ def _read_video(upload: UploadFile) -> tuple[bytes, str]:
     return clean_data, norm_mime
 
 
-def _gemini_failed() -> HTTPException:
+GEMINI_QUOTA_MESSAGE = "Gemini quota/billing limit reached on the server; please try again later"
+GEMINI_TRANSIENT_MESSAGE = "Gemini couldn't read this right now; please try again"
+
+
+def _gemini_failed(exc: GeminiError | None = None) -> HTTPException:
     # No upstream detail: it can echo request content.
-    return HTTPException(502, "Gemini couldn't read this right now; please try again")
+    if exc is not None and exc.upstream_status == 429:
+        return HTTPException(502, GEMINI_QUOTA_MESSAGE)
+    return HTTPException(502, GEMINI_TRANSIENT_MESSAGE)
 
 
 @router.post("/photos/check", response_model=PhotoCheckResult)
@@ -146,8 +152,8 @@ def check_photo(
     data, mime = _read(file)
     try:
         return glance(gemini, kind, data, mime)
-    except GeminiError:
-        raise _gemini_failed() from None
+    except GeminiError as exc:
+        raise _gemini_failed(exc) from None
 
 
 @router.post("/photos/extract", response_model=VerifiedReading)
@@ -160,8 +166,8 @@ def extract_photo(
     data, mime = _read(file)
     try:
         return extract(gemini, datasheets, kind, data, mime)
-    except GeminiError:
-        raise _gemini_failed() from None
+    except GeminiError as exc:
+        raise _gemini_failed(exc) from None
 
 
 @router.post("/radiators/video", response_model=RadiatorVideoResult)
@@ -175,8 +181,8 @@ def check_radiator_video_route(
         return extract_radiator_video(gemini, data, mime, design_load_kw=design_load_kw)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
-    except GeminiError:
-        raise _gemini_failed() from None
+    except GeminiError as exc:
+        raise _gemini_failed(exc) from None
 
 
 @router.post("/quotes/check", response_model=list[QuoteCheckResult])
@@ -221,12 +227,13 @@ def check_quotes(
                     first_data,
                     first_mime,
                     media_parts=rest or None,
+                    purpose="/api/quotes/check:quote",
                 )
             )
         try:
             verified = [future.result() for future in futures]
-        except GeminiError:
-            raise _gemini_failed() from None
+        except GeminiError as exc:
+            raise _gemini_failed(exc) from None
     return [flag_quote(names[idx], v, size) for idx, v in zip(order, verified, strict=True)]
 
 
@@ -239,7 +246,7 @@ def review_all(gemini: Gemini, datasheets: Datasheets, body: ReviewRequest) -> R
         raise HTTPException(413, "Attachments too large for one review: 18 MB maximum")
     try:
         return review(gemini, datasheets, body)
-    except GeminiError:
-        raise _gemini_failed() from None
+    except GeminiError as exc:
+        raise _gemini_failed(exc) from None
     except ValueError:
         raise HTTPException(422, "Attachments must be base64 photos or PDFs") from None

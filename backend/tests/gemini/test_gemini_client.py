@@ -3,6 +3,7 @@
 import json
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from pydantic import SecretStr
 
@@ -158,3 +159,183 @@ def test_large_video_uses_files_api_and_deletes_immediately(
         "uri": "https://generativelanguage/files/123",
         "mime_type": "video/mp4",
     }
+
+
+def test_sdk_retries_disabled_so_429_and_timeouts_fail_fast(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Real `genai.Client` with mocked transport: no 3x retries or 30 s `Retry-After` sleep."""
+    monkeypatch.setattr(
+        "time.sleep",
+        lambda s: (_ for _ in ()).throw(AssertionError(f"unexpected sleep({s})")),
+    )
+    requests_seen: list[httpx.Request] = []
+
+    def rate_limited(request: httpx.Request) -> httpx.Response:
+        requests_seen.append(request)
+        return httpx.Response(
+            429,
+            headers={"Retry-After": "30", "Content-Type": "application/json"},
+            json={"error": {"message": "Quota exceeded", "code": "too_many_requests"}},
+            request=request,
+        )
+
+    client = live()
+    assert client._client.interactions.sdk_configuration.retry_config.strategy == "none"
+    client._client._api_client._httpx_client._transport = httpx.MockTransport(rate_limited)
+    capsys.readouterr()
+
+    with pytest.raises(GeminiError, match="RateLimitError") as exc_info:
+        client.generate(
+            model="gemini-3.8-flash",
+            input=[text("check radiator")],
+            schema=ArgonReview,
+            thinking_level="low",
+            timeout_s=15.0,
+            purpose="/api/photos/check:radiators",
+        )
+    assert exc_info.value.upstream_status == 429
+    assert len(requests_seen) == 1
+    log_record = json.loads(capsys.readouterr().out.strip())
+    assert log_record["outcome"] == "RateLimitError"
+    assert log_record["error_class"] == "RateLimitError"
+    assert log_record["upstream_status"] == 429
+    assert log_record["attempts"] == 1
+
+    timeouts_seen: list[dict] = []
+
+    def timed_out(request: httpx.Request) -> httpx.Response:
+        timeouts_seen.append(dict(request.extensions.get("timeout", {})))
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    client._client._api_client._httpx_client._transport = httpx.MockTransport(timed_out)
+    with pytest.raises(GeminiError, match="APITimeoutError"):
+        client.generate(
+            model="gemini-3.8-flash",
+            input=[text("check radiator")],
+            schema=ArgonReview,
+            thinking_level="low",
+            timeout_s=15.0,
+            purpose="/api/photos/check:radiators",
+        )
+    assert len(timeouts_seen) == 1
+    assert timeouts_seen[0]["read"] == 15.0
+    timeout_record = json.loads(capsys.readouterr().out.strip())
+    assert timeout_record["outcome"] == "timeout"
+    assert timeout_record["error_class"] == "APITimeoutError"
+    assert timeout_record["upstream_status"] is None
+    assert timeout_record["attempts"] == 1
+
+
+def test_structured_stdout_log_has_only_allowed_fields_for_success_and_failure(
+    stub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    allowed_success_fields = {
+        "severity",
+        "message",
+        "purpose",
+        "model",
+        "thinking_level",
+        "latency_ms",
+        "outcome",
+        "attempts",
+    }
+    allowed_error_fields = allowed_success_fields | {"error_class", "upstream_status"}
+    forbidden_tokens = (
+        "SECRET-PROMPT-TEXT",
+        "SECRET-MODEL-OUTPUT",
+        "SW1A 1AA",
+        "10 Downing Street",
+        "100023336956",
+        "0000-1111-2222-3333-4444",
+        "radiator-photo.jpg",
+        "test-key-not-real",
+    )
+
+    stub(
+        '{"summary": "SECRET-MODEL-OUTPUT", "estimates_explanation": "y",'
+        ' "cited_reason_codes": [], "quote_reviews": [], "questions_to_ask": []}'
+    )
+    capsys.readouterr()
+    live().generate(
+        model="gemini-3.8-flash",
+        input=[
+            text(
+                "SECRET-PROMPT-TEXT SW1A 1AA 10 Downing Street "
+                "100023336956 0000-1111-2222-3333-4444 radiator-photo.jpg"
+            ),
+            image(b"\xff\xd8secret-bytes", "image/jpeg"),
+        ],
+        schema=ArgonReview,
+        thinking_level="low",
+        timeout_s=15.0,
+        purpose="/api/photos/check:radiators",
+    )
+    out_lines = capsys.readouterr().out.strip().splitlines()
+    assert len(out_lines) == 1
+    ok_record = json.loads(out_lines[0])
+    assert set(ok_record) == allowed_success_fields
+    assert ok_record["severity"] == "INFO"
+    assert ok_record["purpose"] == "/api/photos/check:radiators"
+    assert ok_record["model"] == "gemini-3.8-flash"
+    assert ok_record["thinking_level"] == "low"
+    assert isinstance(ok_record["latency_ms"], int) and ok_record["latency_ms"] >= 0
+    assert ok_record["outcome"] == "ok"
+    assert ok_record["attempts"] == 1
+    for token in forbidden_tokens:
+        assert token not in out_lines[0]
+
+    class UpstreamError(RuntimeError):
+        status_code = 503
+
+    stub(
+        UpstreamError(
+            "503 unavailable for SECRET-PROMPT-TEXT SW1A 1AA 10 Downing Street "
+            "100023336956 0000-1111-2222-3333-4444 radiator-photo.jpg test-key-not-real"
+        )
+    )
+    with pytest.raises(GeminiError):
+        live().generate(
+            model="gemini-3.8-flash",
+            input=[text("SECRET-PROMPT-TEXT")],
+            schema=ArgonReview,
+            thinking_level="low",
+            timeout_s=15.0,
+            purpose="/api/photos/check:radiators",
+        )
+    err_lines = capsys.readouterr().out.strip().splitlines()
+    assert len(err_lines) == 1
+    err_record = json.loads(err_lines[0])
+    assert set(err_record) == allowed_error_fields
+    assert err_record["severity"] == "ERROR"
+    assert err_record["purpose"] == "/api/photos/check:radiators"
+    assert err_record["model"] == "gemini-3.8-flash"
+    assert err_record["thinking_level"] == "low"
+    assert isinstance(err_record["latency_ms"], int) and err_record["latency_ms"] >= 0
+    assert err_record["outcome"] == "UpstreamError"
+    assert err_record["attempts"] == 1
+    assert err_record["error_class"] == "UpstreamError"
+    assert err_record["upstream_status"] == 503
+    for token in forbidden_tokens:
+        assert token not in err_lines[0]
+
+    stub('{"not_valid": "SECRET-MODEL-OUTPUT"}')
+    with pytest.raises(GeminiError, match="did not match ArgonReview"):
+        live().generate(
+            model="gemini-4-argon",
+            input=[text("SECRET-PROMPT-TEXT")],
+            schema=ArgonReview,
+            thinking_level="high",
+            purpose="/api/photos/extract:boiler_plate",
+            attempt=2,
+        )
+    val_lines = capsys.readouterr().out.strip().splitlines()
+    assert len(val_lines) == 1
+    val_record = json.loads(val_lines[0])
+    assert set(val_record) == allowed_error_fields
+    assert val_record["outcome"] == "validation_failure"
+    assert val_record["error_class"] == "ValidationError"
+    assert val_record["upstream_status"] is None
+    assert val_record["attempts"] == 2
+    for token in forbidden_tokens:
+        assert token not in val_lines[0]

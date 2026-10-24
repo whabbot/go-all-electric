@@ -527,6 +527,7 @@ def extract_radiator_video(
     design_load_kw: float | None = None,
     flow_temp_c: float = c.TARGET_FLOW_TEMP_C,
     log: VerificationLog | None = None,
+    purpose: str = "/api/radiators/video:radiators",
 ) -> RadiatorVideoResult:
     """Sanitize video, read with Gemini 4 Argon (high thinking), verify, and re-ask on failure."""
     clean_bytes, norm_mime, duration_s = sanitize_video(data, mime_type)
@@ -548,6 +549,8 @@ def extract_radiator_video(
             thinking_level="high",
             system_instruction=SYSTEM,
             timeout_s=120.0,
+            purpose=purpose,
+            attempt=attempt,
         )
         log.add(
             "read" if first else "reread",
