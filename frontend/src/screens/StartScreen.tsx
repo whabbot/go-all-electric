@@ -26,15 +26,13 @@ export function StartScreen() {
 
   return (
     <section className="screen start-screen">
-      <h1>Start</h1>
-      <p className="hero-tagline">Sam&apos;s heat pump puzzle</p>
-      <p className="lede">
-        A 1930s semi in London, a gas combi, and three installer quotes: <strong>6 kW</strong>,{' '}
-        <strong>9 kW</strong>, and <strong>12 kW</strong>. Which size is right — and will a heat pump
-        actually be cheaper?
+      <h1>Go All-Electric</h1>
+      <p className="hero-tagline">
+        Plan your move off gas — heat pump, solar, and EV charging in the right order.
       </p>
-      <p className="lede subtle">
-        Your gas bills have already measured your house; we use that to check the installer&apos;s maths.
+      <p className="lede">
+        Your gas bills have already measured your house. Go All-Electric checks installer maths against
+        that real use, sizes the kit, and lays out costs — then you decide what to do next.
       </p>
 
       <div className="card">

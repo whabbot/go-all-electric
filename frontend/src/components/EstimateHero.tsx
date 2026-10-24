@@ -161,7 +161,8 @@ function SharedKwAxis({
         </div>
       </div>
       <p className="subtle" style={{ marginTop: '1.75rem' }}>
-        Blue band = measured (B), orange = fabric (A). Ticks = Sam&apos;s 6, 9 and 12 kW quotes.
+        Blue band = measured (B), orange = fabric (A). Ticks = your{' '}
+        {quoteKw.length > 0 ? `${quoteKw.join(', ')} kW` : 'installer'} quotes.
       </p>
     </div>
   )
