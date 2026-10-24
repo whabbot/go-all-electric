@@ -509,10 +509,20 @@ button.primary {
   color: var(--text-muted);
 }
 
-.capture-example-diagram {
+.capture-example-photo {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
   border-radius: 6px;
   overflow: hidden;
   background: var(--bg);
+}
+
+.capture-example-illustration {
+  display: block;
+  margin-top: 0.25rem;
 }
 
 .upload-btn {
