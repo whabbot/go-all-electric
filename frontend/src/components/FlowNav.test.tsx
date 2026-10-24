@@ -48,7 +48,7 @@ describe('FlowNav', () => {
 
   it('redirects a direct URL to a locked step onto the furthest reachable step', () => {
     render(<FlowShell initialPath="/pack" />)
-    expect(screen.getByRole('heading', { name: /Sam's heat pump puzzle/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /^Start$/i })).toBeInTheDocument()
   })
 
   it('keeps session inputs when navigating back', async () => {

@@ -18,7 +18,7 @@ export function SpecScreen() {
 
       <div className="card highlight">
         <h2>Heat pump size</h2>
-        <p className="kw-display">
+        <p className="kw-display spec-kw-display">
           <RangeValue range={spec.size_kw} unit=" kW" decimals={0} />
         </p>
         <p className="subtle">

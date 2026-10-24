@@ -125,41 +125,44 @@ function SharedKwAxis({
   return (
     <div className="shared-kw-axis" aria-label="Estimates and quoted sizes on one scale">
       <h3>Both estimates vs installer quote sizes (0–12 kW)</h3>
-      <div className="shared-kw-axis-track">
-        {measured && (
+      <div className="shared-kw-axis-visual">
+        <div className="shared-kw-axis-track">
+          {measured && (
+            <div
+              className="shared-kw-band shared-kw-band--b"
+              style={{
+                left: `${(measured.low / MAX_KW) * 100}%`,
+                width: `${((measured.high - measured.low) / MAX_KW) * 100}%`,
+              }}
+            />
+          )}
           <div
-            className="range-band-fill"
+            className="shared-kw-band shared-kw-band--a"
             style={{
-              position: 'absolute',
-              top: '35%',
-              height: '30%',
-              left: `${(measured.low / MAX_KW) * 100}%`,
-              width: `${((measured.high - measured.low) / MAX_KW) * 100}%`,
-              background: 'var(--color-measured)',
-              borderRadius: '999px',
-              opacity: 0.85,
+              left: `${(fabric.low / MAX_KW) * 100}%`,
+              width: `${((fabric.high - fabric.low) / MAX_KW) * 100}%`,
             }}
           />
-        )}
-        <div
-          className="range-band-fill"
-          style={{
-            position: 'absolute',
-            top: '15%',
-            height: '30%',
-            left: `${(fabric.low / MAX_KW) * 100}%`,
-            width: `${((fabric.high - fabric.low) / MAX_KW) * 100}%`,
-            background: 'var(--color-fabric)',
-            borderRadius: '999px',
-            opacity: 0.85,
-          }}
-        />
-        {quoteKw.map((kw) => (
-          <div key={kw} className="shared-kw-quote-mark" style={{ left: `${(kw / MAX_KW) * 100}%` }}>
-            <span className="shared-kw-quote-tick" aria-hidden="true" />
-            <span className="shared-kw-quote-label">{kw}</span>
-          </div>
-        ))}
+          {quoteKw.map((kw) => (
+            <div
+              key={`tick-${kw}`}
+              className={`shared-kw-quote-tick-line${kw === MAX_KW ? ' shared-kw-quote-tick-line--end' : ''}`}
+              style={{ left: `${(kw / MAX_KW) * 100}%` }}
+              aria-hidden="true"
+            />
+          ))}
+        </div>
+        <div className="shared-kw-axis-labels" aria-hidden="true">
+          {quoteKw.map((kw) => (
+            <span
+              key={`label-${kw}`}
+              className={`shared-kw-quote-label${kw === MAX_KW ? ' shared-kw-quote-label--end' : ''}`}
+              style={{ left: `${(kw / MAX_KW) * 100}%` }}
+            >
+              {kw}
+            </span>
+          ))}
+        </div>
       </div>
       <p className="subtle" style={{ marginTop: '1.75rem' }}>
         Blue band = measured (B), orange = fabric (A). Ticks = Sam&apos;s 6, 9 and 12 kW quotes.

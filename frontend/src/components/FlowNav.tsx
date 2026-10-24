@@ -45,7 +45,6 @@ export function FlowNav({ brand }: Props) {
           const reachable = index <= furthestIndex
           const current = index === currentIndex
           const done = reachable && index < currentIndex
-          const optional = isStepOptional(step.path, flowSession)
           if (reachable) {
             return (
               <li key={step.path}>
@@ -56,15 +55,19 @@ export function FlowNav({ brand }: Props) {
                   aria-current={current ? 'step' : undefined}
                 >
                   {step.label}
-                  {optional ? <span className="flow-step-opt"> · opt</span> : null}
                 </Link>
               </li>
             )
           }
           return (
             <li key={step.path}>
-              <span className="flow-step-upcoming" aria-disabled="true" title="Complete earlier steps first">
+              <span
+                className="flow-step-upcoming"
+                aria-disabled="true"
+                title="Complete earlier steps first"
+              >
                 {step.label}
+                <span className="flow-step-locked-hint"> (locked)</span>
               </span>
             </li>
           )

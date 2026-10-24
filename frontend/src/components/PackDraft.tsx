@@ -50,6 +50,7 @@ export function PackDraft({ id, title, description, initialText, downloadFileNam
       <label className="pack-review">
         <input
           type="checkbox"
+          className="pack-review-checkbox"
           checked={reviewed}
           onChange={(e) => setReviewed(e.target.checked)}
         />

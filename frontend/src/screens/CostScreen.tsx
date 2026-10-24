@@ -64,15 +64,14 @@ export function CostScreen() {
 
       <div className="cost-layout">
         <div className="chart-wrap">
+          <p className="chart-axis-caption">Annual saving vs gas (£/yr)</p>
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={chartData} margin={{ top: 12, right: 8, left: 28, bottom: 8 }}>
+            <BarChart data={chartData} margin={{ top: 16, right: 8, left: 8, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis dataKey="flow" tickFormatter={(v) => `${v} °C`}>
                 <Label value="Flow temperature" offset={-2} position="insideBottom" />
               </XAxis>
-              <YAxis tickFormatter={(v) => formatGBP(Number(v))} width={72}>
-                <Label value="Annual saving vs gas" angle={-90} position="insideLeft" offset={12} style={{ textAnchor: 'middle' }} />
-              </YAxis>
+              <YAxis tickFormatter={(v) => formatGBP(Number(v))} width={80} />
               <Tooltip
                 formatter={(value, _name, item) => {
                   const row = item.payload as (typeof chartData)[number]
@@ -87,8 +86,14 @@ export function CostScreen() {
               <ReferenceLine
                 x={breakEven}
                 stroke="var(--color-fabric)"
+                strokeWidth={2}
                 strokeDasharray="4 4"
-                label={{ value: 'Break-even', position: 'top', fill: 'var(--ink-muted)' }}
+                label={{
+                  value: `Break-even ~${breakEven.toFixed(0)} °C`,
+                  position: 'insideTopRight',
+                  fill: 'var(--ink)',
+                  fontSize: 14,
+                }}
               />
               <Bar dataKey="savingCentral" radius={[4, 4, 0, 0]}>
                 <ErrorBar dataKey="savingSpread" width={4} stroke="var(--ink)" />

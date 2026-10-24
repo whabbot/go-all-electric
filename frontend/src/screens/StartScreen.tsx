@@ -26,7 +26,8 @@ export function StartScreen() {
 
   return (
     <section className="screen start-screen">
-      <h1>Sam&apos;s heat pump puzzle</h1>
+      <h1>Start</h1>
+      <p className="hero-tagline">Sam&apos;s heat pump puzzle</p>
       <p className="lede">
         A 1930s semi in London, a gas combi, and three installer quotes: <strong>6 kW</strong>,{' '}
         <strong>9 kW</strong>, and <strong>12 kW</strong>. Which size is right — and will a heat pump
