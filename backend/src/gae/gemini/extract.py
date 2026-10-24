@@ -1,8 +1,8 @@
 """Gemini reads each input; code checks the reading; a failed check goes back once.
 
 Model choice per input:
-- Photos of plates, radiators, cutouts and outdoor space start on the fast model: a few
-  printed fields or a rough size, where Flash is accurate and keeps the upload flow snappy.
+- Photos of plates, radiators, cutouts, outdoor space and loft insulation start on the fast model:
+  a few printed fields or a rough size, where Flash is accurate and keeps the upload flow snappy.
 - Gas bills and installer quotes start on the lead model: multi-page tables, date ranges and
   priced line items, where a misread propagates into Estimate B or a quote flag.
 - Every re-read uses the lead model at high thinking with the failed check spelled out,
@@ -22,6 +22,7 @@ from gae.gemini.schemas import (
     BoilerPlateReading,
     FuseCutoutReading,
     GasBillReading,
+    LoftReading,
     OutdoorSpaceReading,
     PhotoCheckResult,
     PhotoGlance,
@@ -127,6 +128,23 @@ SPECS: dict[str, Spec] = {
         ),
         check=lambda r, lookup: checks.check_bill(r),
     ),
+    PhotoKind.LOFT: Spec(
+        LoftReading,
+        lead_first=False,
+        thinking="medium",
+        prompt=(
+            "This should be a photo looking into the loft from the hatch. Check whether loft "
+            "floor insulation is clearly visible, whether ceiling joists are visible above the "
+            "insulation (typical joists are ~100 mm deep, so buried joists indicate 150-270 mm+), "
+            "whether a tape measure or ruler is visible, and estimate the insulation depth band "
+            "from the closed set (0mm, 25mm, 50mm, 100mm, 150mm, 200mm, 270mm)."
+        ),
+        photograph_instead=(
+            "across the loft floor from the hatch with a torch on, ideally with a tape measure "
+            "or ruler pushed vertically into the insulation next to a joist"
+        ),
+        check=lambda r, lookup: checks.check_loft(r),
+    ),
     "quote": Spec(
         QuoteReading,
         lead_first=True,
@@ -151,6 +169,7 @@ GLANCE_HINTS = {
     PhotoKind.FUSE_CUTOUT: "rating_a",
     PhotoKind.OUTDOOR_SPACE: "rough_size_m, surface",
     PhotoKind.GAS_BILL: "supplier, kwh, period",
+    PhotoKind.LOFT: "insulation_visible, depth_mm_band",
 }
 
 

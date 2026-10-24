@@ -3,7 +3,7 @@
 from gae.gemini.client import FakeGemini
 from gae.gemini.extract import extract, glance
 from gae.gemini.schemas import FuseCutoutReading, PhotoGlance, PhotoKind, RadiatorReading
-from tests.gemini.conftest import JPEG, PDF, bill, boiler, quote
+from tests.gemini.conftest import JPEG, PDF, bill, boiler, loft, quote
 
 
 def glance_reply(**overrides) -> PhotoGlance:
@@ -200,3 +200,58 @@ def test_quoted_kw_against_datasheet(lookup) -> None:
     result = extract(gemini, lookup, "quote", PDF, "application/pdf")
     assert result.status == "verified_with_warnings"
     assert any(w.startswith("quoted kW matches the datasheet") for w in result.warnings)
+
+
+def test_loft_photo_verifies_on_flash_and_glance(lookup) -> None:
+    glance_gemini = FakeGemini(
+        [
+            glance_reply(
+                detected_kind="loft",
+                key_fields=[
+                    {"name": "insulation_visible", "value": "true"},
+                    {"name": "depth_mm_band", "value": "270mm"},
+                ],
+                summary="deep loft wool over joists",
+            )
+        ]
+    )
+    glance_res = glance(glance_gemini, PhotoKind.LOFT, JPEG, "image/jpeg")
+    assert glance_res.usable and glance_res.matches_expected
+    assert glance_res.key_fields["depth_mm_band"] == "270mm"
+
+    gemini = FakeGemini([loft()])
+    result = extract(gemini, lookup, PhotoKind.LOFT, JPEG, "image/jpeg")
+    assert result.status == "verified" and result.attempts == 1
+    assert result.reading.depth_mm_band == "270mm"
+    assert result.reading.insulation_visible is True
+    assert [c.model for c in gemini.calls] == ["gemini-3.8-flash"]
+
+
+def test_loft_without_visible_insulation_is_couldnt_tell(lookup) -> None:
+    dark = loft(insulation_visible=False, depth_mm_band=None)
+    gemini = FakeGemini([dark, dark])
+    result = extract(gemini, lookup, PhotoKind.LOFT, JPEG, "image/jpeg")
+    assert result.status == "couldnt_tell"
+    assert result.reading is None
+    assert "loft floor from the hatch" in result.photograph_instead
+    assert len(gemini.calls) == 2
+    assert (gemini.calls[1].model, gemini.calls[1].thinking_level) == ("gemini-4-argon", "high")
+
+
+def test_loft_missing_depth_rereads_on_argon_and_recovers(lookup) -> None:
+    first = loft(depth_mm_band=None)
+    second = loft(depth_mm_band="200mm", joists_visible_above_insulation=False)
+    gemini = FakeGemini([first, second])
+    result = extract(gemini, lookup, PhotoKind.LOFT, JPEG, "image/jpeg")
+    assert result.status == "verified" and result.attempts == 2
+    assert result.reading.depth_mm_band == "200mm"
+    assert "depth band in allowed set" in gemini.calls[1].prompt
+
+
+def test_loft_joists_visible_at_270mm_is_a_soft_warning(lookup) -> None:
+    inconsistent = loft(depth_mm_band="270mm", joists_visible_above_insulation=True)
+    gemini = FakeGemini([inconsistent, inconsistent])
+    result = extract(gemini, lookup, PhotoKind.LOFT, JPEG, "image/jpeg")
+    assert result.status == "verified_with_warnings"
+    assert result.reading is not None
+    assert any("joist visibility consistent with depth band" in w for w in result.warnings)

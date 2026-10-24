@@ -14,6 +14,7 @@ const STEP_LABELS: Record<string, string> = {
   read_radiator_video: 'Radiator walkthrough video',
   read_fuse_cutout: 'Fuse cutout',
   read_outdoor_space: 'Outdoor unit spot',
+  read_loft: 'Loft',
   read_gas_bill: 'Gas bill',
   weather: 'Weather for your bill dates',
   save: 'Save survey (district only)',
@@ -27,7 +28,7 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 /** Photos the answer does not depend on: skipping them is never shown as a gap. */
-const OPTIONAL_KINDS: PhotoKind[] = ['outdoor_space']
+const OPTIONAL_KINDS: PhotoKind[] = ['outdoor_space', 'loft']
 
 type Progress = Record<string, { status: 'running' | 'done'; ms: number | null }>
 

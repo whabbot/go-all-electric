@@ -23,6 +23,7 @@ const EVIDENCE_LABEL: Record<EvidenceSource, string> = {
   radiator_video: 'Radiator walkthrough video',
   fuse_cutout: 'Fuse cutout photo',
   outdoor_space: 'Outdoor unit spot photo',
+  loft: 'Loft photo',
   epc: 'EPC record',
   quote: 'Installer quotes',
 }

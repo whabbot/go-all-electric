@@ -23,6 +23,13 @@ export const CAPTURE_SUMMARY_ITEMS: CaptureSummaryItem[] = [
     timeHint: 'about 2 min',
   },
   {
+    id: 'loft',
+    label: 'Loft',
+    status: 'recommended',
+    photoCount: '1 photo',
+    timeHint: 'about 2 min',
+  },
+  {
     id: 'boiler_plate',
     label: 'Boiler data plate',
     status: 'recommended',
@@ -91,6 +98,12 @@ export const CAPTURE_GUIDANCE: Record<PhotoKind, CaptureItemGuidance> = {
       'The proposed heat-pump spot from a few steps back: wall, ground and nearby windows in frame; tape measure helps.',
     goodReason: 'Clear width and depth with scale and obstructions visible.',
     badReason: 'Too tight, no scale, or key obstructions out of frame.',
+  },
+  loft: {
+    oneLine:
+      'From the hatch with your torch on, showing the insulation and ceiling joists; a tape measure pushed into the wool helps.',
+    goodReason: 'Insulation and joists (or a tape measure in the wool) are clearly lit and in focus.',
+    badReason: 'Too dark, hatch closed, or only boarding and boxes visible so insulation depth cannot be judged.',
   },
   gas_bill: {
     oneLine:

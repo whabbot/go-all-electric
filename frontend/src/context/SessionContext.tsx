@@ -26,6 +26,7 @@ const PHOTO_SLOTS: { kind: PhotoKind; label: string }[] = [
   { kind: 'fuse_cutout', label: 'Fuse cutout' },
   { kind: 'outdoor_space', label: 'Outdoor unit spot (optional)' },
   { kind: 'gas_bill', label: 'Gas bill' },
+  { kind: 'loft', label: 'Loft (optional)' },
 ]
 
 export type CheckedQuote = { group: QuoteUploadGroup; result: QuoteCheckResult | null }

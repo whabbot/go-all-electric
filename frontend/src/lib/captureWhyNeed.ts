@@ -58,6 +58,17 @@ export const WHY_NEED: Record<WhyNeedId, WhyNeedContent> = {
     privacy:
       'Only your redacted photo is analysed; dimensions and notes are kept as readings, not the image. Location in saves is postcode district only.',
   },
+  loft: {
+    dialogTitle: 'Why we need a loft photo',
+    bullets: [
+      'We check whether loft insulation is visible, whether ceiling joists show above the wool, and estimate the depth band (0 to 270 mm+).',
+      'EPC loft insulation depth is often out of date; in the one-context review, Gemini 4 Argon can cite this photo to propose a corrected depth so code can re-run Estimate A and test whether it explains the gap with your bills.',
+      'The loft reading is not fed directly into Estimate A — headline fabric numbers stay on the EPC until code tests a conflict proposal.',
+      'Optional: skip it if you cannot safely look through the hatch; we will not guess loft depth.',
+    ],
+    privacy:
+      'Only your redacted JPEG is analysed; we store the extracted depth band and notes as a reading, never the photo. Location in saved surveys is postcode district only.',
+  },
   gas_bill: {
     dialogTitle: 'Why we need a gas bill',
     bullets: [

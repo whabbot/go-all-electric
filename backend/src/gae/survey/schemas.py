@@ -14,6 +14,7 @@ from gae.gemini.schemas import (
     BoilerPlateReading,
     FuseCutoutReading,
     GasBillReading,
+    LoftReading,
     OutdoorSpaceReading,
     PhotoKind,
     QuoteReading,
@@ -118,4 +119,5 @@ class ReviewContext(BaseModel):
     radiator_video: RadiatorVideoResult | RadiatorVideoReading | None = None
     fuse_cutout: FuseCutoutReading | None = None
     outdoor_space: OutdoorSpaceReading | None = None
+    loft: LoftReading | None = None
     quotes: list[ReviewQuote] = Field(default_factory=list, max_length=5)

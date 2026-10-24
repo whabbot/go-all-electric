@@ -65,6 +65,9 @@ USED_FOR = {
     PhotoKind.FUSE_CUTOUT: "electricity supply headroom for the all-electric plan",
     PhotoKind.OUTDOOR_SPACE: "whether an outdoor unit fits",
     PhotoKind.GAS_BILL: "Estimate B, measured from what the house actually used",
+    PhotoKind.LOFT: (
+        "evidence for the review to test whether EPC loft insulation depth is out of date"
+    ),
 }
 
 Emit = Callable[[dict[str, Any]], None]

@@ -30,7 +30,7 @@ from gae.opendata.mapping import map_epc
 from gae.opendata.weather import DegreeDays, degree_days_from_daily
 from gae.survey.analysis import Services
 from gae.survey.router import get_services
-from tests.gemini.conftest import JPEG, PDF, SYNTHETIC_SHEETS, bill, boiler
+from tests.gemini.conftest import JPEG, PDF, SYNTHETIC_SHEETS, bill, boiler, loft
 from tests.gemini.conftest import InMemoryDatasheetLookup as Lookup
 from tests.gemini.test_gemini_video import _synthetic_mp4
 
@@ -149,6 +149,7 @@ def scripted(**extra) -> ScriptedGemini:
             "RadiatorReading": blurry_then_clear_radiator(),
             "FuseCutoutReading": meter_twice(),
             "OutdoorSpaceReading": outdoor(),
+            "LoftReading": [loft()],
             "GasBillReading": [
                 bill(
                     monthly=[
@@ -202,7 +203,7 @@ def harness():
 
 
 client = TestClient(app)
-ALL_PHOTOS = ["boiler_plate", "radiators", "fuse_cutout", "outdoor_space", "gas_bill"]
+ALL_PHOTOS = ["boiler_plate", "radiators", "fuse_cutout", "outdoor_space", "gas_bill", "loft"]
 
 
 def analyse(kinds=ALL_PHOTOS, certificate=CERTIFICATE):
@@ -270,6 +271,8 @@ def test_full_path_runs_epc_photos_bill_weather_maths_and_saves(harness) -> None
     stored = survey.model_dump_json()
     assert survey.postcode_district == "ZZ1"
     assert survey.extracted_readings["gas_bill_total_kwh"].value == 12000
+    assert survey.extracted_readings["loft_depth_mm_band"].value == "270mm"
+    assert survey.extracted_readings["loft_insulation_visible"].value is True
     for private in (STREET, POSTCODE, "1ZZ", CERTIFICATE, "100000000001"):
         assert private not in stored
         assert private not in text
@@ -380,7 +383,16 @@ def test_review_gets_building_fields_only_and_quotes(harness) -> None:
                     "evidence_summary": "The outdoor wall photo shows retrofit cavity fill.",
                     "proposed_value": "cavity_filled",
                     "expected_direction": "lower",
-                }
+                },
+                {
+                    "field": "loft_insulation_mm",
+                    "evidence_source": "loft",
+                    "evidence_summary": (
+                        "The loft photo shows deep mineral wool burying the joists."
+                    ),
+                    "proposed_value": "270mm",
+                    "expected_direction": "lower",
+                },
             ],
             quote_reviews=[{"quote_id": "Quote A", "flags": []}],
             questions_to_ask=["Can I see the room-by-room heat loss?"],
@@ -397,6 +409,7 @@ def test_review_gets_building_fields_only_and_quotes(harness) -> None:
         "radiators": readings["radiators"],
         "fuse_cutout": readings["fuse_cutout"],
         "outdoor_space": readings["outdoor_space"],
+        "loft": readings["loft"],
         "quotes": [{"quote_id": "Quote A", "reading": None}],
     }
     response = client.post(
@@ -405,21 +418,27 @@ def test_review_gets_building_fields_only_and_quotes(harness) -> None:
         files=[
             ("boiler_plate", ("plate.jpg", JPEG, "image/jpeg")),
             ("gas_bill", ("bill.jpg", JPEG, "image/jpeg")),
+            ("loft", ("loft.jpg", JPEG, "image/jpeg")),
             ("quotes", ("quote.pdf", PDF, "application/pdf")),
         ],
     )
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["review"]["quote_reviews"][0]["quote_id"] == "Quote A"
-    assert len(body["tested_conflicts"]) == 1
+    assert len(body["tested_conflicts"]) == 2
     assert body["tested_conflicts"][0]["field"] == "wall_type"
     assert body["tested_conflicts"][0]["proposed_value"] == "cavity_filled"
     assert body["tested_conflicts"][0]["gap_change"] == "shrinks"
+    assert body["tested_conflicts"][1]["field"] == "loft_insulation_mm"
+    assert body["tested_conflicts"][1]["evidence_source"] == "loft"
+    assert body["tested_conflicts"][1]["proposed_value"] == "270mm"
+    assert body["tested_conflicts"][1]["gap_change"] == "shrinks"
     assert body["stripped"] == []
     call = harness["gemini"].calls[-1]
     assert call.schema == "ArgonReview"
     assert '"outdoor_space":' in call.prompt and '"radiators":' in call.prompt
-    assert call.media_types.count("image") == 2 and call.media_types.count("document") == 1
+    assert '"loft":' in call.prompt
+    assert call.media_types.count("image") == 3 and call.media_types.count("document") == 1
     for private in (STREET, POSTCODE, "ZZ1", CERTIFICATE, "100000000001"):
         assert private not in call.prompt
 
