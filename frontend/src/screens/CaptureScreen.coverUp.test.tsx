@@ -69,10 +69,15 @@ function asFileList(files: File[]): FileList {
   return list
 }
 
-function radiatorFileInput(): HTMLInputElement {
+async function openRadiatorsAndGetPhotoInput(user: ReturnType<typeof userEvent.setup>) {
+  const toggle = screen
+    .getAllByRole('button', { name: /Radiators/i })
+    .find((el) => el.classList.contains('capture-slot-disclosure'))
+  if (!toggle) throw new Error('radiators disclosure missing')
+  await user.click(toggle)
   const heading = screen.getByRole('heading', { name: 'Radiators' })
-  const slot = heading.closest('.photo-slot')
-  const input = slot?.querySelector('input[type="file"]')
+  const slot = heading.closest('.capture-slot-accordion')
+  const input = slot?.querySelector('input[type="file"][accept="image/*"]')
   if (!input) throw new Error('radiator file input missing')
   return input as HTMLInputElement
 }
@@ -87,8 +92,9 @@ describe('CaptureScreen cover-up queue', () => {
   })
 
   it('reads selected files before clearing the input value', async () => {
+    const user = userEvent.setup()
     renderCapture()
-    const input = radiatorFileInput()
+    const input = await openRadiatorsAndGetPhotoInput(user)
     const file = new File(['a'], 'snap.jpg', { type: 'image/jpeg' })
     fireEvent.change(input, { target: { files: asFileList([file]) } })
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
@@ -98,7 +104,7 @@ describe('CaptureScreen cover-up queue', () => {
   it('clears the file input after cancel so the same file reopens the dialog', async () => {
     const user = userEvent.setup()
     renderCapture()
-    const input = radiatorFileInput()
+    const input = await openRadiatorsAndGetPhotoInput(user)
     const file = new File(['a'], 'same.jpg', { type: 'image/jpeg' })
 
     await user.upload(input, file)
@@ -114,7 +120,7 @@ describe('CaptureScreen cover-up queue', () => {
   it('queues multiple radiator photos and skips one without dropping the rest', async () => {
     const user = userEvent.setup()
     renderCapture()
-    const input = radiatorFileInput()
+    const input = await openRadiatorsAndGetPhotoInput(user)
     const files = [
       new File(['1'], 'one.jpg', { type: 'image/jpeg' }),
       new File(['2'], 'two.jpg', { type: 'image/jpeg' }),
@@ -134,8 +140,10 @@ describe('CaptureScreen cover-up queue', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   })
 
-  it('allows multi-select on the radiator file input', () => {
+  it('allows multi-select on the radiator file input', async () => {
+    const user = userEvent.setup()
     renderCapture()
-    expect(radiatorFileInput().hasAttribute('multiple')).toBe(true)
+    const input = await openRadiatorsAndGetPhotoInput(user)
+    expect(input.hasAttribute('multiple')).toBe(true)
   })
 })
