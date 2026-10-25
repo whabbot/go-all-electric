@@ -55,6 +55,7 @@ export function CostScreen() {
     <section className="screen cost-screen">
       <h1>Costs</h1>
       {placeLabel && <p className="place-label">{placeLabel}</p>}
+      {analysis.costs_annualised && <p className="card" role="status">Estimated annual Costs: gas usage is annualised using a full year of local weather. 12 months of usage in a row gives the best comparison.</p>}
       <p className="lede prose-measure">
         Annual saving vs gas at the price cap — every bar is a range; central value shown.
       </p>
@@ -118,7 +119,7 @@ export function CostScreen() {
               <h3>{c.design_flow_temp_c} °C flow</h3>
               <p>
                 Gas: <strong>{formatGBP(c.gas_cost_gbp.value)}</strong>{' '}
-                {gasFromBills ? (
+                {analysis.costs_annualised ? <span className="subtle">estimated annual gas</span> : gasFromBills ? (
                   <span className="conf conf-high">known from bills</span>
                 ) : (
                   <span className="subtle">illustrative only</span>

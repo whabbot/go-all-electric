@@ -7,13 +7,16 @@ Radiator labels (room names) are display-only in the browser and are never sent 
 models forbid unknown fields, so a label cannot reach a Gemini request through this path.
 """
 
+from calendar import monthrange
+from datetime import date
 from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
-from gae.gemini.checks import RADIATOR_SHAPES, STANDARD_FUSE_RATINGS_A
+from gae.gemini.checks import PLAUSIBLE_ANNUAL_GAS_KWH, RADIATOR_SHAPES, STANDARD_FUSE_RATINGS_A
 from gae.gemini.review import CERTIFICATE_ID, POSTCODE
 from gae.gemini.schemas import PhotoKind
+from gae.opendata.usage import UsagePeriod, select_periods
 
 MAX_RADIATORS = 8
 
@@ -79,10 +82,63 @@ class KnownFuse(_Known):
         return value
 
 
+class KnownGasPeriod(_Known):
+    kwh: float = Field(gt=0, le=40_000, allow_inf_nan=False)
+    start: date
+    end: date
+
+    @model_validator(mode="after")
+    def _dates(self) -> Self:
+        if self.end < self.start:
+            raise ValueError("End date must be on or after start date")
+        return self
+
+
+class KnownGasBill(_Known):
+    periods: list[KnownGasPeriod] = Field(min_length=1, max_length=13)
+
+    @model_validator(mode="after")
+    def _annual_bounds(self) -> Self:
+        chosen, _ = select_periods(self.usage())
+        days = (chosen[-1].end - chosen[0].start).days + 1
+        if days in (365, 366):
+            low, high = PLAUSIBLE_ANNUAL_GAS_KWH
+            if not low <= sum(p.kwh for p in chosen) <= high:
+                raise ValueError(f"Annual gas usage must be between {low:,} and {high:,} kWh")
+        return self
+
+    def usage(self) -> list[UsagePeriod]:
+        return [
+            UsagePeriod(p.start, p.end, p.kwh, f"Entered period {i + 1}", True)
+            for i, p in enumerate(self.periods)
+        ]
+
+    def values(self) -> dict[str, JsonValue]:
+        chosen, _ = select_periods(self.usage())
+        rows = [KnownGasPeriod(start=p.start, end=p.end, kwh=p.kwh) for p in chosen]
+        monthly = (
+            [{"month": p.start.strftime("%Y-%m"), "kwh": p.kwh} for p in rows]
+            if all(
+                p.start.day == 1
+                and p.end
+                == date(p.start.year, p.start.month, monthrange(p.start.year, p.start.month)[1])
+                for p in rows
+            )
+            else []
+        )
+        return {
+            "period_start": rows[0].start.isoformat(),
+            "period_end": rows[-1].end.isoformat(),
+            "total_kwh": sum(p.kwh for p in rows),
+            "monthly": monthly,
+        }
+
+
 class KnownDetails(_Known):
     """Everything entered by hand, radiators keyed by position (radiator 1 is index 0)."""
 
     radiators: list[KnownRadiator] = Field(default_factory=list, max_length=MAX_RADIATORS)
+    gas_bill: KnownGasBill | None = None
     boiler: KnownBoiler | None = None
     fuse_cutout: KnownFuse | None = None
 
@@ -107,6 +163,7 @@ class Disagreement(BaseModel):
 # Numbers within this relative tolerance of the entered value count as agreeing: photo
 # readings of size and output are approximate, counts and fuse ratings are not.
 _TOLERANCE = {
+    "total_kwh": 0.05,
     "width_mm": 0.1,
     "height_mm": 0.1,
     "heating_output_kw": 0.05,
@@ -134,7 +191,9 @@ def apply_entered(
     disagreements = [
         Disagreement(field=field, entered=value, read=reading[field])
         for field, value in entered.items()
-        if reading.get(field) is not None and not _agrees(field, value, reading[field])
+        if isinstance(value, str | int | float)
+        and reading.get(field) is not None
+        and not _agrees(field, value, reading[field])
     ]
     return {**reading, **entered}, disagreements
 
@@ -142,7 +201,9 @@ def apply_entered(
 def entered_for(known: KnownDetails | None, kind: PhotoKind) -> dict[str, JsonValue]:
     if known is None:
         return {}
-    item = {PhotoKind.BOILER_PLATE: known.boiler, PhotoKind.FUSE_CUTOUT: known.fuse_cutout}.get(
-        kind
-    )
+    item = {
+        PhotoKind.BOILER_PLATE: known.boiler,
+        PhotoKind.FUSE_CUTOUT: known.fuse_cutout,
+        PhotoKind.GAS_BILL: known.gas_bill,
+    }.get(kind)
     return item.values() if item is not None else {}

@@ -111,6 +111,9 @@ class AnalysisResult(BaseModel):
     defaults: list[NamedDefault]
     plan: AllElectricPlan
     log: list[VerificationLogEntry]
+    bill_warning: str | None = None
+    bill_notes: list[str] = Field(default_factory=list)
+    costs_annualised: bool = False
     timings_ms: dict[str, int]
 
 

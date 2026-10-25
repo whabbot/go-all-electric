@@ -19,6 +19,7 @@ from gae.heatpump.ranges import Range
 class MeasuredCaveat(StrEnum):
     # No summer months available: the hot-water/cooking share is a default fraction.
     BASELINE_ESTIMATED = "baseline_estimated"
+    PARTIAL_COVERAGE = "partial_coverage"
     # Boiler efficiency was not read from the data plate.
     EFFICIENCY_DEFAULTED = "efficiency_defaulted"
     # Solar gain lowers gas use, so the bills under-read heat loss.
@@ -45,6 +46,8 @@ def estimate_measured(
     heating_degree_days: float,
     monthly_gas_kwh: Mapping[int, float] | None = None,
     boiler_efficiency: float | None = None,
+    baseline_gas_kwh: Range | None = None,
+    extra_uncertainty: float = 0,
     indoor_temp_c: float = c.DESIGN_INDOOR_TEMP_C,
     design_outdoor_temp_c: float = c.LONDON_DESIGN_OUTDOOR_TEMP_C,
     floor_area_m2: float | None = None,
@@ -74,7 +77,7 @@ def estimate_measured(
     if efficiency_defaulted:
         caveats.append(MeasuredCaveat.EFFICIENCY_DEFAULTED)
 
-    baseline = _baseline_gas_kwh(annual_gas_kwh, monthly_gas_kwh)
+    baseline = baseline_gas_kwh or _baseline_gas_kwh(annual_gas_kwh, monthly_gas_kwh)
     if baseline is None:
         caveats.append(MeasuredCaveat.BASELINE_ESTIMATED)
         baseline = Range(
@@ -108,7 +111,7 @@ def estimate_measured(
     if partially_heated:
         caveats.append(MeasuredCaveat.POSSIBLY_PARTIALLY_HEATED)
 
-    uncertainty = c.MEASURED_METHOD_UNCERTAINTY
+    uncertainty = min(0.9, c.MEASURED_METHOD_UNCERTAINTY + extra_uncertainty)
     if efficiency_defaulted:
         uncertainty += c.DEFAULTED_EFFICIENCY_UNCERTAINTY
     upside = uncertainty + (c.LOW_READING_UPLIFT if sunny or partially_heated else 0.0)

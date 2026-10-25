@@ -386,6 +386,9 @@ EnteredField = Literal[
     "heating_output_kw",
     "hot_water_output_kw",
     "rating_a",
+    "total_kwh",
+    "period_start",
+    "period_end",
 ]
 
 
@@ -394,7 +397,7 @@ class EnteredValue(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    input: Literal["boiler_plate", "radiators", "fuse_cutout"]
+    input: Literal["boiler_plate", "radiators", "fuse_cutout", "gas_bill"]
     radiator: int | None = Field(default=None, ge=1, le=8)
     field: EnteredField
     entered: float | int | str
@@ -419,7 +422,7 @@ class QuoteInput(BaseModel):
 
 class ReviewRequest(BaseModel):
     # Boiler, fuse, outdoor and loft photos plus up to 8 radiators x 3 photos.
-    photos: list[MediaInput] = Field(default_factory=list, max_length=28)
+    photos: list[MediaInput] = Field(default_factory=list, max_length=33)
     bill: MediaInput | None = None
     epc_record: dict[str, JsonValue] = Field(default_factory=dict)
     boiler: BoilerPlateReading | None = None

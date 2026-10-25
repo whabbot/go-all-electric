@@ -158,6 +158,7 @@ export function specRoomName(room: string, labels: (string | null)[], readings: 
 }
 
 const TOLERANCE: Record<string, number> = {
+  total_kwh: 0.05,
   width_mm: 0.1,
   height_mm: 0.1,
   heating_output_kw: 0.05,

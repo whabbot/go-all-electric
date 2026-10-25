@@ -32,6 +32,7 @@ import {
   radiatorLabel,
   type DetailInputs,
 } from '../lib/knownDetails'
+import { parseBillDetails, type BillPeriodInputs } from '../lib/billDetails'
 import { outwardCode, quoteId } from '../lib/labels'
 
 export const MAX_RADIATORS = 8
@@ -110,6 +111,13 @@ type Session = {
   radiatorUploads: RadiatorUpload[]
   /** Display labels aligned with `radiatorUploads`; they never leave this tab. */
   radiatorLabels: (string | null)[]
+  billPhotos: RadiatorPhotoItem[]
+  addBillPhoto: (file: File) => string
+  updateBillPhoto: (id: string, patch: RadiatorPhotoPatch) => void
+  removeBillPhoto: (id: string) => void
+  billPeriods: BillPeriodInputs[]
+  setBillPeriods: (p: BillPeriodInputs[]) => void
+  knownBill: ReturnType<typeof parseBillDetails>['known']
   boilerDetails: DetailInputs
   setBoilerDetails: (d: DetailInputs) => void
   fuseDetails: DetailInputs
@@ -191,11 +199,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [files, setFiles] = useState<Partial<Record<PhotoKind, File>>>({})
   const [checks, setChecks] = useState<Partial<Record<PhotoKind, PhotoCheckResult | null>>>({})
   const [radiators, setRadiators] = useState<RadiatorCard[]>([])
+  const [billPhotos, setBillPhotos] = useState<RadiatorPhotoItem[]>([])
+  const [billPeriods, setBillPeriods] = useState<BillPeriodInputs[]>([])
+  const knownBill = useMemo(() => parseBillDetails(billPeriods).known, [billPeriods])
   const [boilerDetails, setBoilerDetails] = useState<DetailInputs>({})
   const [fuseDetails, setFuseDetails] = useState<DetailInputs>({})
   const radiatorIdCounter = useRef(0)
   const radiatorsRef = useRef<RadiatorCard[]>([])
   radiatorsRef.current = radiators
+  const billPhotosRef = useRef(billPhotos)
+  useEffect(() => { billPhotosRef.current = billPhotos }, [billPhotos])
   const [radiatorVideo, setRadiatorVideoFile] = useState<File | null>(null)
   const [radiatorVideoResult, setRadiatorVideoResult] = useState<RadiatorVideoResult | null>(null)
   const [quotes, setQuotesState] = useState<CheckedQuote[]>([])
@@ -208,6 +221,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return () => {
+      for (const photo of billPhotosRef.current) URL.revokeObjectURL(photo.previewUrl)
       for (const card of radiatorsRef.current) {
         for (const item of card.photos) URL.revokeObjectURL(item.previewUrl)
       }
@@ -252,6 +266,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setFiles({})
     setChecks({})
     setRadiators([])
+    setBillPhotos(prev => { prev.forEach(p => URL.revokeObjectURL(p.previewUrl)); return [] })
+    setBillPeriods([])
     setBoilerDetails({})
     setFuseDetails({})
     setQuotesState([])
@@ -356,6 +372,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return hasEntries(known) ? known : null
   }, [fuseDetails])
 
+  const addBillPhoto = useCallback((file: File) => {
+    const id = `bill-${++radiatorIdCounter.current}`
+    const photo = { id, file, fileName: file.name, previewUrl: URL.createObjectURL(file), result: null, checking: true, error: null }
+    setBillPhotos(prev => prev.length < 6 ? [...prev, photo] : prev)
+    return id
+  }, [])
+  const updateBillPhoto = useCallback((id: string, patch: RadiatorPhotoPatch) => {
+    setBillPhotos(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p))
+  }, [])
+  const removeBillPhoto = useCallback((id: string) => {
+    setBillPhotos(prev => { const photo = prev.find(p => p.id === id); if (photo) URL.revokeObjectURL(photo.previewUrl); return prev.filter(p => p.id !== id) })
+  }, [])
+
   const setRadiatorVideo = useCallback((file: File | null, result: RadiatorVideoResult | null) => {
     setRadiatorVideoFile(file)
     setRadiatorVideoResult(result)
@@ -386,7 +415,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       reading: q.result?.verified.reading ?? null,
     }))
     api
-      .reviewAnalysis(analysis, files, reviewQuotes, radiatorUploads)
+      .reviewAnalysis(analysis, files, reviewQuotes, radiatorUploads, billPhotos.map(p => p.file))
       .then((result) => {
         if (run === reviewRun.current)
           setReview({ status: 'done', result, elapsedMs: Date.now() - startedAt, quoteCount: reviewQuotes.length })
@@ -395,11 +424,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (run === reviewRun.current)
           setReview({ status: 'failed', message: e instanceof Error ? e.message : 'Review failed' })
       })
-  }, [analysis, files, quotes, radiatorUploads])
+  }, [analysis, files, quotes, radiatorUploads, billPhotos])
 
   const photos = useMemo(
     () =>
       PHOTO_SLOTS.map((s): PhotoSlot => {
+        if (s.kind === 'gas_bill' && billPhotos.length) return { ...s, fileName: `${billPhotos.length} bill photos`, result: billPhotos[billPhotos.length - 1].result, entered: knownBill != null }
         if (s.kind === 'radiators') {
           const radiatorPhotos = counted.flatMap((card) => card.photos)
           return {
@@ -413,10 +443,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           ...s,
           result: checks[s.kind] ?? null,
           fileName: files[s.kind]?.name ?? null,
-          entered: (s.kind === 'boiler_plate' && knownBoiler != null) || (s.kind === 'fuse_cutout' && knownFuse != null),
+          entered: (s.kind === 'gas_bill' && knownBill != null && !parseBillDetails(billPeriods).error) || (s.kind === 'boiler_plate' && knownBoiler != null) || (s.kind === 'fuse_cutout' && knownFuse != null),
         }
       }),
-    [checks, files, counted, knownBoiler, knownFuse],
+    [checks, files, counted, knownBoiler, knownFuse, knownBill, billPeriods, billPhotos],
   )
 
   const district = address ? outwardCode(address.postcode) : analysis?.postcode_district
@@ -439,6 +469,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       removeRadiatorPhoto,
       radiatorUploads,
       radiatorLabels,
+      billPhotos,
+      addBillPhoto,
+      updateBillPhoto,
+      removeBillPhoto,
+      billPeriods,
+      setBillPeriods,
+      knownBill,
       boilerDetails,
       setBoilerDetails,
       fuseDetails,
@@ -480,6 +517,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       removeRadiatorPhoto,
       radiatorUploads,
       radiatorLabels,
+      billPhotos,
+      addBillPhoto,
+      updateBillPhoto,
+      removeBillPhoto,
+      billPeriods,
+      setBillPeriods,
+      knownBill,
       boilerDetails,
       fuseDetails,
       knownBoiler,

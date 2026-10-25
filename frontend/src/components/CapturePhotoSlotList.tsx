@@ -1,10 +1,11 @@
 import { useId, type MutableRefObject } from 'react'
 import type { PhotoCheckResult, PhotoKind, RadiatorVideoResult } from '../api'
-import { MAX_RADIATORS, type RadiatorCard } from '../context/SessionContext'
+import { MAX_RADIATORS, type RadiatorCard, type RadiatorPhotoItem } from '../context/SessionContext'
+import type { BillPeriodInputs } from '../lib/billDetails'
 import type { DetailInputs } from '../lib/knownDetails'
 import { CaptureExamplesDialog } from './CaptureExamplesDialog'
 import { CaptureWhyNeedDialog } from './CaptureWhyNeedDialog'
-import { BoilerDetails, FuseDetails } from './KnownDetails'
+import { BillDetails, BoilerDetails, FuseDetails } from './KnownDetails'
 import { RadiatorCards } from './RadiatorCards'
 import { RadiatorVideoResults } from './RadiatorVideoResults'
 import { WhyNeedTrigger } from './WhyNeedTrigger'
@@ -44,6 +45,10 @@ type Props = {
   onAddRadiatorPhotos: (id: string, list: FileList | null, input: HTMLInputElement) => void
   onRetakeRadiatorPhoto: (id: string, photoId: string, list: FileList | null, input: HTMLInputElement) => void
   onRemoveRadiatorPhoto: (id: string, photoId: string) => void
+  billPhotos: RadiatorPhotoItem[]
+  onRemoveBillPhoto: (id: string) => void
+  billPeriods: BillPeriodInputs[]
+  onBillPeriodsChange: (p: BillPeriodInputs[]) => void
   boilerDetails: DetailInputs
   onBoilerDetailsChange: (d: DetailInputs) => void
   fuseDetails: DetailInputs
@@ -86,6 +91,10 @@ export function CapturePhotoSlotList({
   onAddRadiatorPhotos,
   onRetakeRadiatorPhoto,
   onRemoveRadiatorPhoto,
+  billPhotos,
+  onRemoveBillPhoto,
+  billPeriods,
+  onBillPeriodsChange,
   boilerDetails,
   onBoilerDetailsChange,
   fuseDetails,
@@ -196,6 +205,7 @@ export function CapturePhotoSlotList({
                         if (el) fileInputsRef.current[kind] = el
                       }}
                       type="file"
+                      multiple={kind === 'gas_bill'}
                       accept="image/*"
                       capture="environment"
                       onChange={(e) => void onFiles(kind, e.target.files, e.currentTarget)}
@@ -205,6 +215,8 @@ export function CapturePhotoSlotList({
                         <span className="inline-spinner" aria-hidden="true" />
                         Checking photo…
                       </span>
+                    ) : kind === 'gas_bill' && billPhotos.length ? (
+                      'Add bill photos'
                     ) : slot.fileName ? (
                       'Replace photo'
                     ) : (
@@ -279,6 +291,11 @@ export function CapturePhotoSlotList({
                           )}
                         </div>
                       )}
+                      {kind === 'gas_bill' && billPhotos.map((photo, i) => <div className="check-result" key={photo.id}>
+                        <p>Bill photo {i + 1}: {photo.checking ? 'Checking…' : photo.error || photo.result?.summary || 'Ready'}</p>
+                        <button type="button" className="btn" onClick={() => onRemoveBillPhoto(photo.id)}>Remove bill photo {i + 1}</button>
+                      </div>)}
+                      {kind === 'gas_bill' && <BillDetails periods={billPeriods} onChange={onBillPeriodsChange} />}
                       {kind === 'boiler_plate' && (
                         <BoilerDetails inputs={boilerDetails} onChange={onBoilerDetailsChange} />
                       )}

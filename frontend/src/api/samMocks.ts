@@ -1,5 +1,6 @@
 /** Offline demo data: Sam's invented 1930s semi. The UI labels mock mode wherever it is shown. */
 import { applyEntered } from '../lib/knownDetails'
+import { billIssue, billValues, selectBillPeriods } from '../lib/billDetails'
 import type {
   AllElectricPlan,
   AnalysisBundle,
@@ -742,8 +743,18 @@ export function mockAnalysisResult(
   hasRadiatorVideo = false,
   radiators?: RadiatorUpload[],
   known?: KnownDetails,
+  billPhotoCount = 0,
 ): AnalysisResult {
-  const hasBill = kinds.includes('gas_bill')
+  const enteredBill = known?.gas_bill
+  const photoPeriods = Array.from({ length: billPhotoCount }, (_, i) => ({ kwh: 200 + i * 50, start: `2025-${String(6 + i).padStart(2, '0')}-01`, end: new Date(Date.UTC(2025, 6 + i, 0)).toISOString().slice(0, 10) }))
+  const allPeriods = [...(enteredBill?.periods ?? []), ...photoPeriods]
+  const { chosen, notes } = selectBillPeriods(allPeriods)
+  const info = chosen.length ? billIssue(chosen) : null
+  const summerOnly = chosen.length > 0 && chosen.every(p => Number(p.start.slice(5, 7)) >= 6 && Number(p.end.slice(5, 7)) <= 8 && p.start.slice(0, 4) === p.end.slice(0, 4))
+  const issue = summerOnly ? 'Too little heating to measure; add a winter month.' : null
+  const hasBill = !issue && (kinds.includes('gas_bill') || allPeriods.length > 0)
+  const hasSummer = allPeriods.some(p => Number(p.start.slice(5, 7)) >= 6 && Number(p.end.slice(5, 7)) <= 8)
+  const billWarning = info && !issue ? `Based on ${chosen.map(p => `${p.start} to ${p.end}`).join(', ')}. 12 months in a row gives the best estimate. The range is wider; annual Costs are estimated.` : null
   const all: PhotoKind[] = PHOTO_INPUT_KINDS
   const uploads = radiators ?? (kinds.includes('radiators') ? SAM_RADIATOR_UPLOADS : [])
   const photographed = (i: number) => radiators == null || uploads[i].photos.length > 0
@@ -761,6 +772,12 @@ export function mockAnalysisResult(
     const active = kinds.includes(kind)
     if (kind === 'radiators') {
       return radiatorReadings.length > 0 ? radiatorReadings : [mockReading(kind, null, {})]
+    }
+    if (kind === 'gas_bill' && allPeriods.length) {
+      const values = billValues({ periods: allPeriods })
+      const scalars = { total_kwh: values.total_kwh, period_start: values.period_start, period_end: values.period_end }
+      const item = mockReading(kind, kinds.includes(kind) && !billPhotoCount ? { total_kwh: 12000, period_start: '2025-01-01', period_end: '2025-12-31' } : null, scalars)
+      return [{ ...item, reading: { ...item.reading, monthly: values.monthly } }]
     }
     const entered = ((kind === 'boiler_plate' ? known?.boiler : kind === 'fuse_cutout' ? known?.fuse_cutout : null) ??
       {}) as Record<string, string | number>
@@ -780,14 +797,16 @@ export function mockAnalysisResult(
   const radiatorSlots = readings.filter((r) => r.kind === 'radiators').length
   const hasRadiatorPhotos = radiatorReadings.some((r) => r.status === 'verified' || r.attempts > 0)
   const gaps = PHOTO_INPUT_KINDS
-    .filter((kind) => !kinds.includes(kind) && MISSING_INPUT_GAPS[kind])
+    .filter((kind) => !kinds.includes(kind) && !(kind === 'gas_bill' && allPeriods.length) && MISSING_INPUT_GAPS[kind])
     .map((kind) => ({
       input: kind,
       message: MISSING_INPUT_GAPS[kind]!.message,
       provide: MISSING_INPUT_GAPS[kind]!.provide,
     }))
   const bundle: AnalysisBundle = hasBill
-    ? { ...SAM_ANALYSIS, target_spec: { ...SAM_ANALYSIS.target_spec, radiators: specRadiators } }
+    ? { ...SAM_ANALYSIS,
+        measured: SAM_ANALYSIS.measured && { ...SAM_ANALYSIS.measured, caveats: [...(!hasSummer && allPeriods.length ? ['baseline_estimated' as const] : []), ...(billWarning ? ['partial_coverage' as const] : [])], design_load_kw: billWarning ? { ...SAM_ANALYSIS.measured.design_load_kw, low: 2.5, high: 7 } : SAM_ANALYSIS.measured.design_load_kw },
+        target_spec: { ...SAM_ANALYSIS.target_spec, radiators: specRadiators } }
     : {
         ...SAM_ANALYSIS,
         measured: null,
@@ -795,6 +814,9 @@ export function mockAnalysisResult(
         costs_by_flow_temp: [],
       }
   return {
+    bill_warning: billWarning,
+    bill_notes: notes,
+    costs_annualised: Boolean(billWarning),
     survey_id: null,
     saved: false,
     storage_note: 'Offline demo data: nothing is saved.',
@@ -824,6 +846,7 @@ export function mockAnalysisResult(
     radiator_video: hasRadiatorVideo ? SAM_RADIATOR_VIDEO : null,
     gaps: [
       ...gaps,
+      ...(issue ? [{ input: 'gas_bill', message: `Couldn't tell: ${issue}`, provide: 'Correct the usage periods under Add details you know.' }] : []),
       ...(hasRadiatorVideo
         ? [
             {
@@ -846,9 +869,13 @@ export function mockAnalysisResult(
         ]
       : [],
     plan: SAM_PLAN,
-    log: hasRadiatorVideo
+    log: [
+      ...(enteredBill ? [entry('gas-bill-entered', 'gas_bill', 'pass', 'code', 'Entered by you', true, JSON.stringify(billValues(enteredBill)), 0),
+        entry('gas-bill-months', 'gas_bill', 'check', 'code', 'Summer usage for the hot-water baseline', hasSummer && !issue, hasSummer && !issue ? 'Use sample summer usage' : 'Use default baseline share', 1)] : []),
+      ...(hasRadiatorVideo
       ? [...mockLogForKinds(kinds, radiatorSlots, uploads, radiators), ...SAM_RADIATOR_VIDEO.log]
-      : mockLogForKinds(kinds, radiatorSlots, uploads, radiators),
+      : mockLogForKinds(kinds, radiatorSlots, uploads, radiators)),
+    ],
     timings_ms: {},
   }
 }
@@ -858,8 +885,9 @@ export function mockAnalysisEvents(
   hasRadiatorVideo = false,
   radiators?: RadiatorUpload[],
   known?: KnownDetails,
+  billPhotoCount = 0,
 ): AnalysisEvent[] {
-  const result = mockAnalysisResult(kinds, hasRadiatorVideo, radiators, known)
+  const result = mockAnalysisResult(kinds, hasRadiatorVideo, radiators, known, billPhotoCount)
   return [
     { type: 'step', step: 'epc', status: 'running', ms: null },
     ...result.log.map((e): AnalysisEvent => ({ type: 'log', entry: e })),

@@ -21,6 +21,8 @@ export type AnalysisInputsSnapshot = {
   radiatorUploads: RadiatorUpload[]
   radiatorLabels: (string | null)[]
   radiators: RadiatorCard[]
+  billPhotos?: { file: File }[]
+  billPeriods?: unknown
   boilerDetails: DetailInputs
   fuseDetails: DetailInputs
   radiatorVideo: File | null
@@ -38,7 +40,8 @@ export function analysisInputsFingerprint(snapshot: AnalysisInputsSnapshot): str
     fuseDetails,
     radiatorVideo,
   } = snapshot
-  const parts = [certificateId ?? '']
+  const billFiles = (snapshot.billPhotos ?? []).map(p => `${p.file.name}:${p.file.size}:${p.file.lastModified}`).join(',')
+  const parts = [billFiles, `bill:${stableJson(snapshot.billPeriods ?? [])}`, certificateId ?? '']
   for (const kind of INPUT_KINDS) {
     const file = files[kind]
     if (file) parts.push(`${kind}:${file.name}:${file.size}:${file.lastModified}`)
