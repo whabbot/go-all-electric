@@ -35,7 +35,9 @@ export function FlowStepActions() {
 
   const bill = parseBillDetails(session.billPeriods)
   const billIncomplete = currentPath === '/capture' && Boolean(bill.error && !bill.known)
-  const forwardReady = Boolean(next && canNext && !billIncomplete)
+  const area = session.houseDetails.floor_area_m2
+  const houseIncomplete = currentPath === '/' && area != null && (!Number.isFinite(area) || area < 10 || area > 1000)
+  const forwardReady = Boolean(next && canNext && !billIncomplete && !houseIncomplete)
 
   const hasUncheckedQuotes =
     currentPath === '/quotes' &&
@@ -72,7 +74,7 @@ export function FlowStepActions() {
             {forwardLabel}
           </Link>
         )}
-        {billIncomplete && <button type="button" className="btn primary" disabled>{forwardLabel}</button>}
+        {(billIncomplete || houseIncomplete) && <button type="button" className="btn primary" disabled>{forwardLabel}</button>}
         {!next && currentPath === '/pack' && <span className="subtle">End of flow</span>}
       </div>
     </div>

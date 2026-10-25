@@ -86,7 +86,7 @@ export function buildHouseSummaryDraft(analysis: AnalysisResult): string {
     'Property: [your address]',
     '',
     'Heat loss estimates',
-    `• Estimate A — fabric (EPC register + photos): ${formatRangeText(fabric.design_load_kw, ' kW', 1)} — source: government EPC data and radiator/boiler photos.`,
+    `• Estimate A — fabric (EPC register + photos): ${fabric ? formatRangeText(fabric.design_load_kw, ' kW', 1) : "unavailable; see EPC gap and confirm at survey"} — source: government EPC data and radiator/boiler photos.`,
   ]
 
   if (measured) {

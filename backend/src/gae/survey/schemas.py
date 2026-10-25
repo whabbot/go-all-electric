@@ -38,7 +38,7 @@ class AnalysisBundle(BaseModel):
     """`MathsBundle` shape; `measured` and `cross_check` are null when there is no usable bill."""
 
     measured: dict[str, JsonValue] | None
-    fabric: dict[str, JsonValue]
+    fabric: dict[str, JsonValue] | None
     cross_check: dict[str, JsonValue] | None
     costs_by_flow_temp: list[dict[str, JsonValue]]
     target_spec: dict[str, JsonValue]
@@ -47,6 +47,7 @@ class AnalysisBundle(BaseModel):
 class EpcSummary(BaseModel):
     """The building from its EPC: what the maths used, never where it is."""
 
+    entered: list[str] = Field(default_factory=list)
     property_type: str
     floor_area_m2: float | None
     storeys: int = 2

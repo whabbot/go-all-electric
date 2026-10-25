@@ -822,8 +822,9 @@ export function mockAnalysisResult(
     storage_note: 'Offline demo data: nothing is saved.',
     postcode_district: 'N10',
     epc: {
-      property_type: 'semi_detached',
-      floor_area_m2: 90,
+      entered: [...(known?.house_type ? ['property_type'] : []), ...(known?.floor_area_m2 != null ? ['floor_area_m2'] : [])],
+      property_type: known?.house_type ?? 'semi_detached',
+      floor_area_m2: known?.floor_area_m2 ?? 90,
       storeys: 2,
       age_band: '1930-1949',
       year_built: 1930,

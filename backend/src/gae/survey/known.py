@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 from gae.gemini.checks import PLAUSIBLE_ANNUAL_GAS_KWH, RADIATOR_SHAPES, STANDARD_FUSE_RATINGS_A
 from gae.gemini.review import CERTIFICATE_ID, POSTCODE
 from gae.gemini.schemas import PhotoKind
+from gae.heatpump.fabric import PropertyType
 from gae.opendata.usage import UsagePeriod, select_periods
 
 MAX_RADIATORS = 8
@@ -137,6 +138,8 @@ class KnownGasBill(_Known):
 class KnownDetails(_Known):
     """Everything entered by hand, radiators keyed by position (radiator 1 is index 0)."""
 
+    house_type: PropertyType | None = None
+    floor_area_m2: float | None = Field(default=None, ge=10, le=1000, allow_inf_nan=False)
     radiators: list[KnownRadiator] = Field(default_factory=list, max_length=MAX_RADIATORS)
     gas_bill: KnownGasBill | None = None
     boiler: KnownBoiler | None = None

@@ -5,10 +5,12 @@ const MAX_KW = 12
 export function EstimateHero({
   analysis,
   billGap,
+  epcGap,
   quoteKw,
 }: {
   analysis: AnalysisBundle
   billGap: Gap | null
+  epcGap?: Gap | null
   quoteKw: number[]
 }) {
   const { measured, fabric, cross_check: check } = analysis
@@ -38,8 +40,8 @@ export function EstimateHero({
       ) : (
         <div className="cannot-compare">
           <strong>Can&apos;t compare yet</strong>
-          <p>{billGap?.message ?? 'No measured estimate: nothing to check the fabric calc against.'}</p>
-          {billGap && <p className="subtle">{billGap.provide}</p>}
+          <p>{!fabric ? 'No fabric estimate: sizing uses your measured gas usage. The cross-check and disagreement reasons are unavailable.' : billGap?.message ?? 'No measured estimate: nothing to check the fabric calc against.'}</p>
+          {billGap && fabric && <p className="subtle">{billGap.provide}</p>}
         </div>
       )}
 
@@ -63,14 +65,16 @@ export function EstimateHero({
         <div className="estimate-card estimate-a card">
           <h2>Estimate A — fabric</h2>
           <p className="estimate-sub">Installer-style from EPC + photos</p>
-          <HeroKwStack range={fabric.design_load_kw} decimals={1} />
-          <RangeBand range={fabric.design_load_kw} color="var(--color-fabric)" label="A" />
+          {fabric ? <>
+            <HeroKwStack range={fabric.design_load_kw} decimals={1} />
+            <RangeBand range={fabric.design_load_kw} color="var(--color-fabric)" label="A" />
+          </> : <><p className="kw-display couldnt-tell">Couldn't tell</p><p>{epcGap?.message}</p><p className="subtle">{epcGap?.provide}</p></>}
         </div>
       </div>
 
       <SharedKwAxis
         measured={measured?.design_load_kw ?? null}
-        fabric={fabric.design_load_kw}
+        fabric={fabric?.design_load_kw ?? null}
         quoteKw={quoteKw}
       />
 
@@ -121,7 +125,7 @@ function SharedKwAxis({
   quoteKw,
 }: {
   measured: { low: number; central: number; high: number } | null
-  fabric: { low: number; central: number; high: number }
+  fabric: { low: number; central: number; high: number } | null
   quoteKw: number[]
 }) {
   return (
@@ -138,13 +142,13 @@ function SharedKwAxis({
               }}
             />
           )}
-          <div
+          {fabric && <div
             className="shared-kw-band shared-kw-band--a"
             style={{
               left: `${(fabric.low / MAX_KW) * 100}%`,
               width: `${((fabric.high - fabric.low) / MAX_KW) * 100}%`,
             }}
-          />
+          />}
           {quoteKw.map((kw) => (
             <div
               key={`tick-${kw}`}

@@ -200,3 +200,21 @@ it('sends entered bill numbers and dates through analysis and the existing revie
   expect(context.entered).toHaveLength(3)
   expect(context.entered.every((e: { entered: unknown }) => ['string', 'number'].includes(typeof e.entered))).toBe(true)
 })
+
+it('sends entered house type and area as known details and accepts B-only results', async () => {
+  vi.stubEnv('VITE_USE_MOCKS', 'false')
+  const result = mockAnalysisResult(['gas_bill'])
+  result.bundle.fabric = null
+  result.bundle.cross_check = null
+  let captured: FormData | null = null
+  vi.stubGlobal('fetch', vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+    captured = init?.body as FormData
+    return { ok: true, status: 200, body: streamOf(result) }
+  }))
+  const reply = await runAnalysis('cert-1', {}, () => {}, null, [], {
+    boiler: null, fuse_cutout: null, house: { house_type: 'mid_terrace', floor_area_m2: 95 },
+  })
+  expect(JSON.parse((captured! as FormData).get('known') as string)).toMatchObject({ house_type: 'mid_terrace', floor_area_m2: 95 })
+  expect(reply.bundle.fabric).toBeNull()
+  expect(reply.bundle.measured).not.toBeNull()
+})

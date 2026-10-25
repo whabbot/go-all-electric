@@ -176,6 +176,7 @@ export function EstimatesScreen() {
     billPeriods,
     knownBoiler,
     knownFuse,
+    houseDetails,
     boilerDetails,
     fuseDetails,
     radiatorVideo,
@@ -204,6 +205,7 @@ export function EstimatesScreen() {
       radiators,
       billPhotos,
       billPeriods,
+      houseDetails,
       boilerDetails,
       fuseDetails,
       radiatorVideo,
@@ -221,7 +223,7 @@ export function EstimatesScreen() {
         },
         radiatorVideo,
         radiatorUploads,
-        { boiler: knownBoiler, fuse_cutout: knownFuse, gas_bill: knownBill, billPhotos: billPhotos.map(p => p.file) },
+        { house: houseDetails, boiler: knownBoiler, fuse_cutout: knownFuse, gas_bill: knownBill, billPhotos: billPhotos.map(p => p.file) },
       )
       .then((result) => {
         setAnalysis(result)
@@ -281,6 +283,7 @@ export function EstimatesScreen() {
     radiators,
     billPhotos,
     billPeriods,
+    houseDetails,
     boilerDetails,
     fuseDetails,
     radiatorVideo,
@@ -300,16 +303,17 @@ export function EstimatesScreen() {
       {placeLabel && <p className="place-label">{placeLabel}</p>}
       {inputsStale && (
         <div className="card stale-analysis-banner" role="status">
-          <strong>Your photos or bill changed since this run.</strong>
+          <strong>Your details, photos or bill changed since this run.</strong>
           <p className="subtle">The numbers below are from your last analysis, not what you have now.</p>
           <button type="button" className="btn primary" onClick={run}>
-            Re-run with current photos
+            Re-run with current details
           </button>
         </div>
       )}
       {analysis.bill_warning && <div className="card" role="status">{analysis.bill_warning}</div>}
       {analysis.bill_notes?.map((note, i) => <p className="subtle" key={i}>{note}</p>)}
-      <EstimateHero analysis={analysis.bundle} billGap={billGap} quoteKw={quoteKw} />
+      <EstimateHero epcGap={analysis.gaps.find(g => g.input === 'epc') ?? null} analysis={analysis.bundle} billGap={billGap} quoteKw={quoteKw} />
+      {analysis.epc.entered?.map(field => <p className="subtle" key={field}>{field === 'property_type' ? 'House type' : 'Floor area'}: {field === 'property_type' ? analysis.epc.property_type.replaceAll('_', ' ') : `${analysis.epc.floor_area_m2} m²`} <span className="entered-tag">(you)</span></p>)}
       <Inputs analysis={analysis} radiatorLabels={radiatorLabels} />
       <ReviewPanel />
       <VerificationLogPanel entries={analysis.log} />
@@ -318,7 +322,7 @@ export function EstimatesScreen() {
       </p>
       <p className="cta-row">
         <button type="button" className="btn" onClick={run}>
-          Re-run with current photos
+          Re-run with current details
         </button>
       </p>
     </section>

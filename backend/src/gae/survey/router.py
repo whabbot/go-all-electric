@@ -287,7 +287,7 @@ def review_analysis(
         ],
         maths=MathsBundle(
             measured=ctx.bundle.measured or {},
-            fabric=ctx.bundle.fabric,
+            fabric=ctx.bundle.fabric or {},
             cross_check=ctx.bundle.cross_check or {},
             costs_by_flow_temp=ctx.bundle.costs_by_flow_temp,
             target_spec=ctx.bundle.target_spec,

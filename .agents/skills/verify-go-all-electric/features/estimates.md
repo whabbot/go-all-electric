@@ -17,12 +17,13 @@ asks one model to explain the gap and propose EPC fields that may be wrong, whic
   the homeowner entered carry "(you)", and "Your entry and the photo disagree." lists both values
   where they differ.
 - `est-defaults` "Named defaults" lists every assumed value.
+- `est-no-fabric` missing area or explicit flat/maisonette/park-home: Estimate A explains the gap and fix, B still powers Costs, Spec and Plan; no cross-check or disagreement reasons. Only absence of both estimates refuses sizing, with house-type, area and winter gas usage fixes.
 - `est-no-bill` without a gas bill: fabric estimate only, and a statement of what cannot be
   compared.
 - `est-review` `Ask Gemini to review everything` -> "Why the estimates differ", "What if the EPC is
   wrong here?" proposals with `Confirm` / `Dismiss`, "Questions to ask", "Removed statements (n)",
   "Review log".
-- `est-rerun` `Re-run with current photos` runs the check again after photos change.
+- `est-rerun` `Re-run with current details` runs the check again after photos change.
 - `est-error` a failed run shows the error, the log so far and `Try again`.
 
 ## How to get to it (user POV)
@@ -57,7 +58,7 @@ Preconditions:
 - **Back and forward.** `click link "Back"` then `click link "Next: Estimates"`: the same result and
   review come back without a new run.
 - **Photos changed after a run.** Go Back, add a photo, return: the old result stays until
-  `click button "Re-run with current photos"`; after the re-run the new photo is listed.
+  `click button "Re-run with current details"`; after the re-run the new photo is listed.
 - **Proof.** `shot` + `snap` of running and finished states, `net` (real: one streaming
   `POST /api/analysis`, and `POST /api/analysis/review` for the review), `apilog` for the Gemini
   lines.
@@ -69,9 +70,8 @@ Preconditions:
   estimates badge in mock mode.
 - Quote ticks on the comparison chart come from checked quotes in session only (empty until you check
   quotes).
-- After capture changes, a stale banner at the top offers `Re-run with current photos` (also at the
+- After capture changes, a stale banner at the top offers `Re-run with current details` (also at the
   bottom). Known-details and radiator label edits count as input changes too.
-- A real run with no photos has been seen to refuse the house as "unsupported dwelling geometry";
-  treat that as a failure to report, not an expected state.
+- Unknown house geometry uses a low-confidence semi-detached assumption. Explicit non-house geometry has no A; provide a bill including a winter month. Supply missing area on Start.
 - The streamed log arrives over one long response: wait for "What we read", not a fixed time. The
   forward button reads `Next: Costs`, or `Next: Spec` when there is no bill (Costs is skipped).
