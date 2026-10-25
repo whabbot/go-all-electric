@@ -37,6 +37,7 @@ export function CostScreen() {
   }
 
   const costs = analysis.bundle.costs_by_flow_temp
+  const gasFromBills = Boolean(analysis.bundle.measured)
   const breakEven = costs[0]?.break_even_flow_temp_c.central ?? 48
   const chartData = costs.map((c) => ({
     flow: c.design_flow_temp_c,
@@ -117,7 +118,11 @@ export function CostScreen() {
               <h3>{c.design_flow_temp_c} °C flow</h3>
               <p>
                 Gas: <strong>{formatGBP(c.gas_cost_gbp.value)}</strong>{' '}
-                <span className="conf conf-high">known from bills</span>
+                {gasFromBills ? (
+                  <span className="conf conf-high">known from bills</span>
+                ) : (
+                  <span className="subtle">illustrative only</span>
+                )}
               </p>
               <p>
                 Heat pump: <RangeValue range={c.heat_pump_cost_gbp} unit="/yr" money decimals={0} />

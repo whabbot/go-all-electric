@@ -137,3 +137,19 @@ it('the Sam sample still has two photographed radiators', () => {
   const sam = mockAnalysisResult(['boiler_plate', 'radiators', 'fuse_cutout', 'gas_bill'])
   expect(sam.readings.filter((r) => r.kind === 'radiators' && r.status === 'verified')).toHaveLength(2)
 })
+
+it('mock analysis treats radiator-card photos as radiators input (log and no missing-photo gap)', async () => {
+  vi.stubEnv('VITE_USE_MOCKS', 'true')
+  const logs: string[] = []
+  const result = await runAnalysis(
+    'cert-1',
+    {},
+    (e) => {
+      if (e.type === 'log') logs.push(e.entry.input)
+    },
+    null,
+    [{ photos: [new File(['f'], 'rad.jpg', { type: 'image/jpeg' })], known: {} }],
+  )
+  expect(result.gaps.some((g) => g.input === 'radiators')).toBe(false)
+  expect(logs.filter((i) => i === 'radiators').length).toBeGreaterThan(0)
+})

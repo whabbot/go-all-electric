@@ -114,6 +114,8 @@ def test_search_paginates_then_picks_latest_per_home():
 def test_search_empty_and_unconfigured():
     client = client_for(lambda _: httpx.Response(404))
     assert EPCClient(client, SecretStr(TOKEN)).search(POSTCODE) == []
+    client_400 = client_for(lambda _: httpx.Response(400))
+    assert EPCClient(client_400, SecretStr(TOKEN)).search(POSTCODE) == []
     with pytest.raises(DataUnavailable, match="EPC_API_TOKEN"):
         EPCClient(client, None).search(POSTCODE)
 

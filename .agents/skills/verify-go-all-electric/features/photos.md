@@ -115,6 +115,7 @@ Preconditions:
   are excluded. Multiple visible matches fail instead of silently choosing another card.
 - Selects take the option's visible label with `$AX fill`, not its value (`Double panel, two sets
   of fins`, not `K2`).
-- Cropping (or undoing a crop) removes black boxes drawn before it; draw boxes after cropping.
+- Cropping then drawing boxes, or boxes then crop, both survive **Undo crop** and export; boxes
+  drawn before crop are merged back onto the full image when you undo.
 - Mock checks are canned: a grey synthetic image comes back "Legible" with Sam's readings. Only real
   mode says anything about the image.

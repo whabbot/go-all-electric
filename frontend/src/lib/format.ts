@@ -29,5 +29,26 @@ export function formatKwRange(low: number, high: number): string {
 
 /** Low – central – high with en-GB currency formatting. */
 export function formatGBPRange(low: number, central: number, high: number, suffix = ''): string {
+  if (low < 0 || central < 0 || high < 0) {
+    return formatSignedMoneyRange(low, central, high, suffix)
+  }
   return `${formatGBP(low)}–${formatGBP(central)}–${formatGBP(high)}${suffix}`
+}
+
+/** Annual saving ranges that cross zero — costs vs savings in plain language. */
+export function formatSignedMoneyRange(
+  low: number,
+  central: number,
+  high: number,
+  suffix = '',
+): string {
+  const fmtDelta = (value: number) => {
+    const abs = formatGBP(Math.abs(value))
+    if (value > 0) return `${abs} saving`
+    if (value < 0) return `${abs} more`
+    return 'no change'
+  }
+  const centralPhrase = `about ${fmtDelta(central)}`
+  if (low === high) return `${centralPhrase}${suffix}`
+  return `${centralPhrase}${suffix} (range ${fmtDelta(low)} to ${fmtDelta(high)})`
 }

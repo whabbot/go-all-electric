@@ -146,6 +146,10 @@ export async function runAnalysis(
       .filter(([k, f]) => Boolean(f) && k !== 'radiators')
       .map(([k]) => k),
   )
+  const radiatorActivity = radiators.some(
+    (r) => r.photos.length > 0 || Object.keys(r.known).length > 0,
+  )
+  if (radiatorActivity) activeKinds.add('radiators')
   if (isMockMode()) {
     let result: AnalysisResult | null = null
     for (const event of mockAnalysisEvents(Array.from(activeKinds), Boolean(radiatorVideo), radiators, known)) {

@@ -263,8 +263,10 @@ const PHOTO_MOCKS: Record<PhotoKind, PhotoMock> = {
   },
 }
 
+export const MOCK_SAMPLE_MODEL = 'offline sample'
+
 export function mockPhotoCheck(kind: PhotoKind, blurry = false): PhotoCheckResult {
-  const meta = { expected_kind: kind, model: 'gemini-3.8-flash', elapsed_ms: 3400 }
+  const meta = { expected_kind: kind, model: MOCK_SAMPLE_MODEL, elapsed_ms: 3400 }
   if (blurry) {
     return {
       ...meta,
@@ -618,15 +620,66 @@ function mockSpecRadiators(readings: InputReading[]): RadiatorCheck[] {
   }))
 }
 
+const PHOTO_INPUT_KINDS: PhotoKind[] = [
+  'boiler_plate',
+  'radiators',
+  'fuse_cutout',
+  'outdoor_space',
+  'loft',
+  'gas_bill',
+]
+
+const MISSING_INPUT_GAPS: Partial<
+  Record<PhotoKind, { message: string; provide: string }>
+> = {
+  boiler_plate: {
+    message: 'no boiler data plate photo',
+    provide: 'Photograph the boiler data plate (make, model, output).',
+  },
+  radiators: {
+    message: 'no radiator photos',
+    provide: 'Photograph at least one radiator label or front view.',
+  },
+  fuse_cutout: {
+    message: 'no fuse cutout photo',
+    provide: 'Photograph the main fuse rating on the cutout.',
+  },
+  gas_bill: {
+    message: 'no gas bill photo',
+    provide: 'Photograph a full year of gas use (kWh) from your bill.',
+  },
+  loft: {
+    message: 'no loft photo',
+    provide: 'Optional: photograph loft insulation depth.',
+  },
+  outdoor_space: {
+    message: 'no outdoor unit spot photo',
+    provide: 'Optional: photograph where a heat pump could sit outside.',
+  },
+}
+
+function mockLogForKinds(kinds: PhotoKind[], radiatorSlots = 0): VerificationLogEntry[] {
+  const allowed = new Set<PhotoKind>(kinds)
+  return mockLog()
+    .filter((e) => {
+      if (e.input === 'maths') return kinds.includes('gas_bill')
+      if (e.input === 'radiators' && e.id.startsWith('radiators-2')) return radiatorSlots > 1
+      return allowed.has(e.input as PhotoKind)
+    })
+    .map((e) =>
+      e.model.startsWith('gemini') ? { ...e, model: MOCK_SAMPLE_MODEL } : e,
+    )
+}
+
 export function mockAnalysisResult(
   kinds: PhotoKind[],
   hasRadiatorVideo = false,
   radiators?: RadiatorUpload[],
   known?: KnownDetails,
 ): AnalysisResult {
-  const all: PhotoKind[] = ['boiler_plate', 'radiators', 'fuse_cutout', 'outdoor_space', 'loft', 'gas_bill']
+  const hasBill = kinds.includes('gas_bill')
+  const all: PhotoKind[] = PHOTO_INPUT_KINDS
   const uploads = radiators ?? (kinds.includes('radiators') ? SAM_RADIATOR_UPLOADS : [])
-  // Sam's sample has photographed radiators; passed cards are photographed only when they have photos.
   const photographed = (i: number) => radiators == null || uploads[i].photos.length > 0
   const radiatorReadings = uploads
     .map((upload, index) =>
@@ -655,10 +708,26 @@ export function mockAnalysisResult(
             ? SAM_LOFT_READING
             : null
     const item = mockReading(kind, photo, entered)
-    // Photo kinds the mock has no reading for still read as provided.
     return [active && !photo ? { ...item, status: READ_STATUS[kind] ?? 'verified', attempts: 1 } : item]
   })
   const specRadiators = mockSpecRadiators(readings)
+  const radiatorSlots = readings.filter((r) => r.kind === 'radiators').length
+  const hasRadiatorPhotos = radiatorReadings.some((r) => r.status === 'verified' || r.attempts > 0)
+  const gaps = PHOTO_INPUT_KINDS
+    .filter((kind) => !kinds.includes(kind) && MISSING_INPUT_GAPS[kind])
+    .map((kind) => ({
+      input: kind,
+      message: MISSING_INPUT_GAPS[kind]!.message,
+      provide: MISSING_INPUT_GAPS[kind]!.provide,
+    }))
+  const bundle: AnalysisBundle = hasBill
+    ? { ...SAM_ANALYSIS, target_spec: { ...SAM_ANALYSIS.target_spec, radiators: specRadiators } }
+    : {
+        ...SAM_ANALYSIS,
+        measured: null,
+        cross_check: null,
+        costs_by_flow_temp: [],
+      }
   return {
     survey_id: null,
     saved: false,
@@ -683,30 +752,37 @@ export function mockAnalysisResult(
       windows: ['fully double glazed'],
       main_heating: ['boiler and radiators, mains gas'],
     },
-    bundle: { ...SAM_ANALYSIS, target_spec: { ...SAM_ANALYSIS.target_spec, radiators: specRadiators } },
-    size_basis: 'measured',
+    bundle,
+    size_basis: hasBill ? 'measured' : 'fabric',
     readings,
     radiator_video: hasRadiatorVideo ? SAM_RADIATOR_VIDEO : null,
-    gaps: hasRadiatorVideo
+    gaps: [
+      ...gaps,
+      ...(hasRadiatorVideo
+        ? [
+            {
+              input: 'radiator_video',
+              message: "couldn't tell: photograph the radiator seen at 0:14",
+              provide: "couldn't tell: photograph the radiator seen at 0:14",
+            },
+          ]
+        : []),
+    ],
+    defaults: hasRadiatorPhotos
       ? [
           {
-            input: 'radiator_video',
-            message: "couldn't tell: photograph the radiator seen at 0:14",
-            provide: "couldn't tell: photograph the radiator seen at 0:14",
+            input: 'radiators',
+            name: 'photographed_room_share_of_heat_loss',
+            value: '20% of 4.7 kW',
+            note: 'No room sizes from one photo: assumes the room is about a fifth of the house\'s heat loss.',
+            confidence: 'low',
           },
         ]
       : [],
-    defaults: [
-      {
-        input: 'radiators',
-        name: 'photographed_room_share_of_heat_loss',
-        value: '20% of 4.7 kW',
-        note: 'No room sizes from one photo: assumes the room is about a fifth of the house\'s heat loss.',
-        confidence: 'low',
-      },
-    ],
     plan: SAM_PLAN,
-    log: hasRadiatorVideo ? [...mockLog(), ...SAM_RADIATOR_VIDEO.log] : mockLog(),
+    log: hasRadiatorVideo
+      ? [...mockLogForKinds(kinds, radiatorSlots), ...SAM_RADIATOR_VIDEO.log]
+      : mockLogForKinds(kinds, radiatorSlots),
     timings_ms: {},
   }
 }
@@ -717,13 +793,7 @@ export function mockAnalysisEvents(
   radiators?: RadiatorUpload[],
   known?: KnownDetails,
 ): AnalysisEvent[] {
-  const nothingSent = kinds.length === 0 && !radiators?.length && !known?.boiler && !known?.fuse_cutout
-  const result = mockAnalysisResult(
-    nothingSent ? ['boiler_plate', 'radiators', 'gas_bill'] : kinds,
-    hasRadiatorVideo,
-    nothingSent ? undefined : radiators,
-    known,
-  )
+  const result = mockAnalysisResult(kinds, hasRadiatorVideo, radiators, known)
   return [
     { type: 'step', step: 'epc', status: 'running', ms: null },
     ...result.log.map((e): AnalysisEvent => ({ type: 'log', entry: e })),

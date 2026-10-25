@@ -130,6 +130,14 @@ type Session = {
   setConflictDecision: (key: string, decision: ConflictDecision | null) => void
   samSampleLoaded: boolean
   loadSamSample: () => void
+  /** Clear sample unlock, analysis, and capture state when picking a different house. */
+  clearHouseSelection: () => void
+  /** Fingerprint of photos/bill/video when analysis last completed. */
+  analysisInputsKey: string | null
+  setAnalysisInputsKey: (key: string | null) => void
+  /** Quotes screen: redaction in progress or pages waiting to be checked. */
+  quotesStepBlocked: boolean
+  setQuotesStepBlocked: (blocked: boolean) => void
 }
 
 const SessionContext = createContext<Session | null>(null)
@@ -194,6 +202,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [review, setReview] = useState<ReviewState>({ status: 'idle' })
   const [conflictDecisions, setConflictDecisions] = useState<Record<string, ConflictDecision>>({})
   const [samSampleLoaded, setSamSampleLoaded] = useState(false)
+  const [analysisInputsKey, setAnalysisInputsKey] = useState<string | null>(null)
+  const [quotesStepBlocked, setQuotesStepBlocked] = useState(false)
   const reviewRun = useRef(0)
 
   useEffect(() => {
@@ -209,6 +219,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     reviewRun.current += 1
     setReview({ status: 'idle' })
     setConflictDecisions({})
+    if (!a) setAnalysisInputsKey(null)
     try {
       // The result carries the postcode district only, never the address.
       if (a) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(a))
@@ -232,6 +243,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setAnalysis(
       mockAnalysisResult(['boiler_plate', 'radiators', 'fuse_cutout', 'gas_bill'], false),
     )
+  }, [setAnalysis])
+
+  const clearHouseSelection = useCallback(() => {
+    setSamSampleLoaded(false)
+    setAddressState(null)
+    setAnalysis(null)
+    setFiles({})
+    setChecks({})
+    setRadiators([])
+    setBoilerDetails({})
+    setFuseDetails({})
+    setQuotesState([])
+    setRadiatorVideoFile(null)
+    setRadiatorVideoResult(null)
+    setAnalysisInputsKey(null)
+    setConflictDecisions({})
+    setReview({ status: 'idle' })
   }, [setAnalysis])
 
   const setPhoto = useCallback((kind: PhotoKind, file: File | null, result: PhotoCheckResult | null) => {
@@ -430,6 +458,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setConflictDecision,
       samSampleLoaded,
       loadSamSample,
+      clearHouseSelection,
+      analysisInputsKey,
+      setAnalysisInputsKey,
+      quotesStepBlocked,
+      setQuotesStepBlocked,
     }),
     [
       address,
@@ -464,6 +497,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setConflictDecision,
       samSampleLoaded,
       loadSamSample,
+      clearHouseSelection,
+      analysisInputsKey,
+      quotesStepBlocked,
     ],
   )
 

@@ -15,7 +15,8 @@ questions to ask before signing. The step is optional.
 - `quotes-sample` mock only: `Load Sam's three quotes (demo)` loads and checks Sam's A, B, C.
 - `quotes-review` the review panel from Estimates appears here with
   `Review again with N checked quotes`.
-- `quotes-skip` optional step: `Skip` and `Next: Plan`.
+- `quotes-forward` optional step: `Continue without checking` when uploads are unchecked, else
+  `Next: Plan` (no separate Skip).
 
 ## How to get to it (user POV)
 
@@ -39,14 +40,15 @@ Preconditions:
 - **PDF quote.** Upload `demo/quotes/sample-quote-a.pdf` the same way: the dialog title walks "...
   sample-quote-a.pdf page 1", "page 2"; after the last page the list shows one quote, and
   `Check quotes` gives one card for the whole PDF.
-- **Skip.** `click link "Skip"` goes to Plan without checking anything.
+- **Unchecked forward.** `click link "Continue without checking"` goes to Plan without checking.
 - **Proof.** `shot` + `snap` of the cards; `net` (real: one `POST /api/quotes/check` carrying page
   images only, never the PDF).
 
 ## Gotchas
 
 - Mock checks are canned: any uploaded page comes back as a 9 kW, 55 °C quote with a buffer tank.
-- Adding your own quote after Sam's three replaces the checked list with just yours; the review
-  panel below may still mention the earlier quotes until you review again.
-- `Skip` and `Next: Plan` lead to the same place; neither checks unchecked uploads.
+- Each quote has a stable id: replacing one never inherits another quote's check result; Remove
+  drops only that quote's card. Unchecked uploads stay after `Continue without checking` and Back.
+- Footer shows `Continue without checking` (not a duplicate Skip) when uploads are unchecked; `Check
+  quotes` stays the primary action on the page. Max three quotes; use Remove to free a slot.
 - Real quote checks call Gemini per quote; keep to one synthetic page or one sample PDF.

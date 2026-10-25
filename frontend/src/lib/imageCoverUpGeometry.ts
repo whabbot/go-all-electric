@@ -95,3 +95,37 @@ export function moveCrop(crop: ImageRect, dx: number, dy: number, maxW: number, 
   const y = Math.max(0, Math.min(crop.y + dy, maxH - crop.h))
   return { x, y, w: crop.w, h: crop.h }
 }
+
+const MIN_REDACT = 8
+
+/** Clip redact boxes to the crop region and move them into cropped-image coordinates. */
+export function transformRedactsFromCropToOriginal(
+  redacts: ImageRect[],
+  crop: ImageRect,
+  maxW: number,
+  maxH: number,
+): ImageRect[] {
+  const out: ImageRect[] = []
+  for (const r of redacts) {
+    out.push(
+      clampRect({ x: r.x + crop.x, y: r.y + crop.y, w: r.w, h: r.h }, maxW, maxH),
+    )
+  }
+  return out
+}
+
+export function transformRedactsForCrop(redacts: ImageRect[], crop: ImageRect): ImageRect[] {
+  const out: ImageRect[] = []
+  for (const r of redacts) {
+    const ix = Math.max(r.x, crop.x)
+    const iy = Math.max(r.y, crop.y)
+    const ir = Math.min(r.x + r.w, crop.x + crop.w)
+    const ib = Math.min(r.y + r.h, crop.y + crop.h)
+    const w = ir - ix
+    const h = ib - iy
+    if (w >= MIN_REDACT && h >= MIN_REDACT) {
+      out.push({ x: ix - crop.x, y: iy - crop.y, w, h })
+    }
+  }
+  return out
+}

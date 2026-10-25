@@ -186,6 +186,8 @@ export type QuoteFlag = {
 }
 
 export type QuoteUploadGroup = {
+  /** Stable identity for session sync, removal, and check results (not the display label). */
+  id: string
   quoteName: string
   pages: File[]
 }

@@ -1141,8 +1141,8 @@ button.primary {
 /* Keep "low – central – high unit" on one line; the whole range wraps as one unit. */
 .range-value {
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  display: inline-block;
+  white-space: normal;
+  display: inline;
 }
 
 .range-low,

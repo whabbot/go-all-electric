@@ -113,6 +113,14 @@ export function canAdvanceFrom(path: FlowPath, session: Session, visited: Readon
   return stepComplete(path, session, visited)
 }
 
+/** Show the primary forward control when the next step is unlocked on the step bar. */
+export function canReachNextStep(path: FlowPath, session: Session, visited: ReadonlySet<string>): boolean {
+  const next = nextPath(path, session)
+  if (!next) return false
+  const furthest = furthestReachableIndex(session, visited)
+  return flowPathIndex(next) <= furthest
+}
+
 export function nextPath(path: FlowPath, session: Session): FlowPath | null {
   const i = flowPathIndex(path)
   if (path === '/estimates' && session.analysis) {

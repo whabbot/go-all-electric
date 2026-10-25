@@ -64,12 +64,13 @@ Preconditions:
 
 ## Gotchas
 
-- Mock analysis is canned from Sam's case. With no photos it still shows Sam's bill and radiator
-  readings as VERIFIED and Estimate B from "your gas bill", so mock cannot verify the no-photo path:
-  use real mode.
-- The comparison chart's quote ticks are Sam's 6, 9 and 12 kW in every mode, uploaded quotes or not.
-- The run happens once per visit. Results do not refresh when photos change; only
-  `Re-run with current photos` (bottom of the page) does.
+- Mock analysis reflects only the photo kinds you uploaded; with no photos expect fabric-only
+  readings, gaps, and no measured Estimate B. Offline sample labels appear on photo checks and the
+  estimates badge in mock mode.
+- Quote ticks on the comparison chart come from checked quotes in session only (empty until you check
+  quotes).
+- After capture changes, a stale banner at the top offers `Re-run with current photos` (also at the
+  bottom). Known-details and radiator label edits count as input changes too.
 - A real run with no photos has been seen to refuse the house as "unsupported dwelling geometry";
   treat that as a failure to report, not an expected state.
 - The streamed log arrives over one long response: wait for "What we read", not a fixed time. The
