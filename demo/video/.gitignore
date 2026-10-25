@@ -1,0 +1,11 @@
+# Rendered media and run output never go in Git.
+*.mp4
+*.mov
+*.m4a
+*.wav
+*.aiff
+*.webm
+*.srt
+.work-*/
+.voice-cache/
+out/
