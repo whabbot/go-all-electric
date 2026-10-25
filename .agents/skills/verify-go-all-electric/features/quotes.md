@@ -31,8 +31,8 @@ Preconditions:
   are labelled SAMPLE and safe to upload.
 
 - **Sample quotes (mock).** `click button "Load Sam's three quotes"`,
-  `waitfor "Questions to ask before signing" 20`. Three cards "Quote A", "Quote B", "Quote C"; B and
-  C flagged oversized.
+  `waitfor "Questions to ask before signing" 20`. Three cards "Quote A", "Quote B", "Quote C"; A and
+  B flagged oversized; C is inside the target range.
 - **Own quote page.**
   `u=$(uid button "📷 Choose PDFs"); chrome-devtools-axi upload @$u "$(synth quote-1)"`. `coverup`
   prints `Redact quote page — quote-1.png | single photo`; `click button "Use photo"`; the list
