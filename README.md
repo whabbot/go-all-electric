@@ -1,5 +1,9 @@
 # Go All-Electric
 
+Live demo: https://go-all-electric-tsjqb3ipma-nw.a.run.app/ (access code required)
+
+Demo video: (link to come)
+
 A photo-and-bill check that tells a homeowner whether a heat pump will actually be cheaper for
 them, and what a good installation must look like to get there. Solar and EV charging feed into
 one sequenced "go all-electric" plan.
@@ -61,7 +65,7 @@ about 4.7kW (3.7-5.7kW), the fabric calc says about 8.7kW, and the target is a 5
 
 ## Setup
 
-You need Python 3.14+ with [uv](https://docs.astral.sh/uv/), and Node 20+ with npm.
+You need Python 3.14+ with [uv](https://docs.astral.sh/uv/), and Node 20.19+ (20.x) or 22.12+ with npm.
 
 ```bash
 cp .env.example .env        # then fill in the keys you have; .env is git-ignored
@@ -102,22 +106,26 @@ uv sync
 uv run python -m gae.db.seed             # once: public datasheet library into Atlas (safe to repeat)
 uv run python -m gae.db.indexes          # once: Search + Vector Search indexes (safe to repeat)
 uv run uvicorn gae.main:app --port 8000  # http://127.0.0.1:8000/api/health shows what is configured
+```
 
-cd ../frontend                           # second terminal
+In a second terminal, from the repository root:
+
+```bash
+cd frontend
 npm install
 VITE_USE_MOCKS=false npm run dev         # http://localhost:5173
 ```
 
 Then: enter a postcode and pick a **house** (flats are refused by design), add the photos you have
 (boiler plate, radiator, fuse cutout and gas bill; the outdoor spot and loft photo are optional), redact each one,
-and press **Run estimates**. Radiators are added one at a time with **Add radiator**: each has a room label
+and choose **Next: Estimates**. Radiators are added one at a time with **Add radiator**: each has a room label
 (kept in the browser, never sent), up to three photos read together as that one radiator, and an optional
 **Add details you know** section, as do the boiler and fuse cutout. Entered values replace the photo reading of
 that field; where the photo disagrees, both are shown. Without `MONGODB_URI` everything still runs: datasheets come from the
 seed file in memory and the survey is simply not saved.
 
-What happens on **Run estimates** (`POST /api/analysis`, multipart: `certificate_id` plus one file
-per photo kind, all optional; radiator photos repeat `radiators` with a matching `radiator_index`, and a
+What happens when **Next: Estimates** opens the Estimates screen (`POST /api/analysis`, multipart:
+`certificate_id` plus one file per photo kind, all optional; radiator photos repeat `radiators` with a matching `radiator_index`, and a
 `known` JSON field carries entered details, radiators by position):
 
 1. The EPC fetch and every photo/bill extraction start together; each extraction is its own Gemini
@@ -293,6 +301,12 @@ in a `VITE_*` variable, because Vite bundles those into the browser build.
 
 ## Models and data sources
 
+The app calls Gemini models directly through the official Python SDK and Interactions API.
+No managed agents (including Antigravity or Deep Research), `generate_content` calls or TTS
+are used. Flash handles quick checks and simpler photo reads; Argon handles documents,
+failed-check re-reads and reasoning across the evidence. Radiator videos use inline input up
+to 18 MiB; larger clips use the Files API with deletion attempted in `finally` after the call.
+
 | Source | Use | Status |
 | --- | --- | --- |
 | Gemini 4 Argon (`gemini-4-argon`) via the Interactions API, `google-genai>=2.3.0` | Reads gas bills and installer quotes (`thinking_level` medium); watches radiator walkthrough videos (`thinking_level` high, verified in code with one re-read and photo requests for uncertain radiators); every re-read after a failed code check (high); one-context review of all evidence with closed-enum EPC conflict proposals verified by re-running `fabric.py` in code (high); drafts per-quote installer emails with number-trace verification and deterministic template fallback (medium) | Built |
@@ -303,7 +317,7 @@ in a `VITE_*` variable, because Vite bundles those into the browser build.
 | [postcodes.io](https://postcodes.io/docs/api/outward-code/) outward code | Postcode-district centroid for PVGIS (never a full postcode) | Built; no key |
 | [PVGIS](https://joint-research-centre.ec.europa.eu/pvgis-online-tool_en) PVcalc v5.2 | Typical annual yield for a named default array at the district centroid | Built; no key |
 | [Google Solar API](https://developers.google.com/maps/documentation/solar) | Site-specific roof modelling | Out of scope for hackathon demo |
-| MongoDB Atlas | Core survey store, fuzzy Search, Vector Search, hybrid datasheet matching | Built (`gae/db`) |
+| MongoDB Atlas | Core survey store; fuzzy Atlas Search; Atlas Vector Search; native hybrid search with `$rankFusion` (explicit application-RRF or full-text fallback when unavailable) | Built (`gae/db`) |
 | Voyage `voyage-4-lite` through Atlas Automated Embedding | Managed embeddings of public manufacturer datasheet text and model queries | Built; requires supported Atlas cluster and queryable index |
 | Manufacturer UK product pages and technical brochures | 15 heat pump / gas boiler variants; per-entry source URLs in `gae/db/datasheets.json` | Curated seed; unverified values are null |
 | Ofgem price cap, Oct-Dec 2026 | Unit rates in the cost answer | Built (constants) |
