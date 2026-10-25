@@ -179,3 +179,24 @@ it('mock analysis treats radiator-card photos as radiators input (log and no mis
   expect(result.gaps.some((g) => g.input === 'radiators')).toBe(false)
   expect(logs.filter((i) => i === 'radiators').length).toBeGreaterThan(0)
 })
+
+it('sends entered bill numbers and dates through analysis and the existing review evidence', async () => {
+  vi.stubEnv('VITE_USE_MOCKS', 'false')
+  const gasBill = { periods: [{ kwh: 12000, start: '2025-01-01', end: '2025-12-31' }] }
+  const known = { radiators: [], boiler: null, fuse_cutout: null, gas_bill: gasBill }
+  const result = mockAnalysisResult([], false, [], known)
+  const captured: FormData[] = []
+  vi.stubGlobal('fetch', vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+    captured.push(init?.body as FormData)
+    return { ok: true, status: 200, body: streamOf(result), json: async () => ({}) }
+  }))
+  await runAnalysis('cert-1', {}, () => {}, null, [], known)
+  expect(JSON.parse(captured[0].get('known') as string).gas_bill).toEqual(gasBill)
+  await reviewAnalysis(result, {}, [])
+  const context = JSON.parse(captured[1].get('context') as string)
+  expect(context.bill.total_kwh).toBe(12000)
+  expect(context.bill.period_start).toBe('2025-01-01')
+  expect(context.bill.supplier).toBeNull()
+  expect(context.entered).toHaveLength(3)
+  expect(context.entered.every((e: { entered: unknown }) => ['string', 'number'].includes(typeof e.entered))).toBe(true)
+})

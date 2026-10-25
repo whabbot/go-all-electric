@@ -114,13 +114,13 @@ def check_bill(r: GasBillReading) -> Outcome:
         checks.append(
             Check(
                 "kWh plausible for a UK home",
-                low <= annual <= high,
+                (low <= total <= high) if 365 <= days <= 366 else 0 < total <= high,
                 f"about {annual:,.0f} kWh a year (expect {low:,}-{high:,})",
             )
         )
         checks.append(
             Check(
-                "period covers about a year",
+                "12 months in a row gives the best estimate",
                 FULL_YEAR_DAYS[0] <= days <= FULL_YEAR_DAYS[1],
                 f"{days} days" + ("" if days >= FULL_YEAR_DAYS[0] else ": partial year"),
                 hard=False,
@@ -133,6 +133,7 @@ def check_bill(r: GasBillReading) -> Outcome:
                 "monthly figures add up to the total",
                 abs(summed - total) <= 0.05 * total,
                 f"months sum to {summed:,.0f} kWh vs total {total:,.0f} kWh",
+                hard=False,
             )
         )
     return Outcome(checks)

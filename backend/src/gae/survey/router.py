@@ -138,7 +138,7 @@ def analyse(
     radiator_video: Upload = None,
     fuse_cutout: Upload = None,
     outdoor_space: Upload = None,
-    gas_bill: Upload = None,
+    gas_bill: Annotated[list[UploadFile] | None, File()] = None,
     loft: Upload = None,
 ) -> StreamingResponse:
     entered = _known(known)
@@ -147,14 +147,17 @@ def analyse(
         PhotoKind.BOILER_PLATE: boiler_plate,
         PhotoKind.FUSE_CUTOUT: fuse_cutout,
         PhotoKind.OUTDOOR_SPACE: outdoor_space,
-        PhotoKind.GAS_BILL: gas_bill,
         PhotoKind.LOFT: loft,
     }
     files = {kind: _read(upload) for kind, upload in uploads.items() if upload is not None}
+    if len(gas_bill or []) > 6:
+        raise HTTPException(422, "Up to 6 gas bill photos")
+    bill_files = [_read(upload) for upload in gas_bill or []]
     rad_files = [[_read(upload) for upload in group] for group in rad_groups]
     total_photo_bytes = sum(len(data) for data, _ in files.values()) + sum(
         len(data) for group in rad_files for data, _ in group
     )
+    total_photo_bytes += sum(len(data) for data, _ in bill_files)
     if total_photo_bytes > MAX_REVIEW_BYTES:
         raise HTTPException(413, "Attachments too large for one analysis: 18 MB maximum")
     raw_video = _read_video(radiator_video) if radiator_video is not None else None
@@ -172,6 +175,7 @@ def analyse(
                     radiator_video=raw_video,
                     radiator_files=rad_files,
                     known=entered,
+                    bill_files=bill_files,
                 )
             events.put({"type": "result", "result": result.model_dump(mode="json")})
         except AnalysisRefused as exc:
@@ -224,7 +228,7 @@ def review_analysis(
     radiator_index: Annotated[list[int] | None, Form()] = None,
     fuse_cutout: Upload = None,
     outdoor_space: Upload = None,
-    gas_bill: Upload = None,
+    gas_bill: Annotated[list[UploadFile] | None, File()] = None,
     loft: Upload = None,
     quotes: Annotated[list[UploadFile] | None, File()] = None,
     quote_index: Annotated[list[int] | None, Form()] = None,
@@ -256,9 +260,12 @@ def review_analysis(
     ):
         if upload is not None:
             photos.append(_media(kind, upload))
+    if len(gas_bill or []) > 6:
+        raise HTTPException(422, "Up to 6 gas bill photos")
+    photos.extend(_media("gas_bill", upload) for upload in (gas_bill or [])[1:])
     request = ReviewRequest(
         photos=photos,
-        bill=_media("gas_bill", gas_bill) if gas_bill is not None else None,
+        bill=_media("gas_bill", gas_bill[0]) if gas_bill else None,
         # Building fields only; review.py allowlists again before anything reaches Gemini.
         epc_record=ctx.epc.model_dump(mode="json"),
         boiler=ctx.boiler,

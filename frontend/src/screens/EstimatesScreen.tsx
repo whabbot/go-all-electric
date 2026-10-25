@@ -171,6 +171,9 @@ export function EstimatesScreen() {
     radiatorUploads,
     radiatorLabels,
     radiators,
+    billPhotos,
+    knownBill,
+    billPeriods,
     knownBoiler,
     knownFuse,
     boilerDetails,
@@ -199,6 +202,8 @@ export function EstimatesScreen() {
       radiatorUploads,
       radiatorLabels,
       radiators,
+      billPhotos,
+      billPeriods,
       boilerDetails,
       fuseDetails,
       radiatorVideo,
@@ -216,7 +221,7 @@ export function EstimatesScreen() {
         },
         radiatorVideo,
         radiatorUploads,
-        { boiler: knownBoiler, fuse_cutout: knownFuse },
+        { boiler: knownBoiler, fuse_cutout: knownFuse, gas_bill: knownBill, billPhotos: billPhotos.map(p => p.file) },
       )
       .then((result) => {
         setAnalysis(result)
@@ -274,6 +279,8 @@ export function EstimatesScreen() {
     radiatorUploads,
     radiatorLabels,
     radiators,
+    billPhotos,
+    billPeriods,
     boilerDetails,
     fuseDetails,
     radiatorVideo,
@@ -300,6 +307,8 @@ export function EstimatesScreen() {
           </button>
         </div>
       )}
+      {analysis.bill_warning && <div className="card" role="status">{analysis.bill_warning}</div>}
+      {analysis.bill_notes?.map((note, i) => <p className="subtle" key={i}>{note}</p>)}
       <EstimateHero analysis={analysis.bundle} billGap={billGap} quoteKw={quoteKw} />
       <Inputs analysis={analysis} radiatorLabels={radiatorLabels} />
       <ReviewPanel />

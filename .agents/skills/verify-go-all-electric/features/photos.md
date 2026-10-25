@@ -6,7 +6,7 @@ black boxes over anything identifying before "Use photo" sends only that redacte
 Radiators are added one card at a time (`+ Add radiator`, up to 8): each card has a room label (pick
 list plus a short note, shown only to the homeowner), up to 3 photos of that one radiator (read
 together as one radiator) and an "Add details you know" expander. Boiler data plate and Fuse cutout
-have the same expander. A radiator walkthrough video is an alternative.
+have the same expander. Gas bill accepts up to 13 usage periods (gas kWh, inclusive start/end dates) and up to 6 separately redacted bill photos. No photo is needed for typed usage. A radiator walkthrough video is an alternative.
 
 ## Sub-features
 
@@ -33,6 +33,7 @@ have the same expander. A radiator walkthrough video is an alternative.
   plain-language picker, panels, fin rows, width and height in mm), on Boiler data plate (make,
   model, heating and hot-water kW) and on Fuse cutout (rating). Out-of-range values show an inline
   message. A card or slot with details and no photo counts as done.
+- `photos-bill-details` enter yearly or monthly periods; 12 months in a row is best. Gaps and short coverage still give Estimate B and estimated annual Costs, with a warning and wider range. Summer-only usage asks for a winter month. Longest overlapping periods count once; contained summer bills shape the baseline. Each additional period pre-fills the following calendar month. Changing usage or bill photos after results shows the stale-results banner.
 - `photos-video` "Or film your radiators": one video (max 100 MB, 90 s) with a privacy warning.
 - `photos-examples` `See examples` opens "Example photos: <slot>" with Good/Avoid illustrations.
 - `photos-no-bill` without a gas bill the page says you will get the fabric estimate only.
@@ -53,6 +54,7 @@ Preconditions:
   `click link "Continue"` (mock), or `realhouse` and `click link "Continue"` (real).
 - Synthetic images only: `upload` draws them in the page, `synth NAME` writes one to disk.
 
+- **Bill details only.** Open Gas bill’s `Add details you know`, then `click button "+ Add period"`. Fill `Gas used (kWh)`, `Start date`, `End date` (e.g. 12000, 2025-01-01, 2025-12-31). Next to Estimates and re-run: Estimate B, ratio and Costs appear without a photo. For monthly usage, add twelve periods; next dates pre-fill. Use two non-adjacent winter months to see a coverage warning, wider range and estimated Costs. A yearly total plus June/July photos must count the year once and use summer shape. June alone must ask for a winter month. Overlapping periods are set aside with a note. Change kWh after results and return to Estimates to see the stale banner.
 - **Single photo.** `pick "Gas bill" "$(synth gas-bill)"`. `coverup` prints
   `Redact your gas bill | single photo`. `fileinput "Gas bill"` prints `"No file chosen"` (input
   already cleared).
@@ -119,3 +121,5 @@ Preconditions:
   drawn before crop are merged back onto the full image when you undo.
 - Mock checks are canned: a grey synthetic image comes back "Legible" with Sam's readings. Only real
   mode says anything about the image.
+
+Bill proof: use the original yearly entry, twelve entered months, two non-adjacent winter months, a yearly entry plus two contained monthly photos, summer-only usage, and stale results on edit. Mock bill photos represent June and July 2025; their kWh are sample data, never extracted. Completed step links include a leading ✓ in their accessible name.

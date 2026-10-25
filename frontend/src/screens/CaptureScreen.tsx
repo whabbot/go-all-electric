@@ -34,6 +34,12 @@ export function CaptureScreen() {
     addRadiatorPhoto,
     updateRadiatorPhoto,
     removeRadiatorPhoto,
+    billPhotos,
+    addBillPhoto,
+    updateBillPhoto,
+    removeBillPhoto,
+    billPeriods,
+    setBillPeriods,
     boilerDetails,
     setBoilerDetails,
     fuseDetails,
@@ -122,7 +128,7 @@ export function CaptureScreen() {
     input: HTMLInputElement,
     radiator?: RadiatorTarget,
   ) => {
-    const allowMulti = kind === 'radiators' && !radiator?.photoId
+    const allowMulti = (kind === 'radiators' && !radiator?.photoId) || kind === 'gas_bill'
     let picked = list?.length
       ? allowMulti
         ? Array.from(list)
@@ -153,6 +159,12 @@ export function CaptureScreen() {
       } else {
         setPhotoErrors((errors) => ({ ...errors, [errorKey]: '' }))
       }
+    }
+    if (kind === 'gas_bill') {
+      const remaining = 6 - billPhotos.length
+      if (remaining <= 0) { setPhotoErrors(e => ({ ...e, gas_bill: 'Up to 6 bill photos. Remove one to add another.' })); return }
+      if (picked.length > remaining) setPhotoErrors(e => ({ ...e, gas_bill: `Only the first ${remaining} photos queued (up to 6).` }))
+      picked = picked.slice(0, remaining)
     }
     revokeCoverQueue(coverCurrent, coverStack)
     setCoverCurrent(null)
@@ -236,6 +248,20 @@ export function CaptureScreen() {
       }
       return
     }
+    if (kind === 'gas_bill') {
+      const id = addBillPhoto(redacted)
+      try {
+        const result = await api.checkPhoto(kind, redacted)
+        updateBillPhoto(id, { result, checking: false })
+      } catch (e) {
+        updateBillPhoto(id, { checking: false, error: e instanceof Error ? e.message : 'Could not check bill photo' })
+      } finally {
+        const left = Math.max(0, (activeChecksRef.current[kind] ?? 1) - 1)
+        activeChecksRef.current[kind] = left
+        if (!left) setBusy(b => ({ ...b, [kind]: false }))
+      }
+      return
+    }
     // Only the redacted, re-encoded file is kept (in memory) and later sent for analysis.
     setPhoto(kind, redacted, null)
     try {
@@ -282,7 +308,7 @@ export function CaptureScreen() {
   }
 
   const anyBusy = Object.values(busy).some(Boolean)
-  const noBill = !photos.find((p) => p.kind === 'gas_bill')?.fileName
+  const noBill = !photos.some((p) => p.kind === 'gas_bill' && (p.fileName || p.entered))
 
   return (
     <section className="screen capture-screen">
@@ -322,6 +348,10 @@ export function CaptureScreen() {
           void onFiles('radiators', list, input, { radiatorId: id, photoId })
         }
         onRemoveRadiatorPhoto={removeRadiatorPhoto}
+        billPhotos={billPhotos}
+        onRemoveBillPhoto={removeBillPhoto}
+        billPeriods={billPeriods}
+        onBillPeriodsChange={setBillPeriods}
         boilerDetails={boilerDetails}
         onBoilerDetailsChange={setBoilerDetails}
         fuseDetails={fuseDetails}

@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { parseBillDetails } from '../lib/billDetails'
 import {
   canReachNextStep,
   FLOW_STEPS,
@@ -32,7 +33,9 @@ export function FlowStepActions() {
   let skipTarget: FlowPath | null = null
   if (optional && currentPath === '/cost') skipTarget = '/spec'
 
-  const forwardReady = Boolean(next && canNext)
+  const bill = parseBillDetails(session.billPeriods)
+  const billIncomplete = currentPath === '/capture' && Boolean(bill.error && !bill.known)
+  const forwardReady = Boolean(next && canNext && !billIncomplete)
 
   const hasUncheckedQuotes =
     currentPath === '/quotes' &&
@@ -69,6 +72,7 @@ export function FlowStepActions() {
             {forwardLabel}
           </Link>
         )}
+        {billIncomplete && <button type="button" className="btn primary" disabled>{forwardLabel}</button>}
         {!next && currentPath === '/pack' && <span className="subtle">End of flow</span>}
       </div>
     </div>

@@ -120,7 +120,7 @@ function appendRadiators(form: FormData, radiators: RadiatorUpload[]) {
   })
 }
 
-export type KnownExtras = { boiler: KnownBoiler | null; fuse_cutout: KnownFuse | null }
+export type KnownExtras = { billPhotos?: File[]; gas_bill?: KnownDetails['gas_bill']; boiler: KnownBoiler | null; fuse_cutout: KnownFuse | null }
 
 /**
  * One analysis call: EPC record, every photo and the bill (optional), weather, then the maths.
@@ -138,6 +138,7 @@ export async function runAnalysis(
 ): Promise<AnalysisResult> {
   const known: KnownDetails = {
     radiators: radiators.map((r) => r.known),
+    gas_bill: extras.gas_bill,
     boiler: extras.boiler,
     fuse_cutout: extras.fuse_cutout,
   }
@@ -152,7 +153,7 @@ export async function runAnalysis(
   if (radiatorActivity) activeKinds.add('radiators')
   if (isMockMode()) {
     let result: AnalysisResult | null = null
-    for (const event of mockAnalysisEvents(Array.from(activeKinds), Boolean(radiatorVideo), radiators, known)) {
+    for (const event of mockAnalysisEvents(Array.from(activeKinds), Boolean(radiatorVideo), radiators, known, extras.billPhotos?.length ?? 0)) {
       await delay(event.type === 'log' ? 260 : 120)
       onEvent(event)
       if (event.type === 'result') result = event.result
@@ -163,11 +164,12 @@ export async function runAnalysis(
   const form = new FormData()
   form.append('certificate_id', certificateId)
   for (const [kind, file] of Object.entries(files)) {
-    if (kind === 'radiators') continue
+    if (kind === 'radiators' || (kind === 'gas_bill' && extras.billPhotos?.length)) continue
     if (file) form.append(kind, file)
   }
+  extras.billPhotos?.forEach(file => form.append('gas_bill', file))
   appendRadiators(form, radiators)
-  if (radiators.length > 0 || known.boiler || known.fuse_cutout) form.append('known', JSON.stringify(known))
+  if (radiators.length > 0 || known.boiler || known.fuse_cutout || known.gas_bill) form.append('known', JSON.stringify(known))
   if (radiatorVideo) form.append('radiator_video', radiatorVideo)
   const res = await apiFetch('/api/analysis', { method: 'POST', body: form })
   if (!res.ok || !res.body) throw await failure(res, 'Analysis')
@@ -229,7 +231,7 @@ export async function checkQuotes(
 /** What the review sees of hand-entered values: each one, with the photo reading if it disagreed. */
 export function enteredForReview(analysis: AnalysisResult) {
   return analysis.readings.flatMap((r) =>
-    Object.entries(r.entered ?? {}).map(([field, entered]) => {
+    Object.entries(r.entered ?? {}).filter(([, v]) => typeof v === 'number' || typeof v === 'string').map(([field, entered]) => {
       const photoRead = r.disagreements?.find((d) => d.field === field)?.read
       return {
         input: r.kind,
@@ -248,6 +250,7 @@ export async function reviewAnalysis(
   files: Partial<Record<PhotoKind, File>>,
   quotes: ReviewQuote[],
   radiators: RadiatorUpload[] = [],
+  billPhotos: File[] = [],
 ): Promise<ReviewResult> {
   if (isMockMode()) {
     await mockDelay(4000, 6000)
@@ -271,7 +274,10 @@ export async function reviewAnalysis(
     bundle: analysis.bundle,
     epc: analysis.epc,
     boiler: reading('boiler_plate'),
-    bill: reading('gas_bill'),
+    bill: (() => {
+      const item = analysis.readings.find(r => r.kind === 'gas_bill')
+      return item?.status === 'entered' ? { supplier: null, estimated_reading: null, ...item.reading } : reading('gas_bill')
+    })(),
     radiators: radiatorCount > 0 ? radiatorReadings : null,
     radiator_video: analysis.radiator_video ?? null,
     fuse_cutout: reading('fuse_cutout'),
@@ -283,9 +289,10 @@ export async function reviewAnalysis(
   const form = new FormData()
   form.append('context', JSON.stringify(context))
   for (const [kind, file] of Object.entries(files)) {
-    if (kind === 'radiators') continue
+    if (kind === 'radiators' || (kind === 'gas_bill' && billPhotos.length)) continue
     if (file) form.append(kind, file)
   }
+  billPhotos.forEach(file => form.append('gas_bill', file))
   appendRadiators(form, radiators)
   quotes.forEach((q, quoteIndex) => {
     for (const page of q.pages) {

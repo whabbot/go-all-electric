@@ -11,11 +11,13 @@ Every log entry is emitted as it happens, so the UI shows the real verification 
 Photos and bills stay in memory for this call: they are never stored, logged or returned.
 """
 
+import calendar
 import math
 import time
 from collections.abc import Callable, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import date
 from threading import Lock
 from typing import Any
 
@@ -44,13 +46,14 @@ from gae.heatpump.costs import compare_running_costs
 from gae.heatpump.crosscheck import cross_check
 from gae.heatpump.measured import MeasuredCaveat, MeasuredEstimate
 from gae.heatpump.spec import Room, target_spec
-from gae.opendata.bill import DegreeDayProvider, measured_from_bill
+from gae.opendata.bill import DegreeDayProvider
 from gae.opendata.mapping import FabricMapping, descriptions
+from gae.opendata.usage import UsagePeriod, measured_from_periods, select_periods
 from gae.opendata.weather import normalise_postcode
 from gae.plan.build import build_all_electric_plan
 from gae.plan.solar import SolarYieldProvider
 from gae.survey.fields import NamedDefault
-from gae.survey.known import KnownDetails, apply_entered, entered_for
+from gae.survey.known import Disagreement, KnownDetails, apply_entered, entered_for
 from gae.survey.schemas import (
     AnalysisBundle,
     AnalysisResult,
@@ -121,6 +124,7 @@ def run_analysis(
     radiator_video: tuple[bytes, str] | None = None,
     radiator_files: Sequence[Sequence[tuple[bytes, str]]] | None = None,
     known: KnownDetails | None = None,
+    bill_files: Sequence[tuple[bytes, str]] | None = None,
 ) -> AnalysisResult:
     """`radiator_files` holds each radiator's photos (radiator 1 first): one radiator may have
     several photos, read together as one radiator. `known` holds what the homeowner entered."""
@@ -140,7 +144,14 @@ def run_analysis(
     rad_entered = [
         known_rads[idx].values() if idx < len(known_rads) else {} for idx in range(rad_count)
     ]
-    other_files = {k: v for k, v in files.items() if k is not PhotoKind.RADIATORS}
+    bill_uploads = (
+        list(bill_files)
+        if bill_files is not None
+        else ([files[PhotoKind.GAS_BILL]] if PhotoKind.GAS_BILL in files else [])
+    )
+    other_files = {
+        k: v for k, v in files.items() if k not in (PhotoKind.RADIATORS, PhotoKind.GAS_BILL)
+    }
 
     def record(entry: VerificationLogEntry) -> None:
         with lock:
@@ -215,13 +226,26 @@ def run_analysis(
             return None
 
     rad_photos = [group for group in rad_groups if group]
-    workers = 1 + len(other_files) + len(rad_photos) + (1 if radiator_video is not None else 0)
+    workers = (
+        1
+        + len(bill_uploads)
+        + len(other_files)
+        + len(rad_photos)
+        + (1 if radiator_video is not None else 0)
+    )
     with ThreadPoolExecutor(max_workers=workers) as pool:
         epc_future = pool.submit(timed, "epc", services.epc, certificate_id)
         futures: dict[PhotoKind, Future] = {
             kind: pool.submit(timed, f"read_{kind.value}", read, kind, data, mime)
             for kind, (data, mime) in other_files.items()
         }
+        bill_t0 = time.monotonic()
+        if bill_uploads:
+            step("read_gas_bill", "running")
+        bill_futures = [
+            pool.submit(read, PhotoKind.GAS_BILL, data, mime, f"gas_bill-{i + 1}")
+            for i, (data, mime) in enumerate(bill_uploads)
+        ]
         rad_t0 = time.monotonic()
         if rad_photos:
             step("read_radiators", "running")
@@ -256,6 +280,10 @@ def run_analysis(
             pool.shutdown(wait=False, cancel_futures=True)
             raise
         verified = {kind: future.result() for kind, future in futures.items()}
+        bill_verified = [f.result() for f in bill_futures]
+        if bill_uploads:
+            timings["read_gas_bill"] = round((time.monotonic() - bill_t0) * 1000)
+            step("read_gas_bill", "done")
         if rad_photos:
             try:
                 rad_verified = [f.result() if f is not None else None for f in rad_futures]
@@ -288,10 +316,126 @@ def run_analysis(
     except ValueError:
         pass
 
+    usage = known.gas_bill.usage() if known and known.gas_bill else []
+    shape: list[UsagePeriod] = []
+    bill_disagreements: list[Disagreement] = []
+    for i, result in enumerate(bill_verified):
+        photo_bill = _reading(result, GasBillReading)
+        if (
+            photo_bill
+            and photo_bill.period_start
+            and photo_bill.period_end
+            and photo_bill.total_kwh
+        ):
+            usage.append(
+                UsagePeriod(
+                    photo_bill.period_start,
+                    photo_bill.period_end,
+                    photo_bill.total_kwh,
+                    f"Bill photo {i + 1}",
+                )
+            )
+            for row in photo_bill.monthly:
+                try:
+                    start = date.fromisoformat(row.month + "-01")
+                    end = date(
+                        start.year, start.month, calendar.monthrange(start.year, start.month)[1]
+                    )
+                    if (
+                        photo_bill.period_start <= start <= end <= photo_bill.period_end
+                        and row.kwh > 0
+                    ):
+                        shape.append(
+                            UsagePeriod(start, end, row.kwh, f"Bill photo {i + 1} monthly usage")
+                        )
+                except ValueError:
+                    pass
+    chosen, bill_notes = select_periods(usage)
+    for entry in [p for p in usage if p.entered]:
+        for photo in [
+            p for p in usage if not p.entered and p.start == entry.start and p.end == entry.end
+        ]:
+            if abs(photo.kwh - entry.kwh) > 0.05 * entry.kwh:
+                bill_disagreements.append(
+                    Disagreement(field="total_kwh", entered=entry.kwh, read=photo.kwh)
+                )
+    for container in chosen:
+        children, _ = select_periods(
+            [
+                p
+                for p in usage
+                if container.start <= p.start
+                and p.end <= container.end
+                and (p.start, p.end) != (container.start, container.end)
+            ]
+        )
+        if sum(p.kwh for p in children) > container.kwh * 1.05:
+            bill_notes.append(
+                f"Usage inside {container.source} totals more than its "
+                f"{container.kwh:,.0f} kWh: check both figures."
+            )
+            bill_disagreements.append(
+                Disagreement(
+                    field="total_kwh", entered=container.kwh, read=sum(p.kwh for p in children)
+                )
+            )
+    all_months, _ = select_periods(
+        [
+            p
+            for p in [*usage, *shape]
+            if p.start.day == 1
+            and p.end
+            == date(
+                p.start.year, p.start.month, calendar.monthrange(p.start.year, p.start.month)[1]
+            )
+        ]
+    )
+    combined_bill = (
+        GasBillReading(
+            legible=True,
+            confidence="medium",
+            notes="Used periods: "
+            + "; ".join(
+                f"{p.start.isoformat()} to {p.end.isoformat()}: {p.kwh:g} kWh" for p in chosen
+            ),
+            supplier=None,
+            period_start=chosen[0].start,
+            period_end=chosen[-1].end,
+            total_kwh=sum(p.kwh for p in chosen),
+            monthly=[{"month": p.start.strftime("%Y-%m"), "kwh": p.kwh} for p in all_months],
+            estimated_reading=None,
+        )
+        if chosen
+        else None
+    )
     gaps: list[Gap] = []
     readings: list[InputReading] = []
     rad_items: list[InputReading] = []
     for kind in PhotoKind:
+        if kind is PhotoKind.GAS_BILL:
+            if combined_bill:
+                values = combined_bill.model_dump(mode="json")
+                entered_values = (
+                    {k: values[k] for k in ("total_kwh", "period_start", "period_end")}
+                    if any(p.entered for p in chosen)
+                    else {}
+                )
+                readings.append(
+                    InputReading(
+                        kind=kind,
+                        used_for=USED_FOR[kind],
+                        status="entered" if entered_values else "verified",
+                        attempts=len(bill_uploads),
+                        reading=values,
+                        entered=entered_values,
+                        warnings=bill_notes,
+                        disagreements=bill_disagreements,
+                        photograph_instead=None,
+                    )
+                )
+            else:
+                readings.append(_summary(kind, None, bool(bill_uploads)))
+            continue
         if kind is PhotoKind.RADIATORS:
             for idx in range(rad_count):
                 photos, entered = rad_groups[idx], rad_entered[idx]
@@ -327,78 +471,70 @@ def run_analysis(
     # --- Estimate B: bill + exact-period degree days -----------------------------------------
     measured: MeasuredEstimate | None = None
     annual_gas_kwh: float | None = None
-    bill = _reading(verified.get(PhotoKind.GAS_BILL), GasBillReading)
     by_kind = {item.kind: item for item in readings if item.kind is not PhotoKind.RADIATORS}
-    if PhotoKind.GAS_BILL not in files:
+    bill = combined_bill
+    bill_warning = None
+    costs_annualised = False
+    if known and known.gas_bill:
+        code_log.add(
+            "pass",
+            "gas_bill",
+            "code",
+            "Entered by you",
+            True,
+            "Gas kWh and inclusive dates entered by you",
+        )
+    if bill is None or postcode is None:
         gaps.append(
             Gap(
                 input="gas_bill",
-                message="No gas bill: no Estimate B, so nothing to check the fabric calc against.",
-                provide=f"Add {SPECS[PhotoKind.GAS_BILL].photograph_instead}.",
+                message="Couldn't tell: add gas usage with dates, including a winter month.",
+                provide="Add bill photos or enter gas kWh and dates under Add details you know.",
             )
         )
-    elif bill is not None:
-        if (
-            postcode is None
-            or bill.period_start is None
-            or bill.period_end is None
-            or bill.total_kwh is None
-        ):
+    else:
+        outcome = timed(
+            "weather",
+            lambda: measured_from_periods(
+                periods=usage,
+                shape=shape,
+                postcode=postcode,
+                weather_client=services.weather,
+                monthly=_monthly(bill),
+            ),
+        )
+        if outcome.estimate is not None:
+            measured = outcome.estimate
+            annual_gas_kwh = outcome.annual_gas_kwh
+            bill_warning = outcome.warning
+            costs_annualised = outcome.annualised
+            code_log.add(
+                "check",
+                "gas_bill",
+                "code",
+                "Exact-period weather and gas usage",
+                True,
+                "Estimate B from your usage",
+            )
+            code_log.add(
+                "check",
+                "gas_bill",
+                "code",
+                "Summer usage for the hot-water baseline",
+                MeasuredCaveat.BASELINE_ESTIMATED not in measured.caveats,
+                "Use summer usage"
+                if MeasuredCaveat.BASELINE_ESTIMATED not in measured.caveats
+                else "Use default baseline share",
+            )
+        else:
             gaps.append(
                 Gap(
                     input="gas_bill",
-                    message="Couldn't tell: the bill period or postcode is missing.",
-                    provide="An annual statement showing start and end dates and kWh used.",
+                    message=outcome.reason or "Couldn't tell: add a winter month.",
+                    provide="Add a winter month with gas kWh and start/end dates; "
+                    "12 months in a row is best.",
                 )
             )
-        else:
-            monthly = _monthly(bill)
-            outcome = timed(
-                "weather",
-                lambda: measured_from_bill(
-                    start=bill.period_start,
-                    end=bill.period_end,
-                    gas_kwh=bill.total_kwh,
-                    postcode=postcode,
-                    weather_client=services.weather,
-                    monthly_gas_kwh=monthly,
-                ),
-            )
-            if outcome.status == "ok" and outcome.estimate is not None:
-                measured = outcome.estimate
-                annual_gas_kwh = bill.total_kwh
-                code_log.add(
-                    "check",
-                    "gas_bill",
-                    "code",
-                    f"weather for the exact bill dates: {outcome.weather.days_covered} of "
-                    f"{outcome.weather.days_expected} days, "
-                    f"{outcome.weather.heating_degree_days:,.0f} degree days",
-                    True,
-                    "Estimate B from your bill",
-                )
-                if monthly is None:
-                    code_log.add(
-                        "check",
-                        "gas_bill",
-                        "code",
-                        "twelve calendar months of kWh for the hot-water baseline",
-                        False,
-                        "use the named default baseline share and widen the range",
-                    )
-            else:
-                reason = outcome.reason or "Couldn't tell from this bill."
-                code_log.add(
-                    "fail", "gas_bill", "code", reason, False, "no Estimate B; say what to add"
-                )
-                gaps.append(
-                    Gap(
-                        input="gas_bill",
-                        message=reason,
-                        provide="An annual statement covering exactly 12 months, with dates "
-                        "and kWh (a 12-month usage graph from your supplier app also works).",
-                    )
-                )
     if measured is not None and MeasuredCaveat.EFFICIENCY_DEFAULTED in measured.caveats:
         defaults.append(
             NamedDefault(
@@ -588,6 +724,9 @@ def run_analysis(
         plan=plan,
         log=sorted(entries, key=lambda e: e.at),
         timings_ms=timings,
+        bill_warning=bill_warning,
+        bill_notes=bill_notes,
+        costs_annualised=costs_annualised,
     )
 
 
@@ -617,7 +756,7 @@ def _summary(
         reading, disagreements = apply_entered(photo, entered)
         return InputReading(
             **common,
-            status=result.status,
+            status="entered" if entered and kind is PhotoKind.GAS_BILL else result.status,
             attempts=result.attempts,
             reading=reading,
             warnings=result.warnings,
@@ -663,7 +802,11 @@ def _typed[T: Reading](item: InputReading, schema: type[T]) -> T | None:
         "entered",
     ):
         return None
-    blank = {name: _UNREAD.get(name) for name, f in schema.model_fields.items() if f.is_required()}
+    blank = {
+        name: ([] if name == "monthly" else _UNREAD.get(name))
+        for name, f in schema.model_fields.items()
+        if f.is_required()
+    }
     return schema.model_validate({**blank, **item.reading})
 
 

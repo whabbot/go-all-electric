@@ -15,6 +15,7 @@ export type Exact = {
 
 export type MeasuredCaveat =
   | 'baseline_estimated'
+  | 'partial_coverage'
   | 'efficiency_defaulted'
   | 'possibly_sunny'
   | 'possibly_partially_heated'
@@ -225,7 +226,11 @@ export type KnownBoiler = {
 export type KnownFuse = { rating_a?: number }
 
 /** Sent with the analysis. Radiators by position (radiator 1 first); never a room label. */
+export type GasPeriod = { kwh: number; start: string; end: string }
+export type KnownGasBill = { periods: GasPeriod[] }
+
 export type KnownDetails = {
+  gas_bill?: KnownGasBill | null
   radiators: KnownRadiator[]
   boiler: KnownBoiler | null
   fuse_cutout: KnownFuse | null
@@ -426,6 +431,9 @@ export type AllElectricPlan = {
 }
 
 export type AnalysisResult = {
+  bill_warning?: string | null
+  bill_notes?: string[]
+  costs_annualised?: boolean
   survey_id: string | null
   saved: boolean
   storage_note: string | null

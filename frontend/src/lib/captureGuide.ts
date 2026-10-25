@@ -140,8 +140,8 @@ export const CAPTURE_GUIDANCE: Record<PhotoKind, CaptureItemGuidance> = {
     oneLine:
       'UK bill or annual statement showing gas used in kWh (not £ or m³) and period start/end dates.',
     detail:
-      'Best: about 10–14 months of usage (roughly a full year) — an annual statement or 12-month graph from your supplier app. ' +
-      'Shorter periods still work: we use your exact dates for weather, but a partial year shows a warning and annualising one month is less reliable (a single winter or summer month can look too high or low). ' +
+      '12 months in a row gives the best estimate, but any bills or typed periods help. ' +
+      'Add several bill photos, or type gas kWh and dates under “Add details you know”. Gaps are OK; short coverage widens the estimate and annual Costs are estimated. ' +
       'Before upload, black out your name, address, account and meter numbers (same cover-up step as other photos).',
     goodReason: 'Usage panel shows kWh and date range, sharp and uncropped.',
     badReason: 'Only charges in £, dates or kWh missing, blurry, or personal details left visible.',

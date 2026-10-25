@@ -8,6 +8,7 @@ import {
   type DetailInputs,
 } from '../lib/knownDetails'
 import type { RadiatorKind } from '../api'
+import { billIssue, emptyBillPeriod, parseBillDetails, type BillPeriodInputs } from '../lib/billDetails'
 
 type FieldsProps = {
   inputs: DetailInputs
@@ -225,4 +226,37 @@ export function FuseDetails({ inputs, onChange }: FieldsProps) {
       </div>
     </Expander>
   )
+}
+
+
+export function BillDetails({ periods, onChange }: { periods: BillPeriodInputs[]; onChange: (p: BillPeriodInputs[]) => void }) {
+  const { error, known } = parseBillDetails(periods)
+  const note = known ? billIssue(known.periods) : null
+  const id = useId()
+  return <>
+    <Expander count={periods.length}>
+      <p className="subtle">12 months in a row is best, but any bills or typed periods help. Dates include both the first and last day. No photo needed.</p>
+      {periods.map((row, index) => <fieldset key={index} className="known-field">
+        <legend>Usage period {index + 1}</legend>
+        {(['kwh', 'start', 'end'] as const).map(field => <div className="known-field" key={field}>
+          <label htmlFor={`${id}-${index}-${field}`}>{field === 'kwh' ? 'Gas used (kWh)' : field === 'start' ? 'Start date' : 'End date'}</label>
+          <div className="known-field-input"><input id={`${id}-${index}-${field}`} type={field === 'kwh' ? 'number' : 'date'} min={field === 'kwh' ? '0.01' : undefined} max={field === 'kwh' ? '40000' : undefined} step={field === 'kwh' ? 'any' : undefined} value={row[field]}
+            onChange={e => onChange(periods.map((p, i) => i === index ? { ...p, [field]: e.target.value } : p))} /></div>
+        </div>)}
+        <button type="button" className="btn" onClick={() => onChange(periods.filter((_, i) => i !== index))}>Remove period {index + 1}</button>
+      </fieldset>)}
+      <button type="button" className="btn" disabled={periods.length >= 13} onClick={() => {
+        const last = periods[periods.length - 1]
+        let next = emptyBillPeriod()
+        if (last?.end && Number.isFinite(Date.parse(last.end))) {
+          const start = new Date(`${last.end}T00:00:00Z`)
+          start.setUTCDate(start.getUTCDate() + 1)
+          next = { kwh: '', start: start.toISOString().slice(0, 10), end: new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0)).toISOString().slice(0, 10) }
+        }
+        onChange([...periods, next])
+      }}>+ Add period</button>
+    </Expander>
+    {error && <p className="error" role="alert">{error}</p>}
+    {note && <p className="subtle" role="status">{note}</p>}
+  </>
 }

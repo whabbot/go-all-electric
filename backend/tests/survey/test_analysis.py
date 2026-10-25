@@ -320,7 +320,7 @@ def test_no_bill_means_no_estimate_b_and_says_what_to_provide(harness) -> None:
     assert bundle["costs_by_flow_temp"] == []
     assert result["size_basis"] == "fabric"
     gap = next(g for g in result["gaps"] if g["input"] == "gas_bill")
-    assert "no Estimate B" in gap["message"] and "annual gas statement" in gap["provide"]
+    assert "winter month" in gap["message"] and "gas kWh" in gap["provide"]
     assert any(d["name"] == "size_from_fabric_estimate" for d in result["defaults"])
     bill_reading = next(r for r in result["readings"] if r["kind"] == "gas_bill")
     assert bill_reading["status"] == "not_provided"
@@ -390,17 +390,17 @@ def test_house_with_unrecorded_form_renders_estimate_a_without_photos(harness) -
             assert result_of(events)["bundle"]["fabric"] == no_photos["bundle"]["fabric"]
 
 
-def test_partial_year_bill_is_couldnt_tell_not_a_guess(harness) -> None:
+def test_partial_year_bill_has_warning_and_estimated_costs(harness) -> None:
     harness["gemini"].replies["GasBillReading"] = [
         bill(period_start="2026-01-01", period_end="2026-09-30", total_kwh=9000)
     ]
     _, events = analyse(["gas_bill"])
     result = result_of(events)
-    assert result["bundle"]["measured"] is None
-    gap = next(g for g in result["gaps"] if g["input"] == "gas_bill")
-    assert "12-month" in gap["message"]
-    # Skipped photos (the outdoor spot is optional) are never reported as gaps.
-    assert {g["input"] for g in result["gaps"]} == {"gas_bill"}
+    assert result["bundle"]["measured"] is not None
+    assert "12 months in a row" in result["bill_warning"]
+    assert result["costs_annualised"]
+    assert result["bundle"]["costs_by_flow_temp"]
+    assert not result["gaps"]
 
 
 def test_flats_are_refused_with_a_reason(harness) -> None:
@@ -813,3 +813,139 @@ def test_rejects_more_than_max_radiators_or_photos(harness) -> None:
     )
     assert response.status_code == 422
     assert "radiator_index" in response.json()["detail"]
+
+
+def _known_bill(periods):
+    return json.dumps({"gas_bill": {"periods": periods}})
+
+
+def test_entered_annual_bill_without_photo_drives_all_maths(harness):
+    _, events = analyse(
+        [], known=_known_bill([{"kwh": 14000, "start": "2025-01-01", "end": "2025-12-31"}])
+    )
+    result = result_of(events)
+    assert result["bundle"]["measured"] is not None
+    assert result["bundle"]["cross_check"] is not None
+    assert result["bundle"]["costs_by_flow_temp"]
+    assert "baseline_estimated" in result["bundle"]["measured"]["caveats"]
+    assert not harness["gemini"].calls
+    assert any(e["check"] == "Entered by you" and e["input"] == "gas_bill" for e in result["log"])
+    item = next(r for r in result["readings"] if r["kind"] == "gas_bill")
+    assert item["status"] == "entered" and item["reading"]["total_kwh"] == 14000
+
+
+def test_entered_months_sorted_and_summer_baseline_used(harness):
+    from calendar import monthrange
+
+    periods = [
+        {
+            "kwh": 300 if m in (6, 7, 8) else 1500,
+            "start": f"2025-{m:02d}-01",
+            "end": f"2025-{m:02d}-{monthrange(2025, m)[1]}",
+        }
+        for m in range(1, 13)
+    ]
+    _, events = analyse([], known=_known_bill(list(reversed(periods))))
+    result = result_of(events)
+    assert "baseline_estimated" not in result["bundle"]["measured"]["caveats"]
+    assert result["bundle"]["cross_check"] is not None
+    assert result["bundle"]["costs_by_flow_temp"]
+    item = next(r for r in result["readings"] if r["kind"] == "gas_bill")
+    assert len(item["reading"]["monthly"]) == 12
+
+
+@pytest.mark.parametrize(
+    ("periods", "message"),
+    [
+        ([{"kwh": 12000, "start": "2025-01-01", "end": "2025-11-30"}], "12 months"),
+        (
+            [
+                {"kwh": 6000, "start": "2025-01-01", "end": "2025-06-30"},
+                {"kwh": 6000, "start": "2025-06-30", "end": "2025-12-31"},
+            ],
+            "overlap",
+        ),
+        (
+            [
+                {"kwh": 6000, "start": "2025-01-01", "end": "2025-06-30"},
+                {"kwh": 6000, "start": "2025-08-01", "end": "2025-12-31"},
+            ],
+            "gap",
+        ),
+    ],
+)
+def test_partial_gapped_and_overlapping_bill_still_measures(harness, periods, message):
+    _, events = analyse([], known=_known_bill(periods))
+    result = result_of(events)
+    assert result["bundle"]["measured"] is not None
+    assert result["bundle"]["costs_by_flow_temp"]
+    assert result["costs_annualised"]
+    assert "12 months in a row" in result["bill_warning"]
+    if message == "overlap":
+        assert any("overlap" in note for note in result["bill_notes"])
+
+
+def test_entered_bill_wins_over_photo_and_lists_disagreement(harness):
+    harness["gemini"].replies["GasBillReading"] = [
+        bill(period_start="2025-01-01", period_end="2025-12-31", total_kwh=12000)
+    ]
+    _, events = analyse(
+        ["gas_bill"],
+        known=_known_bill([{"kwh": 20000, "start": "2025-01-01", "end": "2025-12-31"}]),
+    )
+    result = result_of(events)
+    item = next(r for r in result["readings"] if r["kind"] == "gas_bill")
+    assert item["reading"]["total_kwh"] == 20000
+    assert {d["field"] for d in item["disagreements"]} == {"total_kwh"}
+    assert item["reading"]["monthly"] == []
+    assert harness["weather"].calls[0][1:] == (date(2025, 1, 1), date(2025, 12, 31))
+
+
+@pytest.mark.parametrize(
+    "periods",
+    [
+        [{"kwh": 0, "start": "2025-01-01", "end": "2025-12-31"}],
+        [{"kwh": 40001, "start": "2025-01-01", "end": "2025-12-31"}],
+        [{"kwh": 100, "start": "2025-01-01", "end": "2025-12-31"}],
+        [{"kwh": 12000, "start": "2025-02-30", "end": "2025-12-31"}],
+        [{"kwh": 12000, "start": "2025-12-31", "end": "2025-01-01"}],
+        [{"kwh": 12000, "start": "2025-01-01", "end": "2025-12-31", "account": "refused"}],
+        [{"kwh": 1000, "start": "2025-01-01", "end": "2025-01-31"}] * 14,
+    ],
+)
+def test_entered_bill_rejects_bad_values_with_422(harness, periods):
+    response = client.post(
+        "/api/analysis", data={"certificate_id": CERTIFICATE, "known": _known_bill(periods)}
+    )
+    assert response.status_code == 422
+
+
+def test_yearly_entry_plus_two_contained_photos_uses_total_once(harness):
+    harness["gemini"].replies["GasBillReading"] = [
+        bill(period_start="2025-06-01", period_end="2025-06-30", total_kwh=250),
+        bill(period_start="2025-07-01", period_end="2025-07-31", total_kwh=200),
+    ]
+    result = _post(
+        [
+            ("gas_bill", ("june.jpg", JPEG, "image/jpeg")),
+            ("gas_bill", ("july.jpg", JPEG, "image/jpeg")),
+        ],
+        known=_known_bill([{"kwh": 12000, "start": "2025-01-01", "end": "2025-12-31"}]),
+    )
+    item = next(r for r in result["readings"] if r["kind"] == "gas_bill")
+    assert item["reading"]["total_kwh"] == 12000
+    assert len(result["bill_notes"]) == 2
+    assert "baseline_estimated" not in result["bundle"]["measured"]["caveats"]
+    assert not result["bill_warning"] and not result["costs_annualised"]
+
+
+def test_summer_only_requests_winter_month(harness):
+    _, events = analyse(
+        [], known=_known_bill([{"kwh": 300, "start": "2025-06-01", "end": "2025-06-30"}])
+    )
+    result = result_of(events)
+    assert result["bundle"]["measured"] is None
+    assert not result["bundle"]["costs_by_flow_temp"]
+    assert "add a winter month" in next(
+        g["message"] for g in result["gaps"] if g["input"] == "gas_bill"
+    )
