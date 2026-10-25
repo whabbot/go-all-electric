@@ -45,7 +45,9 @@ It uses this worktree's mock instance, launching `launch.sh mock` if none is run
 stopping it afterwards. Photos are drawn synthetic stand-ins stamped "SYNTHETIC SAMPLE". Mock
 results are canned, so the narration says Sam's sample and never presents the review or drafts
 as live Gemini output. A side label reads "SAM'S SAMPLE, offline mock" throughout. The local
-backend has no database, so the Atlas search beat shows a card saying so.
+backend cannot reach Atlas, so without a clip the two Atlas beats show plain-words cards of the
+Atlas features (never presented as a live result); pass `--insert atlas=clip.mov` to show Atlas
+itself.
 
 ### `final`: the live site, your house (run it yourself)
 
@@ -91,10 +93,16 @@ path: use the finished second tab from the demo plan, or pause the recording.
 Atlas console shots need your login, so they are not automated. Record about 12-20 s with
 QuickTime: the Atlas Search tab (the two `datasheets` indexes), then Data Explorer, `surveys`,
 newest document. Never show Network Access, Database Users or a connection string. Then pass
-`--insert atlas=clip.mov`. The clip replaces the "Atlas console clip goes here" beat. It
-plays in full, and a clip longer than the narration lengthens the beat. Before it,
-the `atlas-search` beat shows the app's own `/api/datasheets/search` answer (hybrid mode,
-`$rankFusion` fields highlighted) from whichever site is being recorded.
+`--insert atlas=clip.mov`. The clip replaces both Atlas beats (`atlas-search` and
+`atlas-console`) as one segment under both narration lines. It plays in full; a clip shorter
+than the narration (about 27 s) holds its last frame, and a longer one lengthens the segment
+(keep it under about 35 s to stay within 3:00). The clip can also start on the live site's
+`/api/datasheets/search?q=Vailant%20aroTHERM&limit=3` JSON. With no clip, `final` shows that
+JSON from the live site, then a features card.
+
+```bash
+uv run --project demo/video python demo/video/make_video.py draft --insert atlas=~/Desktop/atlas.mov
+```
 
 ## Which to use for the final video
 

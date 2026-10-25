@@ -8,7 +8,8 @@
 #   final         narration for the FINAL video (live site, the captain's own house)
 #   only          draft | final: the beat appears in one story only (default both)
 #   insert        name of a clip that can replace this beat's footage (--insert NAME=PATH);
-#                 a clip longer than the narration lengthens the beat
+#                 a clip longer than the narration lengthens the beat. Consecutive beats with
+#                 the same insert become one segment: the clip plays under all their lines
 #   actions       browser steps, in order. Each step is a one-key mapping; add `only: draft`
 #                 or `only: final` to a step to run it in one story only.
 #
@@ -157,6 +158,7 @@ beats:
 
   - id: atlas-search
     screen: The app's own /api/datasheets/search result (Atlas hybrid search) in a second tab
+    insert: atlas
     draft: >-
       Under the hood, MongoDB Atlas is the data store. Boiler plates and quoted models are
       matched against a datasheet library with Atlas hybrid search: full text plus vector,
@@ -166,7 +168,12 @@ beats:
       matched against a datasheet library with Atlas hybrid search: full text plus vector,
       fused inside Atlas. Even a misspelt make finds its match.
     actions:
-      - json_tab: {path: "/api/datasheets/search?q=Vailant%20aroTHERM&limit=3"}
+      - json_tab: {path: "/api/datasheets/search?q=Vailant%20aroTHERM&limit=3", only: final}
+      # The local mock has no database, so the draft shows what Atlas does, in plain words.
+      - insert_card:
+          title: "MongoDB Atlas: hybrid search"
+          body: "Atlas Search (full text) plus Atlas Vector Search, fused inside Atlas with $rankFusion, match boiler plates and quoted models to a datasheet library."
+          only: draft
 
   - id: atlas-console
     screen: "INSERT POINT: captain's Atlas console clip (Search indexes, then the newest survey)"
@@ -181,8 +188,8 @@ beats:
       address.
     actions:
       - insert_card:
-          title: "Atlas console clip goes here"
-          body: "Pass --insert atlas=YOUR-CLIP.mov: Search indexes tab, then the newest document in surveys."
+          title: "MongoDB Atlas: indexes and surveys"
+          body: "Two search indexes, full text and vector, with Voyage AI embeddings made inside Atlas. Every survey is saved with the postcode district only, never the address."
 
   - id: plan-pack
     screen: Plan (supply first), then Pack with the review gate; nothing is sent

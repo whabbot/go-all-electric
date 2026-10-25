@@ -179,3 +179,48 @@ def test_beat_clip_with_insert_and_with_frames(tmp_path):
         1, "y", "Hi.", mark, [(99.0, str(frame))], (wav, 2.0), tmp_path, ["SAMPLE"], None
     )
     assert compose.probe_duration(out2) == pytest.approx(length2, abs=0.15)
+
+
+def test_draft_atlas_beats_never_show_a_database_error():
+    draft = {b.id: b for b in storyboard.load(BOARD, "draft").beats}
+    for beat_id in ("atlas-search", "atlas-console"):
+        beat = draft[beat_id]
+        assert beat.insert == "atlas"
+        assert not any(n == "json_tab" for n, _ in beat.actions)
+        text = " ".join(a.get("body", "") + a.get("title", "") for _, a in beat.actions).lower()
+        assert "503" not in text and "no database" not in text and "goes here" not in text
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="needs ffmpeg")
+def test_one_insert_clip_covers_both_atlas_beats(tmp_path):
+    import make_video
+
+    beats = storyboard.load(BOARD, "draft").beats
+    voices = []
+    for k in range(len(beats)):
+        wav = tmp_path / f"v{k}.wav"
+        subprocess.run(
+            ["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=f=440:d=2", str(wav)],
+            check=True,
+        )
+        voices.append((wav, 2.0))
+    marks = [BeatMarks(b.id, start=10.0 * k, end=10.0 * k + 3.0) for k, b in enumerate(beats)]
+    clip = tmp_path / "atlas.mov"
+    clip.write_bytes(b"x")
+
+    segs = list(make_video._segments(beats, marks, voices, {"atlas": clip}, tmp_path))
+    assert len(segs) == len(beats) - 1
+    (seg,) = [s for s in segs if s[4] is not None]
+    seg_id, narration, mark, (wav, secs), insert = seg
+    assert seg_id == "atlas-search+atlas-console" and insert == clip
+    by_id = {b.id: b for b in beats}
+    assert by_id["atlas-search"].narration in narration
+    assert by_id["atlas-console"].narration in narration
+    # Both lines play, with the usual pause between beats.
+    assert secs == pytest.approx(4.0 + record.TAIL + record.LEAD, abs=0.05)
+    assert compose.probe_duration(wav) >= secs
+    assert mark.start == marks[7].start and mark.end == marks[8].end
+
+    # Without a clip every beat stays its own segment.
+    plain = list(make_video._segments(beats, marks, voices, {}, tmp_path))
+    assert [s[0] for s in plain] == [b.id for b in beats]
