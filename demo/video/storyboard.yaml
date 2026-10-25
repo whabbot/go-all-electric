@@ -1,0 +1,209 @@
+# Go All-Electric demo video storyboard. Edit the narration here and re-run one command
+# (see README.md). Each beat is held on screen at least as long as its narration.
+#
+# Beat fields:
+#   id            short name, used in file names and the timing sheet
+#   screen        what the viewer sees (for the timing sheet in voiceover-only mode)
+#   draft         narration for the DRAFT video (local mock, Sam's offline sample)
+#   final         narration for the FINAL video (live site, the captain's own house)
+#   only          draft | final: the beat appears in one story only (default both)
+#   insert        name of a clip that can replace this beat's footage (--insert NAME=PATH);
+#                 a clip longer than the narration lengthens the beat
+#   actions       browser steps, in order. Each step is a one-key mapping; add `only: draft`
+#                 or `only: final` to a step to run it in one story only.
+#
+# Steps: click {role, name, exact?, nav?} | point {text | role+name} | scroll_to {text} |
+#   scroll_top | scroll_by {px} | wait {s} | wait_text / wait_gone {text, timeout?, trim?, label?} |
+#   live_photo {} | upload_quotes {files} | tick {label} | json_tab {path} |
+#   insert_card {title, body} | back_to_app {}
+# `trim: true` on wait_text / wait_gone cuts the long part of that wait out of the video and
+# shows a "shortened" banner instead (only waits longer than a few seconds are cut).
+
+voice_style: >-
+  A calm, warm British narrator for a short product demo. Clear and friendly, brisk but
+  unhurried, confident but not salesy.
+
+beats:
+  - id: intro
+    screen: Photos step, "house in <district>" with the photo slots
+    draft: >-
+      Meet Sam. Sam heats with gas and has three heat pump quotes: six, nine and twelve
+      kilowatts. Which is right? Sam's gas bills have already measured the house, so we use
+      them to check the installer's maths. This is Sam's sample, offline.
+    final: >-
+      Meet Sam: a gas boiler and three heat pump quotes, six, nine and twelve kilowatts. Which
+      is right? Your gas bills have already measured your house, so we use them to check the
+      installer's maths. Here it is on my own house, with real photos and bills.
+    actions:
+      - wait: {s: 1.5}
+      - point: {text: "Take photo or upload"}
+
+  - id: photo
+    screen: One photo goes through Redact (Black out), Use photo, then the instant check
+    draft: >-
+      First, photos: the bill, boiler plate, fuse and radiators. Anything identifying is
+      blacked out on the device; the preview is exactly what gets sent. Then each photo is
+      checked: is it the right thing, and readable? These pictures are synthetic stand-ins.
+    final: >-
+      First, photos: the bill, boiler plate, fuse and radiators. Anything identifying is
+      blacked out on the device; the preview is exactly what gets sent. Then Gemini Flash
+      checks it's the right thing, and readable.
+    actions:
+      - live_photo: {}
+      - wait_gone: {text: "Checking photo", timeout: 90, trim: true, label: "photo check"}
+      - wait: {s: 1}
+
+  - id: estimates-run
+    screen: Next, Estimates; the verification log fills in, then its failed checks and re-reads
+    draft: >-
+      Then the estimates. It doesn't trust its own model: code checks every reading. Does the
+      boiler match a datasheet? Do the radiators add up? A failed check means a re-read, and
+      anything it can't tell is listed, not guessed.
+    final: >-
+      Then the estimates. Gemini reads each photo, and code checks every reading: does the
+      boiler match a datasheet, do the radiators add up? A failed check means a re-read, and
+      anything it can't tell is listed, not guessed.
+    actions:
+      - click: {role: link, name: "Next: Estimates"}
+      - wait: {s: 1.5}
+      - wait_text: {text: "What we read", timeout: 180, trim: true, label: "analysis"}
+      - scroll_to: {text: "Verification log"}
+      - wait: {s: 2.5}
+
+  - id: hero
+    screen: The "Two estimates" hero (measured vs fabric) and "Why they disagree — ranked"
+    draft: >-
+      Here's the heart of it: two estimates. The installer-style fabric calculation says 8.8
+      kilowatts; Sam's bills, adjusted for weather, say 4.7. And it ranks why they disagree:
+      most likely, cavity walls filled since the EPC.
+    final: >-
+      Here's the heart of it: two estimates. On the left, what my bills measured, adjusted for
+      weather. On the right, the installer-style fabric calculation. And it ranks why they
+      disagree.
+    actions:
+      - scroll_top: {}
+      - wait: {s: 1}
+      - point: {text: "Estimate A"}
+      - wait: {s: 3.5}
+      - point: {text: "Estimate B"}
+      - wait: {s: 3.5}
+      - scroll_to: {text: "Why they disagree"}
+      - wait: {s: 1.5}
+      - point: {text: "of gap"}
+      # Starts the one-context review now so its 1-2 minutes run behind the next beats.
+      - scroll_to: {text: "One-context review"}
+      - click: {role: button, name: "Ask Gemini to review everything"}
+
+  - id: costs-spec
+    screen: Costs (break-even flow temperature, savings as ranges), then Spec
+    draft: >-
+      Above about 48 degrees flow, a heat pump costs Sam more than gas; at 45 it saves around
+      95 pounds a year, within a range. So a good install is five to seven kilowatts at 45
+      degrees, with the 7,500 pound grant.
+    final: >-
+      Costs show where a heat pump beats gas at each flow temperature, as a range. The spec
+      says what a good install looks like: size, flow temperature, radiators to upsize, and the
+      grant.
+    actions:
+      - click: {role: link, name: "Next: Costs"}
+      - wait: {s: 1}
+      - point: {text: "the heat pump costs more than gas"}
+      - wait: {s: 2.5}
+      - point: {text: "45 °C flow"}
+      - wait: {s: 3.5}
+      - click: {role: link, name: "Next: Spec"}
+      - wait: {s: 1}
+      - point: {text: "Heat pump size"}
+
+  - id: quotes
+    screen: Quotes, three SAMPLE quotes checked; the cards' flags and questions
+    draft: >-
+      Now three sample quotes in Sam's shape. The nine kilowatt one runs at 55 degrees with a
+      buffer tank. The twelve is far too big, with no grant deducted. The six fits. Each card
+      lists questions to ask before signing.
+    final: >-
+      Now three sample quotes, marked SAMPLE on every page, checked against my house. Each card
+      flags what doesn't fit, and lists questions to ask before signing.
+    actions:
+      - click: {role: link, name: "Next: Quotes"}
+      - wait: {s: 0.8}
+      - click: {role: button, name: "Load Sam's three quotes", only: draft}
+      - upload_quotes: {files: ["demo/quotes/sample-quote-a.pdf", "demo/quotes/sample-quote-b.pdf", "demo/quotes/sample-quote-c.pdf"], only: final}
+      - wait_text: {text: "Questions to ask before signing", timeout: 240, trim: true, label: "quote check"}
+      - scroll_to: {text: "Checked against your target size"}
+      - wait: {s: 4}
+      - scroll_by: {px: 600}
+      - wait: {s: 3.5}
+      - scroll_by: {px: 600}
+
+  - id: review
+    screen: Back on Estimates, the one-context review; "What if the EPC is wrong here?"
+    draft: >-
+      In the live app, Gemini 4 Argon then reviews everything in one context. It proposes which
+      EPC field might be wrong; code re-runs the maths, and you confirm or dismiss. Any sentence
+      with a number it can't trace is removed. Here, the sample shows a canned review.
+    final: >-
+      Meanwhile, Gemini 4 Argon reviewed everything in one context. It proposes which EPC field
+      might be wrong; code re-runs the maths, and I confirm or dismiss. Any sentence with a
+      number it can't trace is removed.
+    actions:
+      - click: {role: link, name: "Estimates", nav: true}
+      - wait: {s: 0.8}
+      - scroll_to: {text: "One-context review"}
+      - wait_text: {text: "What if the EPC is wrong here?", timeout: 300, trim: true, label: "Gemini review"}
+      - scroll_to: {text: "What if the EPC is wrong here?"}
+      - wait: {s: 2}
+      - point: {text: "Code re-run of Estimate A"}
+
+  - id: atlas-search
+    screen: The app's own /api/datasheets/search result (Atlas hybrid search) in a second tab
+    draft: >-
+      Under the hood, MongoDB Atlas is the data store. Boiler plates and quoted models are
+      matched against a datasheet library with Atlas hybrid search: full text plus vector,
+      fused inside Atlas.
+    final: >-
+      Under the hood, MongoDB Atlas is the data store. Boiler plates and quoted models are
+      matched against a datasheet library with Atlas hybrid search: full text plus vector,
+      fused inside Atlas. Even a misspelt make finds its match.
+    actions:
+      - json_tab: {path: "/api/datasheets/search?q=Vailant%20aroTHERM&limit=3"}
+
+  - id: atlas-console
+    screen: "INSERT POINT: captain's Atlas console clip (Search indexes, then the newest survey)"
+    insert: atlas
+    draft: >-
+      In Atlas: two search indexes, full text and vector, with Voyage AI embeddings made
+      inside Atlas. And every survey is saved with the postcode district only, never the
+      address.
+    final: >-
+      In Atlas: two search indexes, full text and vector, with Voyage AI embeddings made
+      inside Atlas. And every survey is saved with the postcode district only, never the
+      address.
+    actions:
+      - insert_card:
+          title: "Atlas console clip goes here"
+          body: "Pass --insert atlas=YOUR-CLIP.mov: Search indexes tab, then the newest document in surveys."
+
+  - id: plan-pack
+    screen: Plan (supply first), then Pack with the review gate; nothing is sent
+    draft: >-
+      Then one plan, supply first: the fuse decides if a heat pump and an EV charger both fit.
+      And editable drafts for the installers. Nothing is sent from this app. It advises; you
+      decide.
+    final: >-
+      Then one plan, supply first: the fuse decides if a heat pump and an EV charger both fit.
+      Gemini drafts the re-quote emails; code checks every number. Nothing is sent from this
+      app. It advises; you decide.
+    actions:
+      - back_to_app: {}
+      - click: {role: link, name: "Plan", nav: true}
+      - wait: {s: 1}
+      - point: {text: "Electricity supply"}
+      - wait: {s: 2.5}
+      - click: {role: link, name: "Next: Pack"}
+      - wait: {s: 1}
+      - click: {role: button, name: "Draft all 3 emails with Gemini", only: final}
+      - wait_text: {text: "drafted by", timeout: 120, trim: true, label: "Gemini drafts", only: final}
+      - tick: {label: "I've reviewed this draft"}
+      - wait: {s: 2.5}
+      - point: {text: "Nothing is sent from this app"}

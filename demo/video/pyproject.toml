@@ -1,0 +1,20 @@
+[project]
+name = "gae-demo-video"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = ["playwright>=1.55,<2", "pillow>=11,<13", "google-genai>=2.30.1", "pyyaml>=6,<7", "pytest>=9,<10"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Embedded browser JavaScript and HTML pages.
+"gaevideo/record.py" = ["E501"]
