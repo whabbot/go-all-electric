@@ -83,6 +83,45 @@ def _inserts(items: list[str]) -> dict[str, Path]:
     return out
 
 
+def _segments(beats, marks, voices, inserts, work):
+    """(id, narration, marks, voice, clip, labels) per segment. Consecutive beats sharing a
+    supplied insert clip become one segment: the clip plays under all their lines, which keep the
+    usual pause between beats, and the segment lasts as long as the clip or the footage, if
+    longer. Labels are each beat's insert_label for its stretch of the clip (None: no clip)."""
+    groups: list[list[int]] = []
+    for i, beat in enumerate(beats):
+        name = beat.insert if beat.insert in inserts else None
+        if groups and name and beats[groups[-1][-1]].insert == name:
+            groups[-1].append(i)
+        else:
+            groups.append([i])
+    for g in groups:
+        first, last = beats[g[0]], beats[g[-1]]
+        insert = inserts.get(first.insert or "")
+        labels, t = None, 0.0
+        if insert is not None:
+            labels = []
+            for k, i in enumerate(g):
+                end = t + marks[i].kept(marks[i].end) if k < len(g) - 1 else 1e6
+                if beats[i].insert_label:
+                    labels.append((beats[i].insert_label, t, end))
+                t = end
+        if len(g) == 1:
+            yield first.id, first.narration, marks[g[0]], voices[g[0]], insert, labels
+            continue
+        seg_id = f"{first.id}+{last.id}"
+        wav = work / f"{seg_id}.wav"
+        times = compose.voiceover_track([voices[i] for i in g], record.TAIL + record.LEAD, wav)
+        mark = record.BeatMarks(
+            seg_id,
+            start=marks[g[0]].start,
+            end=marks[g[-1]].end,
+            cuts=[c for i in g for c in marks[i].cuts],
+        )
+        narration = " ".join(beats[i].narration for i in g)
+        yield seg_id, narration, mark, (wav, times[-1][1]), insert, labels
+
+
 def _secret(env: str, prompt: str) -> str | None:
     if os.environ.get(env):
         return os.environ[env]
@@ -182,21 +221,15 @@ def make(args: argparse.Namespace) -> None:
     log(f"recorded {len(rec.frames)} frames; composing")
 
     clips, entries, rows, t = [], [], [], 0.0
-    for i, (beat, mark, v) in enumerate(zip(board.beats, marks, voices, strict=True)):
+    for i, (beat_id, narration, mark, v, insert, labels) in enumerate(
+        _segments(board.beats, marks, voices, inserts, work)
+    ):
         clip, length, caps = compose.beat_clip(
-            i,
-            beat.id,
-            beat.narration,
-            mark,
-            rec.frames,
-            v,
-            work,
-            badge,
-            inserts.get(beat.insert or ""),
+            i, beat_id, narration, mark, rec.frames, v, work, badge, insert, labels
         )
         clips.append(clip)
         entries += [(t + a, t + b, text) for a, b, text in caps]
-        rows.append((beat.id, t, t + length, beat.narration))
+        rows.append((beat_id, t, t + length, narration))
         t += length
     video = out_dir / f"{name}.mp4"
     compose.join(clips, video)
@@ -296,7 +329,7 @@ def main() -> None:
             "--insert",
             action="append",
             metavar="NAME=PATH",
-            help="use a clip for a beat's footage, e.g. atlas=atlas-console.mov",
+            help="use a clip for a beat's footage, e.g. atlas=atlas.mov (both Atlas beats)",
         )
         p.add_argument(
             "--keep-work", action="store_true", help="keep per-beat clips (never live frames)"

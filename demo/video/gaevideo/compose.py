@@ -14,6 +14,7 @@ from gaevideo.storyboard import (
 )
 
 FPS = 30
+LIVE_LABEL = (110, 210, 150)  # corner label over inserted real footage
 ENC = [
     "-c:v",
     "libx264",
@@ -59,8 +60,11 @@ def beat_clip(
     work: Path,
     badge: list[str] | None,
     insert: Path | None,
+    labels: list[tuple[list[str], float, float]] | None = None,
 ) -> tuple[Path, float, list[tuple[float, float, str]]]:
-    """Render one beat. Returns the clip, its length and its captions (beat clock)."""
+    """Render one beat. Returns the clip, its length and its captions (beat clock).
+
+    `labels` (lines, from, to) replace the badge, e.g. over an inserted clip of real footage."""
     wav, narr_s = voice
     intervals = kept_intervals(mark.start, mark.end, [(a, b) for a, b, _ in mark.cuts])
     length = sum(b - a for a, b in intervals)
@@ -111,7 +115,13 @@ def beat_clip(
             f"enable='between(t,{max(0, pos - 0.1):.3f},{pos + 3.2:.3f})'[v{n}]"
         )
         label, n = f"v{n}", n + 1
-    if badge:
+    if labels is not None:
+        for k, (lines, a, b) in enumerate(labels):
+            png = gfx.side_label(lines, stem.with_name(f"{stem.name}-label{k}.png"), LIVE_LABEL)
+            inputs += ["-i", str(png)]
+            chain.append(f"[{label}][{n}:v]overlay=0:0:enable='between(t,{a:.3f},{b:.3f})'[v{n}]")
+            label, n = f"v{n}", n + 1
+    elif badge:
         inputs += ["-i", str(gfx.side_label(badge, stem.with_name(f"{stem.name}-badge.png")))]
         chain.append(f"[{label}][{n}:v]overlay=0:0[v{n}]")
         label, n = f"v{n}", n + 1
