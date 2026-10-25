@@ -12,11 +12,12 @@ Photos and bills stay in memory for this call: they are never stored, logged or 
 """
 
 import calendar
+import logging
 import math
 import time
 from collections.abc import Callable, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from threading import Lock
 from typing import Any
@@ -44,10 +45,11 @@ from gae.heatpump import constants as c
 from gae.heatpump.constants import HeatingFuel
 from gae.heatpump.costs import compare_running_costs
 from gae.heatpump.crosscheck import cross_check
+from gae.heatpump.fabric import estimate_fabric
 from gae.heatpump.measured import MeasuredCaveat, MeasuredEstimate
 from gae.heatpump.spec import Room, target_spec
 from gae.opendata.bill import DegreeDayProvider
-from gae.opendata.mapping import FabricMapping, descriptions
+from gae.opendata.mapping import FabricMapping, FieldConfidence, descriptions
 from gae.opendata.usage import UsagePeriod, measured_from_periods, select_periods
 from gae.opendata.weather import normalise_postcode
 from gae.plan.build import build_all_electric_plan
@@ -294,19 +296,69 @@ def run_analysis(
             rad_verified = [None] * rad_count
         video_result = video_future.result() if video_future is not None else None
 
+    if known and (known.house_type is not None or known.floor_area_m2 is not None):
+        inputs, confidence = dict(mapping.fabric_inputs), dict(mapping.confidence)
+        # An explicit flat/maisonette/park-home signal cannot be turned into a house.
+        non_house = not mapping.house_model_supported
+        if known.house_type is not None and not non_house:
+            inputs["property_type"] = known.house_type
+            inputs["storeys"] = 1 if known.house_type.value == "bungalow" else 2
+            confidence["property_type"] = FieldConfidence(
+                "medium", "Entered by you", "House type (you); confirm at survey."
+            )
+        if known.floor_area_m2 is not None:
+            inputs["floor_area_m2"] = known.floor_area_m2
+            confidence["floor_area_m2"] = FieldConfidence(
+                "medium", "Entered by you", "Floor area (you); confirm at survey."
+            )
+        estimate = None
+        reason = mapping.reason
+        if not non_house and inputs["floor_area_m2"] is not None:
+            try:
+                estimate = estimate_fabric(**inputs)
+                reason = None
+            except ValueError:
+                reason = (
+                    "Couldn't tell: EPC geometry is inconsistent. Confirm dimensions at survey."
+                )
+        logging.getLogger(__name__).warning(
+            "epc_geometry property_type=%r built_form=%r dwelling_type=%r path=%s",
+            raw.get("property_type"),
+            raw.get("built_form"),
+            raw.get("dwelling_type"),
+            "explicit_non_house" if non_house else "homeowner",
+        )
+        mapping = replace(
+            mapping, fabric_inputs=inputs, confidence=confidence, estimate=estimate, reason=reason
+        )
+        code_log.add(
+            "check",
+            "epc",
+            "code",
+            "House details entered by you",
+            True,
+            "Use entered details; confirm at survey",
+        )
     if mapping.estimate is None:
-        code_log.add("fail", "epc", "code", "EPC maps to the house heat-loss model", False, "stop")
-        raise AnalysisRefused(mapping.reason or "Couldn't tell from this EPC record.")
+        code_log.add(
+            "fail",
+            "epc",
+            "code",
+            "EPC maps to the house heat-loss model",
+            False,
+            "continue without fabric estimate",
+        )
     fabric = mapping.estimate
     defaults = _epc_defaults(mapping)
-    code_log.add(
-        "check",
-        "epc",
-        "code",
-        "EPC record maps to fabric inputs",
-        True,
-        f"Estimate A uses {len(defaults)} named default(s)",
-    )
+    if fabric is not None:
+        code_log.add(
+            "check",
+            "epc",
+            "code",
+            "EPC record maps to fabric inputs",
+            True,
+            f"Estimate A uses {len(defaults)} named default(s)",
+        )
 
     district = None
     postcode = None
@@ -409,6 +461,17 @@ def run_analysis(
         else None
     )
     gaps: list[Gap] = []
+    if fabric is None:
+        gaps.append(
+            Gap(
+                input="epc",
+                message=mapping.reason or "Couldn't compute the fabric estimate.",
+                provide="On Start, add your house type and floor area under Add details you know; "
+                "confirm geometry at survey. Flats, maisonettes and park homes "
+                "use the bill estimate only. "
+                "The A-vs-B cross-check and disagreement reasons are unavailable.",
+            )
+        )
     readings: list[InputReading] = []
     rad_items: list[InputReading] = []
     for kind in PhotoKind:
@@ -566,6 +629,13 @@ def run_analysis(
 
     # --- Maths core ---------------------------------------------------------------------------
     t0 = time.monotonic()
+    if measured is None and fabric is None:
+        raise AnalysisRefused(
+            "Couldn't tell: neither estimate is available. "
+            "To size this home, add your house type and floor "
+            "area under Add details you know on Start, or add gas usage with start/end dates "
+            "including a winter month on Photos. Confirm unsupported geometry at survey."
+        )
     basis = measured.design_load_kw if measured else fabric.design_load_kw
     radiator_readings = [
         (item, r) for item in rad_items if (r := _typed(item, RadiatorReading)) is not None
@@ -625,7 +695,7 @@ def run_analysis(
                     provide=f"Photograph {SPECS[PhotoKind.RADIATORS].photograph_instead}.",
                 )
             )
-    check = cross_check(fabric, measured) if measured else None
+    check = cross_check(fabric, measured) if measured and fabric else None
     costs = (
         [
             compare_running_costs(
@@ -652,7 +722,7 @@ def run_analysis(
             if check.verdict.value == "agree"
             else f"explain the gap: {len(check.reasons)} ranked reason(s)",
         )
-    else:
+    elif fabric is not None:
         code_log.add(
             "check",
             "maths",
@@ -674,12 +744,15 @@ def run_analysis(
 
     bundle = AnalysisBundle(
         measured=jsonable(measured) if measured else None,
-        fabric=jsonable(fabric),
+        fabric=jsonable(fabric) if fabric else None,
         cross_check=jsonable(check) if check else None,
         costs_by_flow_temp=[jsonable(x) for x in costs],
         target_spec=jsonable(spec),
     )
     epc = _epc_summary(raw, mapping, fuel)
+    epc.entered = [
+        field for field, conf in mapping.confidence.items() if conf.source == "Entered by you"
+    ]
 
     t0 = time.monotonic()
     step("plan", "running")
@@ -899,7 +972,9 @@ def _epc_defaults(mapping: FabricMapping) -> list[NamedDefault]:
 def _epc_summary(raw: dict, mapping: FabricMapping, fuel: HeatingFuel) -> EpcSummary:
     inputs = mapping.fabric_inputs
     return EpcSummary(
-        property_type=str(inputs["property_type"]),
+        property_type=str(inputs["property_type"])
+        if mapping.house_model_supported
+        else "unsupported",
         floor_area_m2=inputs["floor_area_m2"],
         storeys=inputs["storeys"],
         age_band=_band_from_note(mapping.confidence["year_built"].note),

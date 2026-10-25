@@ -292,6 +292,7 @@ def test_known_house_with_missing_form_through_client():
     for value in codes["property_type"]["data"][0]["values"]:
         if value["schemaVersion"] == record["schema_type"]:
             value["value"] = "House"
+    record["built_form"] = 99  # Unknown even in the static table.
     codes["built_form"] = {"data": []}
     result = certificate_result(record, codes)
     assert result["estimate"] is not None
@@ -307,3 +308,72 @@ def test_client_resolves_form_despite_generic_dwelling_text():
     result = certificate_result(record, codes)
     assert result["estimate"] is not None
     assert result["fabric_inputs"]["property_type"] == "detached"
+
+
+@pytest.mark.parametrize(
+    "property_code,expected", [(0, "detached"), (1, "bungalow"), (2, None), (3, None), (4, None)]
+)
+def test_static_codes_when_endpoint_fails(property_code, expected, monkeypatch, caplog):
+    from gae.opendata.http import DataUnavailable
+
+    data = fixture("certificate_nested.json")["data"]
+    data["property_type"] = property_code
+
+    def get(self, path, params):
+        if path == "/api/certificate":
+            return {"data": data}
+        raise DataUnavailable("Codes service unavailable")
+
+    monkeypatch.setattr(EPCClient, "_get", get)
+    with caplog.at_level("INFO"), httpx.Client() as client:
+        result = EPCClient(client, SecretStr("synthetic")).certificate("0000-0000-0000-0000-0000")
+    assert (result["estimate"] is not None) == (expected is not None)
+    if expected:
+        assert result["fabric_inputs"]["property_type"] == expected
+    assert "static_code_fallback" in caplog.text
+    assert "0000-0000-0000-0000-0000" not in caplog.text
+    assert "address" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "code,label",
+    [
+        ("1", "detached"),
+        ("2", "semi_detached"),
+        ("3", "end_terrace"),
+        ("4", "mid_terrace"),
+        ("5", "end_terrace"),
+        ("6", "mid_terrace"),
+        ("NR", "semi_detached"),
+    ],
+)
+def test_verified_static_built_forms(code, label):
+    result = map_epc({"total_floor_area": 90, "property_type": 0, "built_form": code})
+    assert result.estimate is not None
+    assert result.fabric_inputs["property_type"] == label
+
+
+@pytest.mark.parametrize(
+    "label,expected",
+    [
+        ("Not Recorded", "semi_detached"),
+        ("Mid-terrace", "mid_terrace"),
+        ("Unspecified", "semi_detached"),
+    ],
+)
+def test_dwelling_label_without_word_house(label, expected):
+    result = map_epc({"total_floor_area": 90, "dwelling_type": label})
+    assert result.estimate is not None
+    assert result.fabric_inputs["property_type"] == expected
+    if expected == "semi_detached":
+        assert result.confidence["property_type"].confidence == "low"
+        assert "Confirm at survey" in result.confidence["property_type"].note
+
+
+@pytest.mark.parametrize("code", [2, 3, 4, "2", "3", "4"])
+def test_static_non_house_code_overrules_house_text(code):
+    result = map_epc(
+        {"total_floor_area": 90, "property_type": code, "dwelling_type": "Detached house"}
+    )
+    assert result.estimate is None
+    assert not result.house_model_supported

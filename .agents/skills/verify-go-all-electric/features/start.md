@@ -6,6 +6,7 @@ N10"). In mock mode a "Load Sam's sample (demo)" button loads the demo house and
 
 ## Sub-features
 
+- `start-details` offers House type and Floor area (m²) under Add details you know; entries show (you), override house geometry and make old results stale. Explicit flats still use bills only.
 - `start-search` searches EPC records for a postcode and lists addresses with band and date.
 - `start-no-results` shows "Could not find EPC records" with Try again (and Use Sam's sample in
   mock).
@@ -45,6 +46,7 @@ Preconditions:
 - **Locked deep link.** Fresh `frame 390 844 /pack`. `where` prints the furthest reachable step
   (`/capture` in mock, `/` in real with no house), not `/pack`.
 - **Real mode.** `realhouse` prints `Selected: house in <district>`. Then `click link "Continue"`.
+- **Known details.** After Pick, `click summary "Add details you know"`; choose House type and fill Floor area (m²). Continue through Photos then `Next: Estimates` to get estimates. Return to Start, change either entry, then visit Estimates: the stale-results banner appears.
 - **Proof.** `shot` + `snap` after Pick (district only) and after Continue.
 
 ## Gotchas

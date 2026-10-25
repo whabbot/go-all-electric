@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api, isMockMode, type EpcAddress } from '../api'
+import { HouseDetails } from '../components/HouseDetails'
 import { Alert } from '../components/Alert'
 import { useSession } from '../context/SessionContext'
 
@@ -145,6 +146,8 @@ export function StartScreen() {
           )
         )}
       </div>
+
+      <HouseDetails />
 
       {isMockMode() && (
         <p className="cta-row">

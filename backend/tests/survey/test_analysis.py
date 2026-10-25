@@ -949,3 +949,81 @@ def test_summer_only_requests_winter_month(harness):
     assert "add a winter month" in next(
         g["message"] for g in result["gaps"] if g["input"] == "gas_bill"
     )
+
+
+@pytest.mark.parametrize(
+    "change", [{"dwelling_type": "Mid-floor flat"}, {"total_floor_area": None}]
+)
+def test_bill_only_continues_costs_spec_radiators_plan_and_save(harness, change):
+    harness["epc"] = FakeEpc(record(**change))
+    _, events = analyse(["gas_bill", "radiators"])
+    result = result_of(events)
+    bundle = result["bundle"]
+    assert bundle["fabric"] is None
+    assert bundle["cross_check"] is None
+    assert bundle["measured"]
+    assert bundle["costs_by_flow_temp"]
+    assert bundle["target_spec"]["radiators"]
+    assert result["size_basis"] == "measured"
+    assert result["plan"] and result["saved"]
+    assert any(g["input"] == "epc" and "floor area" in g["provide"] for g in result["gaps"])
+    assert any(e["action"] == "continue without fabric estimate" for e in result["log"])
+    assert not any(e["action"] == "stop" for e in result["log"])
+
+
+def test_neither_estimate_refuses_with_every_fix(harness):
+    harness["epc"] = FakeEpc(record(total_floor_area=None))
+    _, events = analyse([])
+    error = next(e for e in events if e["type"] == "error")
+    assert error["status"] == 422
+    for fix in ["house type", "floor area", "gas usage", "winter month", "survey"]:
+        assert fix in error["message"]
+
+
+@pytest.mark.parametrize(
+    "house_type,storeys",
+    [
+        ("detached", 2),
+        ("semi_detached", 2),
+        ("end_terrace", 2),
+        ("mid_terrace", 2),
+        ("bungalow", 1),
+    ],
+)
+def test_known_geometry_overrides_epc_and_recovers_area(harness, house_type, storeys):
+    harness["epc"] = FakeEpc(record(total_floor_area=None, dwelling_type="Not Recorded"))
+    _, events = analyse([], known=json.dumps({"house_type": house_type, "floor_area_m2": 110}))
+    result = result_of(events)
+    assert result["epc"]["property_type"] == house_type
+    assert result["epc"]["storeys"] == storeys
+    assert result["epc"]["floor_area_m2"] == 110
+    assert set(result["epc"]["entered"]) == {"property_type", "floor_area_m2"}
+    assert result["bundle"]["fabric"]
+
+
+def test_picker_cannot_turn_explicit_flat_into_house(harness):
+    harness["epc"] = FakeEpc(record(property_type=2))
+    _, events = analyse(
+        ["gas_bill"], known=json.dumps({"house_type": "detached", "floor_area_m2": 100})
+    )
+    result = result_of(events)
+    assert result["bundle"]["fabric"] is None
+    assert result["epc"]["property_type"] == "unsupported"
+    assert "property_type" not in result["epc"]["entered"]
+
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        {"house_type": "flat"},
+        {"floor_area_m2": 0},
+        {"floor_area_m2": 1001},
+        {"floor_area_m2": float("inf")},
+        {"floor_area_m2": 90, "address": "forbidden"},
+    ],
+)
+def test_geometry_details_are_bounded_and_forbid_extras(harness, details):
+    response = client.post(
+        "/api/analysis", data={"certificate_id": CERTIFICATE, "known": json.dumps(details)}
+    )
+    assert response.status_code == 422

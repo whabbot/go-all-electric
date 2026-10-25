@@ -229,7 +229,9 @@ export type KnownFuse = { rating_a?: number }
 export type GasPeriod = { kwh: number; start: string; end: string }
 export type KnownGasBill = { periods: GasPeriod[] }
 
-export type KnownDetails = {
+export type KnownHouse = { house_type?: 'detached' | 'semi_detached' | 'end_terrace' | 'mid_terrace' | 'bungalow'; floor_area_m2?: number }
+
+export type KnownDetails = KnownHouse & {
   gas_bill?: KnownGasBill | null
   radiators: KnownRadiator[]
   boiler: KnownBoiler | null
@@ -316,13 +318,14 @@ export type EpcAddress = {
 /** `measured` and `cross_check` are null when there is no usable gas bill (no Estimate B). */
 export type AnalysisBundle = {
   measured: MeasuredEstimate | null
-  fabric: FabricEstimate
+  fabric: FabricEstimate | null
   cross_check: CrossCheck | null
   costs_by_flow_temp: CostComparison[]
   target_spec: TargetSpec
 }
 
 export type EpcSummary = {
+  entered?: string[]
   property_type: string
   floor_area_m2: number | null
   storeys?: number

@@ -1,5 +1,6 @@
 """GOV.UK Get energy performance of buildings data API client using a bearer token."""
 
+import logging
 import re
 from dataclasses import asdict
 
@@ -7,7 +8,7 @@ import httpx
 from pydantic import SecretStr
 
 from gae.opendata.http import DataUnavailable, get_json
-from gae.opendata.mapping import FabricMapping, map_epc
+from gae.opendata.mapping import FabricMapping, geometry_fallback, map_epc
 from gae.opendata.weather import normalise_postcode
 
 BASE_URL = "https://api.get-energy-performance-data.communities.gov.uk"
@@ -156,7 +157,16 @@ class EPCClient:
             value = data.get(name)
             if isinstance(value, str) and not value.strip().isdigit():
                 return value
-            return label_for(name, value)
+            label = label_for(name, value)
+            if label is None and geometry_fallback(name, value):
+                logging.getLogger(__name__).warning(
+                    "epc_geometry property_type=%r built_form=%r dwelling_type=%r "
+                    "path=static_code_fallback",
+                    data.get("property_type"),
+                    data.get("built_form"),
+                    data.get("dwelling_type"),
+                )
+            return label or geometry_fallback(name, value)
 
         # A populated dwelling_type may be just "House"; it must not mask the
         # schema-resolved attachment form or a non-house property type.

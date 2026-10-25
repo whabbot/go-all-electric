@@ -1,5 +1,6 @@
 """Explicit, conservative EPC-to-fabric mapping. See MAPPING.md for the decision table."""
 
+import logging
 import math
 import re
 from dataclasses import dataclass, replace
@@ -7,6 +8,33 @@ from typing import Any
 
 from gae.heatpump.constants import Glazing, HeatingFuel, WallType
 from gae.heatpump.fabric import FabricEstimate, PropertyType, estimate_fabric
+
+# Verified against the register's /api/codes/info?code=property_type and
+# ?code=built_form (RdSAP values), 2026-10-25; no certificate data requested.
+# https://get-energy-performance-data.communities.gov.uk/api-technical-documentation/codes-info
+RDSAP_GEOMETRY_CODES = {
+    "property_type": {
+        "0": "House",
+        "1": "Bungalow",
+        "2": "Flat",
+        "3": "Maisonette",
+        "4": "Park home",
+    },
+    "built_form": {
+        "1": "Detached",
+        "2": "Semi-Detached",
+        "3": "End-Terrace",
+        "4": "Mid-Terrace",
+        "5": "Enclosed End-Terrace",
+        "6": "Enclosed Mid-Terrace",
+        "NR": "Not Recorded",
+    },
+}
+logger = logging.getLogger(__name__)
+
+
+def geometry_fallback(name: str, value: Any) -> str | None:
+    return RDSAP_GEOMETRY_CODES[name].get(str(value).strip())
 
 
 @dataclass(frozen=True)
@@ -25,6 +53,7 @@ class FabricMapping:
     main_heating_fuel: HeatingFuel
     estimate: FabricEstimate | None
     reason: str | None
+    house_model_supported: bool = True
 
 
 def descriptions(record: dict, key: str) -> list[str]:
@@ -131,17 +160,19 @@ def map_epc(
 
     # Look at every available label: generic dwelling text must not hide a more
     # specific built form, bungalow, or an explicit non-house property type.
-    built_form = built_form_label or record.get("built_form", "")
-    property_value = property_label or record.get("property_type", "")
+    built_form = (
+        built_form_label
+        or geometry_fallback("built_form", record.get("built_form"))
+        or record.get("built_form", "")
+    )
+    property_value = (
+        property_label
+        or geometry_fallback("property_type", record.get("property_type"))
+        or record.get("property_type", "")
+    )
     labels = [geometry_text(v) for v in (record.get("dwelling_type"), built_form, property_value)]
     dwelling = " ".join(labels)
-    unresolved_codes = any(
-        isinstance(value, (int, float)) or (isinstance(value, str) and value.strip().isdigit())
-        for value in (built_form, property_value)
-    )
-    known_house = bool(re.search(r"\b(?:house|bungalow)\b", dwelling))
     unsupported = bool(re.search(r"\b(?:flats?|maisonettes?|park homes?)\b", dwelling))
-    unsupported = unsupported or (unresolved_codes and not known_house)
     prop = None
     matched_label = ""
     if not unsupported:
@@ -161,9 +192,8 @@ def map_epc(
                         break
                 if prop is not None:
                     break
-    # Unknown form is an assumption only when the EPC establishes a house (or
-    # supplies no geometry at all). Never guess what an undecoded type code means.
-    unsupported = unsupported or (prop is None and bool(dwelling.strip()) and not known_house)
+    # Only explicit non-house signals refuse the house model. Unknown geometry
+    # carries a named, low-confidence assumption that can be corrected at survey.
     geometry_default = None
     if unsupported:
         geometry_note = "Unsupported or unresolved form cannot use the house geometry model."
@@ -180,6 +210,17 @@ def map_epc(
         )
     else:
         geometry_note = "Dwelling form determines exposed perimeter; confirm at survey."
+    fallback = (
+        property_label is None and geometry_fallback("property_type", record.get("property_type"))
+    ) or (built_form_label is None and geometry_fallback("built_form", record.get("built_form")))
+    if unsupported or geometry_default or fallback:
+        logger.warning(
+            "epc_geometry property_type=%r built_form=%r dwelling_type=%r path=%s",
+            record.get("property_type"),
+            record.get("built_form"),
+            record.get("dwelling_type"),
+            "explicit_non_house" if unsupported else geometry_default or "static_code_fallback",
+        )
     put(
         "property_type",
         prop or PropertyType.SEMI_DETACHED,
@@ -334,4 +375,4 @@ def map_epc(
             estimate = estimate_fabric(**inputs)
         except ValueError:
             reason = "Couldn't tell: EPC geometry is inconsistent. Confirm dimensions at survey."
-    return FabricMapping(inputs, confidence, fuel, estimate, reason)
+    return FabricMapping(inputs, confidence, fuel, estimate, reason, not unsupported)

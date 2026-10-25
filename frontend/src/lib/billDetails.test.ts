@@ -33,3 +33,11 @@ it('invalidates results when any bill detail changes', async () => {
   const before = analysisInputsFingerprint({ ...base, billPeriods })
   expect(analysisInputsFingerprint({ ...base, billPeriods: [{ ...billPeriods[0], kwh: '14000' }] })).not.toBe(before)
 })
+
+it('marks a result stale when house type or floor area changes', async () => {
+  const { analysisInputsFingerprint } = await import('./analysisInputs')
+  const base = { certificateId: 'sample', files: {}, radiatorUploads: [], radiatorLabels: [], radiators: [], boilerDetails: {}, fuseDetails: {}, radiatorVideo: null }
+  const key = analysisInputsFingerprint(base)
+  expect(analysisInputsFingerprint({ ...base, houseDetails: { house_type: 'detached' } })).not.toBe(key)
+  expect(analysisInputsFingerprint({ ...base, houseDetails: { floor_area_m2: 90 } })).not.toBe(key)
+})

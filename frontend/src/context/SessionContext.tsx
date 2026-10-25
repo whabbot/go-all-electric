@@ -14,6 +14,7 @@ import {
   type AnalysisResult,
   type EpcAddress,
   type KnownBoiler,
+  type KnownHouse,
   type KnownFuse,
   type PhotoCheckResult,
   type PhotoKind,
@@ -118,6 +119,8 @@ type Session = {
   billPeriods: BillPeriodInputs[]
   setBillPeriods: (p: BillPeriodInputs[]) => void
   knownBill: ReturnType<typeof parseBillDetails>['known']
+  houseDetails: KnownHouse
+  setHouseDetails: (d: KnownHouse) => void
   boilerDetails: DetailInputs
   setBoilerDetails: (d: DetailInputs) => void
   fuseDetails: DetailInputs
@@ -202,6 +205,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [billPhotos, setBillPhotos] = useState<RadiatorPhotoItem[]>([])
   const [billPeriods, setBillPeriods] = useState<BillPeriodInputs[]>([])
   const knownBill = useMemo(() => parseBillDetails(billPeriods).known, [billPeriods])
+  const [houseDetails, setHouseDetails] = useState<KnownHouse>({})
   const [boilerDetails, setBoilerDetails] = useState<DetailInputs>({})
   const [fuseDetails, setFuseDetails] = useState<DetailInputs>({})
   const radiatorIdCounter = useRef(0)
@@ -245,6 +249,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const setAddress = useCallback(
     (a: EpcAddress | null) => {
+      setHouseDetails({})
       setAddressState(a)
       setAnalysis(null)
     },
@@ -268,6 +273,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setRadiators([])
     setBillPhotos(prev => { prev.forEach(p => URL.revokeObjectURL(p.previewUrl)); return [] })
     setBillPeriods([])
+    setHouseDetails({})
     setBoilerDetails({})
     setFuseDetails({})
     setQuotesState([])
@@ -476,6 +482,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       billPeriods,
       setBillPeriods,
       knownBill,
+      houseDetails,
+      setHouseDetails,
       boilerDetails,
       setBoilerDetails,
       fuseDetails,
@@ -524,6 +532,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       billPeriods,
       setBillPeriods,
       knownBill,
+      houseDetails,
+      setHouseDetails,
       boilerDetails,
       fuseDetails,
       knownBoiler,

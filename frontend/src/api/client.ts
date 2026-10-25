@@ -15,6 +15,7 @@ import type {
   InstallerDraftsResult,
   KnownBoiler,
   KnownDetails,
+  KnownHouse,
   KnownFuse,
   PhotoCheckResult,
   PhotoKind,
@@ -120,7 +121,7 @@ function appendRadiators(form: FormData, radiators: RadiatorUpload[]) {
   })
 }
 
-export type KnownExtras = { billPhotos?: File[]; gas_bill?: KnownDetails['gas_bill']; boiler: KnownBoiler | null; fuse_cutout: KnownFuse | null }
+export type KnownExtras = { house?: KnownHouse; billPhotos?: File[]; gas_bill?: KnownDetails['gas_bill']; boiler: KnownBoiler | null; fuse_cutout: KnownFuse | null }
 
 /**
  * One analysis call: EPC record, every photo and the bill (optional), weather, then the maths.
@@ -137,6 +138,7 @@ export async function runAnalysis(
   extras: KnownExtras = { boiler: null, fuse_cutout: null },
 ): Promise<AnalysisResult> {
   const known: KnownDetails = {
+    ...extras.house,
     radiators: radiators.map((r) => r.known),
     gas_bill: extras.gas_bill,
     boiler: extras.boiler,
@@ -169,7 +171,7 @@ export async function runAnalysis(
   }
   extras.billPhotos?.forEach(file => form.append('gas_bill', file))
   appendRadiators(form, radiators)
-  if (radiators.length > 0 || known.boiler || known.fuse_cutout || known.gas_bill) form.append('known', JSON.stringify(known))
+  if (radiators.length > 0 || known.boiler || known.fuse_cutout || known.gas_bill || known.house_type || known.floor_area_m2 != null) form.append('known', JSON.stringify(known))
   if (radiatorVideo) form.append('radiator_video', radiatorVideo)
   const res = await apiFetch('/api/analysis', { method: 'POST', body: form })
   if (!res.ok || !res.body) throw await failure(res, 'Analysis')

@@ -1,1 +1,1 @@
-"""EPC, postcode-centroid and historical weather adapters; no persistence or logging."""
+"""EPC, postcode-centroid and weather adapters; geometry logs exclude location and IDs."""

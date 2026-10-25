@@ -23,6 +23,7 @@ export type AnalysisInputsSnapshot = {
   radiators: RadiatorCard[]
   billPhotos?: { file: File }[]
   billPeriods?: unknown
+  houseDetails?: unknown
   boilerDetails: DetailInputs
   fuseDetails: DetailInputs
   radiatorVideo: File | null
@@ -41,7 +42,7 @@ export function analysisInputsFingerprint(snapshot: AnalysisInputsSnapshot): str
     radiatorVideo,
   } = snapshot
   const billFiles = (snapshot.billPhotos ?? []).map(p => `${p.file.name}:${p.file.size}:${p.file.lastModified}`).join(',')
-  const parts = [billFiles, `bill:${stableJson(snapshot.billPeriods ?? [])}`, certificateId ?? '']
+  const parts = [`house:${stableJson(snapshot.houseDetails ?? {})}`, billFiles, `bill:${stableJson(snapshot.billPeriods ?? [])}`, certificateId ?? '']
   for (const kind of INPUT_KINDS) {
     const file = files[kind]
     if (file) parts.push(`${kind}:${file.name}:${file.size}:${file.lastModified}`)
