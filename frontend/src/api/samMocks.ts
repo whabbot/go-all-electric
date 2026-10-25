@@ -297,23 +297,83 @@ function entry(
   return { id, input, step, model, check, passed, action, at: new Date(Date.now() + offsetMs).toISOString() }
 }
 
+const MOCK_RADIATOR_PHOTO_LOG_FIRST: VerificationLogEntry[] = [
+  entry('radiators-v1', 'radiators', 'read', 'gemini-3.8-flash', 'Gemini reads the input', true, '{"radiator_type": "other"}', 500),
+  entry('radiators-v2', 'radiators', 'check', 'code', 'radiator legible: model reports it cannot read the radiator', false, 'ask Gemini to look again', 600),
+  entry('radiators-v3', 'radiators', 'reread', 'gemini-4-argon', 'Gemini re-reads with the failed checks', true, '{"room": "Living room", "radiator_type": "K2", "height_mm": 600, "width_mm": 1200}', 900),
+  entry('radiators-v4', 'radiators', 'pass', 'code', 'all checks passed', true, 'use this reading', 950),
+]
+
+const MOCK_RADIATOR_PHOTO_LOG_SECOND: VerificationLogEntry[] = [
+  entry('radiators-2-v1', 'radiators', 'read', 'gemini-3.8-flash', 'Gemini reads the input', true, '{"room": "Main bedroom", "radiator_type": "K2", "height_mm": 600, "width_mm": 1400}', 1000),
+  entry('radiators-2-v2', 'radiators', 'check', 'code', 'panels and fins match radiator_type: K2 expects 2 panel(s), 2 fin row(s); got 2, 2', true, 'ok', 1050),
+  entry('radiators-2-v3', 'radiators', 'pass', 'code', 'all checks passed', true, 'use this reading', 1100),
+]
+
 function mockLog(): VerificationLogEntry[] {
   return [
     entry('boiler_plate-v1', 'boiler_plate', 'read', 'gemini-3.8-flash', 'Gemini reads the input', true, '{"make": "Worcester", "model": "Greenstar 24i"}', 0),
     entry('boiler_plate-v2', 'boiler_plate', 'check', 'code', 'model found in datasheet library: matched', true, 'ok', 300),
     entry('boiler_plate-v3', 'boiler_plate', 'pass', 'code', 'all checks passed', true, 'use this reading', 350),
-    entry('radiators-v1', 'radiators', 'read', 'gemini-3.8-flash', 'Gemini reads the input', true, '{"radiator_type": "other"}', 500),
-    entry('radiators-v2', 'radiators', 'check', 'code', 'radiator legible: model reports it cannot read the radiator', false, 'ask Gemini to look again', 600),
-    entry('radiators-v3', 'radiators', 'reread', 'gemini-4-argon', 'Gemini re-reads with the failed checks', true, '{"room": "Living room", "radiator_type": "K2", "height_mm": 600, "width_mm": 1200}', 900),
-    entry('radiators-v4', 'radiators', 'pass', 'code', 'all checks passed', true, 'use this reading', 950),
-    entry('radiators-2-v1', 'radiators', 'read', 'gemini-3.8-flash', 'Gemini reads the input', true, '{"room": "Main bedroom", "radiator_type": "K2", "height_mm": 600, "width_mm": 1400}', 1000),
-    entry('radiators-2-v2', 'radiators', 'check', 'code', 'panels and fins match radiator_type: K2 expects 2 panel(s), 2 fin row(s); got 2, 2', true, 'ok', 1050),
-    entry('radiators-2-v3', 'radiators', 'pass', 'code', 'all checks passed', true, 'use this reading', 1100),
+    ...MOCK_RADIATOR_PHOTO_LOG_FIRST,
+    ...MOCK_RADIATOR_PHOTO_LOG_SECOND,
     entry('gas_bill-v1', 'gas_bill', 'read', 'gemini-4-argon', 'Gemini reads the input', true, '{"total_kwh": 12000}', 1200),
     entry('gas_bill-v2', 'gas_bill', 'check', 'code', 'period covers about a year: 365 days', true, 'ok', 1250),
     entry('gas_bill-v3', 'gas_bill', 'pass', 'code', 'all checks passed', true, 'use this reading', 1300),
     entry('survey-v1', 'maths', 'check', 'code', 'Estimate A vs B: ratio 1.85 (fabric_higher)', false, 'explain the gap: 4 ranked reason(s)', 1500),
   ]
+}
+
+function withSampleModel(entries: VerificationLogEntry[]): VerificationLogEntry[] {
+  return entries.map((e) => (e.model.startsWith('gemini') ? { ...e, model: MOCK_SAMPLE_MODEL } : e))
+}
+
+function mockEnteredRadiatorLog(
+  known: Record<string, string | number>,
+  slotIndex: number,
+  offsetMs: number,
+): VerificationLogEntry[] {
+  const payload = JSON.stringify({
+    radiator_type: known.radiator_type,
+    width_mm: known.width_mm,
+    height_mm: known.height_mm,
+    ...(known.panels != null ? { panels: known.panels } : {}),
+    ...(known.fin_rows != null ? { fin_rows: known.fin_rows } : {}),
+  })
+  return [
+    entry(
+      `radiators-entered-${slotIndex}-v1`,
+      'radiators',
+      'pass',
+      MOCK_SAMPLE_MODEL,
+      'Entered by you',
+      true,
+      payload,
+      offsetMs,
+    ),
+  ]
+}
+
+function mockRadiatorLogsForUploads(
+  uploads: RadiatorUpload[],
+  radiatorsParam: RadiatorUpload[] | undefined,
+): VerificationLogEntry[] {
+  const photographed = (i: number) => radiatorsParam === undefined || (uploads[i]?.photos.length ?? 0) > 0
+  const blocks = [MOCK_RADIATOR_PHOTO_LOG_FIRST, MOCK_RADIATOR_PHOTO_LOG_SECOND]
+  const out: VerificationLogEntry[] = []
+  let offset = 500
+  let photoBlock = 0
+  for (let i = 0; i < uploads.length; i++) {
+    if (photographed(i)) {
+      out.push(...withSampleModel(blocks[photoBlock] ?? blocks[1]!))
+      photoBlock++
+      offset += 600
+    } else if (Object.keys(uploads[i]?.known ?? {}).length > 0) {
+      out.push(...mockEnteredRadiatorLog(uploads[i]!.known, i, offset))
+      offset += 80
+    }
+  }
+  return out
 }
 
 const READ_STATUS: Partial<Record<PhotoKind, InputReading['status']>> = {
@@ -658,17 +718,23 @@ const MISSING_INPUT_GAPS: Partial<
   },
 }
 
-function mockLogForKinds(kinds: PhotoKind[], radiatorSlots = 0): VerificationLogEntry[] {
+function mockLogForKinds(
+  kinds: PhotoKind[],
+  radiatorSlots: number,
+  uploads: RadiatorUpload[],
+  radiatorsParam?: RadiatorUpload[],
+): VerificationLogEntry[] {
   const allowed = new Set<PhotoKind>(kinds)
-  return mockLog()
-    .filter((e) => {
-      if (e.input === 'maths') return kinds.includes('gas_bill')
-      if (e.input === 'radiators' && e.id.startsWith('radiators-2')) return radiatorSlots > 1
-      return allowed.has(e.input as PhotoKind)
-    })
-    .map((e) =>
-      e.model.startsWith('gemini') ? { ...e, model: MOCK_SAMPLE_MODEL } : e,
-    )
+  const nonRadiator = mockLog().filter((e) => {
+    if (e.input === 'maths') return kinds.includes('gas_bill')
+    if (e.input === 'radiators') return false
+    return allowed.has(e.input as PhotoKind)
+  })
+  const radiator =
+    radiatorSlots > 0
+      ? mockRadiatorLogsForUploads(uploads.slice(0, radiatorSlots), radiatorsParam)
+      : []
+  return withSampleModel([...nonRadiator, ...radiator])
 }
 
 export function mockAnalysisResult(
@@ -781,8 +847,8 @@ export function mockAnalysisResult(
       : [],
     plan: SAM_PLAN,
     log: hasRadiatorVideo
-      ? [...mockLogForKinds(kinds, radiatorSlots), ...SAM_RADIATOR_VIDEO.log]
-      : mockLogForKinds(kinds, radiatorSlots),
+      ? [...mockLogForKinds(kinds, radiatorSlots, uploads, radiators), ...SAM_RADIATOR_VIDEO.log]
+      : mockLogForKinds(kinds, radiatorSlots, uploads, radiators),
     timings_ms: {},
   }
 }

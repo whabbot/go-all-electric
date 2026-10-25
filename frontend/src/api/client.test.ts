@@ -138,6 +138,32 @@ it('the Sam sample still has two photographed radiators', () => {
   expect(sam.readings.filter((r) => r.kind === 'radiators' && r.status === 'verified')).toHaveLength(2)
 })
 
+it('mock analysis log for a details-only radiator omits photo read and re-read', () => {
+  const result = mockAnalysisResult(['gas_bill'], false, [
+    { photos: [], known: { radiator_type: 'K2', width_mm: 900, height_mm: 600 } },
+  ])
+  const radLog = result.log.filter((e) => e.input === 'radiators')
+  expect(radLog.some((e) => e.check.includes('Gemini'))).toBe(false)
+  expect(radLog.some((e) => e.step === 'reread')).toBe(false)
+  expect(radLog).toEqual([
+    expect.objectContaining({
+      model: 'offline sample',
+      check: 'Entered by you',
+      action: expect.stringContaining('900'),
+    }),
+  ])
+  expect(radLog[0]?.action).toContain('600')
+})
+
+it('mock analysis keeps the photo radiator log when a card has a photo', () => {
+  const result = mockAnalysisResult(['gas_bill'], false, [
+    { photos: [new File(['a'], 'a.jpg')], known: {} },
+  ])
+  const radLog = result.log.filter((e) => e.input === 'radiators')
+  expect(radLog.some((e) => e.step === 'reread')).toBe(true)
+  expect(radLog.some((e) => e.check === 'Entered by you')).toBe(false)
+})
+
 it('mock analysis treats radiator-card photos as radiators input (log and no missing-photo gap)', async () => {
   vi.stubEnv('VITE_USE_MOCKS', 'true')
   const logs: string[] = []

@@ -20,7 +20,7 @@ to the network operator. Nothing is ever sent from the app.
 
 ## How to get to it (user POV)
 
-- `Next: Plan` or `Skip` on Quotes, then `Next: Pack`.
+- `Next: Plan` on Quotes (unchecked quotes: `Continue without checking`), then `Next: Pack`.
 - Step bar `Plan` / `Pack` once Estimates produced a plan and Spec was visited.
 
 ## Driving it with drive.sh
