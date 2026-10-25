@@ -871,7 +871,7 @@ export function mockAnalysisResult(
     plan: SAM_PLAN,
     log: [
       ...(enteredBill ? [entry('gas-bill-entered', 'gas_bill', 'pass', 'code', 'Entered by you', true, JSON.stringify(billValues(enteredBill)), 0),
-        entry('gas-bill-months', 'gas_bill', 'check', 'code', 'Twelve calendar months for the summer baseline', hasSummer && !issue, hasSummer && !issue ? 'Use entered summer months' : 'Use default baseline only for a complete year', 1)] : []),
+        entry('gas-bill-months', 'gas_bill', 'check', 'code', 'Summer usage for the hot-water baseline', hasSummer && !issue, hasSummer && !issue ? 'Use sample summer usage' : 'Use default baseline share', 1)] : []),
       ...(hasRadiatorVideo
       ? [...mockLogForKinds(kinds, radiatorSlots, uploads, radiators), ...SAM_RADIATOR_VIDEO.log]
       : mockLogForKinds(kinds, radiatorSlots, uploads, radiators)),

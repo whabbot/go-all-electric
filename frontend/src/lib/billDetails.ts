@@ -38,9 +38,10 @@ export function parseBillDetails(inputs: BillPeriodInputs[]): { known: KnownGasB
     if (row.end < row.start) return { known: null, error: 'End date must be on or after start date.' }
     periods.push({ kwh: Number(row.kwh), start: row.start, end: row.end })
   }
-  const issue = billIssue(periods)
-  const total = periods.reduce((s, p) => s + p.kwh, 0)
-  if (!issue && (total < 2000 || total > 40000)) return { known: null, error: 'Annual gas usage must be between 2,000 and 40,000 kWh.' }
+  const { chosen } = selectBillPeriods(periods)
+  const days = (+date(chosen[chosen.length - 1].end) - +date(chosen[0].start)) / day + 1
+  const total = chosen.reduce((s, p) => s + p.kwh, 0)
+  if ((days === 365 || days === 366) && (total < 2000 || total > 40000)) return { known: null, error: 'Annual gas usage must be between 2,000 and 40,000 kWh.' }
   return { known: { periods }, error: null }
 }
 

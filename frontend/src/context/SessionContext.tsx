@@ -208,7 +208,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const radiatorsRef = useRef<RadiatorCard[]>([])
   radiatorsRef.current = radiators
   const billPhotosRef = useRef(billPhotos)
-  billPhotosRef.current = billPhotos
+  useEffect(() => { billPhotosRef.current = billPhotos }, [billPhotos])
   const [radiatorVideo, setRadiatorVideoFile] = useState<File | null>(null)
   const [radiatorVideoResult, setRadiatorVideoResult] = useState<RadiatorVideoResult | null>(null)
   const [quotes, setQuotesState] = useState<CheckedQuote[]>([])

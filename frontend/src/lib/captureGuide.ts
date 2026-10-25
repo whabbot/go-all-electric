@@ -19,7 +19,7 @@ export const CAPTURE_SUMMARY_ITEMS: CaptureSummaryItem[] = [
     label: 'Gas bill',
     status: 'most_important',
     reason: 'Drives your measured heat loss, running costs and the quote size check.',
-    photoCount: '1 photo or screenshot',
+    photoCount: 'Bill photos or typed usage',
     timeHint: 'about 2 min',
   },
   {
