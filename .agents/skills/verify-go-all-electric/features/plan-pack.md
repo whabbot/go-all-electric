@@ -46,8 +46,9 @@ Preconditions:
 ## Gotchas
 
 - Plan needs an analysis with a plan; without Estimates the step stays locked.
-- Steps count as done only once visited. After the sample unlocks everything, jumping ahead leaves
-  Quotes with only Back and Skip and Plan with only Back.
+- Steps count as done only once visited. After the sample unlocks everything, jumping ahead still
+  shows **Next: Plan** from Quotes and **Next: Pack** from Plan (unchecked quotes use
+  **Continue without checking** instead of Skip).
 - `Download .txt` triggers a browser download; headless Chrome saves it silently, so assert the
   enabled state rather than the file.
 - Never paste or send a draft anywhere; drafts are for the homeowner to send.

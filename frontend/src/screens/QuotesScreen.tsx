@@ -5,6 +5,7 @@ import { ReviewPanel } from '../components/ReviewPanel'
 import { VerificationLogPanel } from '../components/VerificationLog'
 import { useSession } from '../context/SessionContext'
 import { quoteId } from '../lib/labels'
+import { newQuoteId } from '../lib/quoteIdentity'
 import { resetFileInput } from '../lib/fileInputReset'
 import { prepareImageFile } from '../lib/imagePrepare'
 import { pdfFileToPageImages } from '../lib/pdfToImages'
@@ -16,23 +17,18 @@ type QuoteQueueItem = {
   url: string
   fileName: string
   sourceLabel: string
-  quoteName: string
-  quoteIndex: number
+  quoteId: string
 }
 
 type RedactedPage = {
-  quoteIndex: number
-  quoteName: string
+  quoteId: string
   file: File
 }
 
-async function buildRedactQueue(files: File[], startQuoteIndex: number): Promise<QuoteQueueItem[]> {
+async function buildRedactQueue(files: File[]): Promise<QuoteQueueItem[]> {
   const queue: QuoteQueueItem[] = []
-  for (let offset = 0; offset < files.length; offset += 1) {
-    const file = files[offset]
-    const quoteIndex = startQuoteIndex + offset
-    // The file name stays on this device: it can carry a name or address.
-    const quoteName = quoteId(quoteIndex, null)
+  for (const file of files) {
+    const id = newQuoteId()
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
     if (isPdf) {
       const pages = await pdfFileToPageImages(file)
@@ -42,8 +38,7 @@ async function buildRedactQueue(files: File[], startQuoteIndex: number): Promise
           url: URL.createObjectURL(prepared),
           fileName: prepared.name,
           sourceLabel: `${file.name} page ${i + 1}`,
-          quoteName,
-          quoteIndex,
+          quoteId: id,
         })
       }
     } else if (file.type.startsWith('image/')) {
@@ -52,27 +47,38 @@ async function buildRedactQueue(files: File[], startQuoteIndex: number): Promise
         url: URL.createObjectURL(prepared),
         fileName: prepared.name,
         sourceLabel: file.name,
-        quoteName,
-        quoteIndex,
+        quoteId: id,
       })
     }
   }
   return queue
 }
 
-function groupRedactedPages(pages: RedactedPage[]): QuoteUploadGroup[] {
-  const byIndex = new Map<number, QuoteUploadGroup>()
+function groupRedactedPages(pages: RedactedPage[]): Array<{ id: string; pages: File[] }> {
+  const byId = new Map<string, File[]>()
+  const order: string[] = []
   for (const page of pages) {
-    let group = byIndex.get(page.quoteIndex)
-    if (!group) {
-      group = { quoteName: page.quoteName, pages: [] }
-      byIndex.set(page.quoteIndex, group)
+    if (!byId.has(page.quoteId)) {
+      byId.set(page.quoteId, [])
+      order.push(page.quoteId)
     }
-    group.pages.push(page.file)
+    byId.get(page.quoteId)!.push(page.file)
   }
-  return [...byIndex.entries()]
-    .sort(([a], [b]) => a - b)
-    .map(([, group]) => group)
+  return order.map((id) => ({ id, pages: byId.get(id)! }))
+}
+
+function toUploadGroups(
+  grouped: Array<{ id: string; pages: File[] }>,
+  results: Map<string, QuoteCheckResult | null>,
+): QuoteUploadGroup[] {
+  return grouped.map((g, index) => {
+    const result = results.get(g.id) ?? null
+    return {
+      id: g.id,
+      quoteName: quoteId(index, result),
+      pages: g.pages,
+    }
+  })
 }
 
 /** Size range and design load from the analysis; none without a bill (no measured basis). */
@@ -89,9 +95,6 @@ function sizeContext(analysis: ReturnType<typeof useSession>['analysis']): Quote
 export function QuotesScreen() {
   const { analysis, quotes, setQuotes, placeLabel, setQuotesStepBlocked } = useSession()
   const [redactedPages, setRedactedPages] = useState<RedactedPage[]>([])
-  const [results, setResults] = useState<QuoteCheckResult[] | null>(() =>
-    quotes.length && quotes.every((q) => q.result) ? quotes.map((q) => q.result as QuoteCheckResult) : null,
-  )
   const [checkError, setCheckError] = useState<string | null>(null)
   const size = sizeContext(analysis)
   const [loading, setLoading] = useState(false)
@@ -103,41 +106,44 @@ export function QuotesScreen() {
   const whyNeedTriggerRef = useRef<HTMLButtonElement | null>(null)
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
 
-  const quoteGroups = useMemo(() => groupRedactedPages(redactedPages), [redactedPages])
+  const quoteGroups = useMemo(
+    () =>
+      toUploadGroups(
+        groupRedactedPages(redactedPages),
+        new Map(quotes.map((q) => [q.group.id, q.result])),
+      ),
+    [quotes, redactedPages],
+  )
 
   const syncQuotesSession = (pages: RedactedPage[]) => {
-    const groups = groupRedactedPages(pages)
-    const resultByName = new Map(quotes.map((q) => [q.group.quoteName, q.result]))
-    setQuotes(groups.map((g) => ({ group: g, result: resultByName.get(g.quoteName) ?? null })))
+    const grouped = groupRedactedPages(pages)
+    const resultById = new Map(quotes.map((q) => [q.group.id, q.result]))
+    setQuotes(toUploadGroups(grouped, resultById).map((group) => ({
+      group,
+      result: resultById.get(group.id) ?? null,
+    })))
   }
 
   useEffect(() => {
     if (quotes.length === 0 || redactedPages.length > 0) return
     setRedactedPages(
-      quotes.flatMap((q, quoteIndex) =>
+      quotes.flatMap((q) =>
         q.group.pages.map((file) => ({
-          quoteIndex,
-          quoteName: q.group.quoteName,
+          quoteId: q.group.id,
           file,
         })),
       ),
     )
-    if (quotes.every((q) => q.result)) {
-      setResults(quotes.map((q) => q.result as QuoteCheckResult))
-    }
   }, [quotes, redactedPages.length])
 
   const allPagesReady = redactedPages.length > 0 && !current && stack.length === 0
 
   useEffect(() => {
     const waitingForCheck =
-      allPagesReady && quoteGroups.some((_, index) => !quotes[index]?.result)
+      allPagesReady && quotes.some((q) => q.group.pages.length > 0 && !q.result)
     setQuotesStepBlocked(Boolean(current) || stack.length > 0 || waitingForCheck)
-  }, [allPagesReady, current, quoteGroups, quotes, setQuotesStepBlocked, stack.length])
+  }, [allPagesReady, current, quotes, setQuotesStepBlocked, stack.length])
 
-  // Page URLs are revoked as each page leaves the queue (finish, cancel, new upload). Revoking
-  // on every queue change would also revoke the page that just became current, and the cover-up
-  // would then export the previous page instead.
   const queueRef = useRef<QuoteQueueItem[]>([])
   useEffect(() => {
     queueRef.current = current ? [current, ...stack] : stack
@@ -154,8 +160,15 @@ export function QuotesScreen() {
     setCheckError(null)
     try {
       const out = await api.checkQuotes(groups, size)
-      setResults(out)
-      setQuotes(groups.map((group, i) => ({ group, result: out[i] ?? null })))
+      setQuotes(
+        groups.map((group, i) => {
+          const result = out[i] ?? null
+          return {
+            group: { ...group, quoteName: quoteId(i, result) },
+            result,
+          }
+        }),
+      )
     } catch (e) {
       setCheckError(e instanceof Error ? e.message : 'Quote check failed')
     } finally {
@@ -171,9 +184,7 @@ export function QuotesScreen() {
     setStack([])
     setImporting(true)
     try {
-      const startQuoteIndex =
-        Math.max(-1, ...redactedPages.map((p) => p.quoteIndex), ...quotes.map((_, i) => i)) + 1
-      const queue = await buildRedactQueue(picked, startQuoteIndex)
+      const queue = await buildRedactQueue(picked)
       if (queue.length === 0) {
         setImportError('No pages to redact.')
         return
@@ -204,20 +215,16 @@ export function QuotesScreen() {
     void startRedactFlow(picked.slice(0, slotsLeft))
   }
 
-  const removeQuote = (quoteName: string) => {
-    const nextPages = redactedPages.filter((p) => p.quoteName !== quoteName)
+  const removeQuote = (id: string) => {
+    const nextPages = redactedPages.filter((p) => p.quoteId !== id)
     setRedactedPages(nextPages)
     syncQuotesSession(nextPages)
-    setResults(null)
   }
 
   const finishPage = (redacted: File) => {
     if (current) {
       setRedactedPages((prev) => {
-        const next = [
-          ...prev,
-          { quoteIndex: current.quoteIndex, quoteName: current.quoteName, file: redacted },
-        ]
+        const next = [...prev, { quoteId: current.quoteId, file: redacted }]
         syncQuotesSession(next)
         return next
       })
@@ -243,23 +250,21 @@ export function QuotesScreen() {
   }
 
   const loadSamDemoQuotes = () => {
-    const names = ['Quote A', 'Quote B', 'Quote C']
-    const groups = names.map(
-      (name) => ({
-        quoteName: name,
-        pages: [new File(['%PDF-1.4'], name, { type: 'application/pdf' })],
-      }),
-    )
+    const groups: QuoteUploadGroup[] = ['Quote A', 'Quote B', 'Quote C'].map((name) => ({
+      id: newQuoteId(),
+      quoteName: name,
+      pages: [new File(['%PDF-1.4'], name, { type: 'application/pdf' })],
+    }))
     setRedactedPages(
-      groups.map((g, quoteIndex) => ({
-        quoteIndex,
-        quoteName: g.quoteName,
+      groups.map((g) => ({
+        quoteId: g.id,
         file: g.pages[0],
       })),
     )
-    setResults(null)
     void runCheck(groups)
   }
+
+  const checkedQuotes = quotes.filter((q) => q.result)
 
   return (
     <section className="screen quotes-screen">
@@ -295,11 +300,11 @@ export function QuotesScreen() {
       {quoteGroups.length > 0 && (
         <ul className="file-list">
           {quoteGroups.map((g) => (
-            <li key={g.quoteName}>
+            <li key={g.id}>
               {g.quoteName}
               {g.pages.length > 1 ? ` (${g.pages.length} redacted pages)` : ''}
               {!loading && (
-                <button type="button" className="btn" onClick={() => removeQuote(g.quoteName)}>
+                <button type="button" className="btn" onClick={() => removeQuote(g.id)}>
                   Remove
                 </button>
               )}
@@ -331,7 +336,7 @@ export function QuotesScreen() {
           Checking your quotes against your target size…
           <ul className="quote-skeleton-list">
             {quoteGroups.map((g) => (
-              <li key={g.quoteName} className="card quote-skeleton-card" aria-hidden="true" />
+              <li key={g.id} className="card quote-skeleton-card" aria-hidden="true" />
             ))}
           </ul>
         </div>
@@ -339,7 +344,6 @@ export function QuotesScreen() {
 
       {current && (
         <ImageCoverUp
-          // One cover-up per page: boxes, crop and the loaded image never carry to the next page.
           key={current.url}
           imageUrl={current.url}
           title={`Redact quote page — ${current.sourceLabel}`}
@@ -372,47 +376,51 @@ export function QuotesScreen() {
 
       {checkError && <p className="error">{checkError}</p>}
 
-      {results && (
+      {checkedQuotes.length > 0 && (
         <div className="quote-results">
-          {results.map((q) => (
-            <article key={q.filename} className="card quote-card">
-              <h2>{q.filename}</h2>
-              {q.verified.status === 'couldnt_tell' && (
-                <p className="warning">Couldn&apos;t read this quote reliably.</p>
-              )}
-              {q.quoted_kw != null && <p>Quoted size: {q.quoted_kw} kW</p>}
-              {q.design_flow_temp_c != null && <p>Design flow: {q.design_flow_temp_c} °C</p>}
-              <ul className="flags">
-                {q.flags.map((f, i) => (
-                  <li key={i} className={`flag flag-${f.severity}`}>
-                    <strong>
-                      {f.severity === 'red' ? 'Issue: ' : f.severity === 'amber' ? 'Caution: ' : 'Info: '}
-                      {f.message}
-                    </strong>
-                    <span className="evidence">{f.evidence}</span>
-                  </li>
-                ))}
-              </ul>
-              <h3>Questions to ask before signing</h3>
-              <ul>
-                {q.questions_to_ask.map((question) => (
-                  <li key={question}>{question}</li>
-                ))}
-              </ul>
-            </article>
-          ))}
+          {checkedQuotes.map((q) => {
+            const result = q.result!
+            return (
+              <article key={q.group.id} className="card quote-card">
+                <h2>{q.group.quoteName}</h2>
+                {result.verified.status === 'couldnt_tell' && (
+                  <p className="warning">Couldn&apos;t read this quote reliably.</p>
+                )}
+                {result.quoted_kw != null && <p>Quoted size: {result.quoted_kw} kW</p>}
+                {result.design_flow_temp_c != null && <p>Design flow: {result.design_flow_temp_c} °C</p>}
+                <ul className="flags">
+                  {result.flags.map((f, i) => (
+                    <li key={i} className={`flag flag-${f.severity}`}>
+                      <strong>
+                        {f.severity === 'red' ? 'Issue: ' : f.severity === 'amber' ? 'Caution: ' : 'Info: '}
+                        {f.message}
+                      </strong>
+                      <span className="evidence">{f.evidence}</span>
+                    </li>
+                  ))}
+                </ul>
+                <h3>Questions to ask before signing</h3>
+                <ul>
+                  {result.questions_to_ask.map((question) => (
+                    <li key={question}>{question}</li>
+                  ))}
+                </ul>
+              </article>
+            )
+          })}
         </div>
       )}
 
-      {results && (
+      {checkedQuotes.length > 0 && (
         <VerificationLogPanel
           title="Quote reading log"
-          entries={results.flatMap((q, i) => q.verified.log.map((e) => ({ ...e, id: `q${i}-${e.id}` })))}
+          entries={checkedQuotes.flatMap((q, i) =>
+            (q.result?.verified.log ?? []).map((e) => ({ ...e, id: `q${i}-${e.id}` })),
+          )}
         />
       )}
 
       <ReviewPanel />
-
     </section>
   )
 }
