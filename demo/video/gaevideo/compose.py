@@ -60,11 +60,11 @@ def beat_clip(
     work: Path,
     badge: list[str] | None,
     insert: Path | None,
-    labels: list[tuple[str, float, float]] | None = None,
+    labels: list[tuple[list[str], float, float]] | None = None,
 ) -> tuple[Path, float, list[tuple[float, float, str]]]:
     """Render one beat. Returns the clip, its length and its captions (beat clock).
 
-    `labels` (text, from, to) replace the badge, e.g. over an inserted clip of real footage."""
+    `labels` (lines, from, to) replace the badge, e.g. over an inserted clip of real footage."""
     wav, narr_s = voice
     intervals = kept_intervals(mark.start, mark.end, [(a, b) for a, b, _ in mark.cuts])
     length = sum(b - a for a, b in intervals)
@@ -116,8 +116,8 @@ def beat_clip(
         )
         label, n = f"v{n}", n + 1
     if labels is not None:
-        for k, (text, a, b) in enumerate(labels):
-            png = gfx.side_label([text], stem.with_name(f"{stem.name}-label{k}.png"), LIVE_LABEL)
+        for k, (lines, a, b) in enumerate(labels):
+            png = gfx.side_label(lines, stem.with_name(f"{stem.name}-label{k}.png"), LIVE_LABEL)
             inputs += ["-i", str(png)]
             chain.append(f"[{label}][{n}:v]overlay=0:0:enable='between(t,{a:.3f},{b:.3f})'[v{n}]")
             label, n = f"v{n}", n + 1

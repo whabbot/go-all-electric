@@ -16,7 +16,7 @@ class Beat:
     narration: str
     actions: list[tuple[str, dict]]
     insert: str | None = None
-    insert_label: str | None = None
+    insert_label: list[str] | None = None
 
 
 @dataclass
@@ -53,10 +53,16 @@ def load(path: Path, story: str) -> Storyboard:
                 narration,
                 actions,
                 b.get("insert"),
-                b.get("insert_label"),
+                _lines(b.get("insert_label")),
             )
         )
     return Storyboard(" ".join(str(raw.get("voice_style", "")).split()), beats)
+
+
+def _lines(value: str | list[str] | None) -> list[str] | None:
+    if not value:
+        return None
+    return [value] if isinstance(value, str) else [str(v) for v in value]
 
 
 def caption_chunks(text: str, max_chars: int = 84) -> list[str]:

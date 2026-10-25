@@ -222,8 +222,8 @@ def test_one_insert_clip_covers_both_atlas_beats(tmp_path):
     assert mark.start == marks[7].start and mark.end == marks[8].end
     # Real footage gets its own labels, switching where the second beat starts.
     assert [(text, a) for text, a, _ in labels] == [
-        ("Live site", 0.0),
-        ("MongoDB Atlas console", 3.0),
+        (["LIVE SITE", "real footage"], 0.0),
+        (["MONGODB", "Atlas console", "real footage"], 3.0),
     ]
     assert labels[0][2] == 3.0
 
