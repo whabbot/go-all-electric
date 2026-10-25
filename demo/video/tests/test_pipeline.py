@@ -211,7 +211,7 @@ def test_one_insert_clip_covers_both_atlas_beats(tmp_path):
     segs = list(make_video._segments(beats, marks, voices, {"atlas": clip}, tmp_path))
     assert len(segs) == len(beats) - 1
     (seg,) = [s for s in segs if s[4] is not None]
-    seg_id, narration, mark, (wav, secs), insert = seg
+    seg_id, narration, mark, (wav, secs), insert, labels = seg
     assert seg_id == "atlas-search+atlas-console" and insert == clip
     by_id = {b.id: b for b in beats}
     assert by_id["atlas-search"].narration in narration
@@ -220,7 +220,14 @@ def test_one_insert_clip_covers_both_atlas_beats(tmp_path):
     assert secs == pytest.approx(4.0 + record.TAIL + record.LEAD, abs=0.05)
     assert compose.probe_duration(wav) >= secs
     assert mark.start == marks[7].start and mark.end == marks[8].end
+    # Real footage gets its own labels, switching where the second beat starts.
+    assert [(text, a) for text, a, _ in labels] == [
+        ("Live site", 0.0),
+        ("MongoDB Atlas console", 3.0),
+    ]
+    assert labels[0][2] == 3.0
 
     # Without a clip every beat stays its own segment.
     plain = list(make_video._segments(beats, marks, voices, {}, tmp_path))
     assert [s[0] for s in plain] == [b.id for b in beats]
+    assert all(s[5] is None for s in plain)

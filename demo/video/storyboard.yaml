@@ -10,6 +10,8 @@
 #   insert        name of a clip that can replace this beat's footage (--insert NAME=PATH);
 #                 a clip longer than the narration lengthens the beat. Consecutive beats with
 #                 the same insert become one segment: the clip plays under all their lines
+#   insert_label  corner label shown while an inserted clip plays this beat (replaces the
+#                 draft's sample badge, because the clip is real footage)
 #   actions       browser steps, in order. Each step is a one-key mapping; add `only: draft`
 #                 or `only: final` to a step to run it in one story only.
 #
@@ -159,6 +161,7 @@ beats:
   - id: atlas-search
     screen: The app's own /api/datasheets/search result (Atlas hybrid search) in a second tab
     insert: atlas
+    insert_label: Live site
     draft: >-
       Under the hood, MongoDB Atlas is the data store. Boiler plates and quoted models are
       matched against a datasheet library with Atlas hybrid search: full text plus vector,
@@ -178,6 +181,7 @@ beats:
   - id: atlas-console
     screen: "INSERT POINT: captain's Atlas console clip (Search indexes, then the newest survey)"
     insert: atlas
+    insert_label: MongoDB Atlas console
     draft: >-
       In Atlas: two search indexes, full text and vector, with Voyage AI embeddings made
       inside Atlas. And every survey is saved with the postcode district only, never the

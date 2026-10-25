@@ -16,6 +16,7 @@ class Beat:
     narration: str
     actions: list[tuple[str, dict]]
     insert: str | None = None
+    insert_label: str | None = None
 
 
 @dataclass
@@ -45,7 +46,16 @@ def load(path: Path, story: str) -> Storyboard:
             if args.pop("only", story) != story:
                 continue
             actions.append((name, args))
-        beats.append(Beat(b["id"], b.get("screen", ""), narration, actions, b.get("insert")))
+        beats.append(
+            Beat(
+                b["id"],
+                b.get("screen", ""),
+                narration,
+                actions,
+                b.get("insert"),
+                b.get("insert_label"),
+            )
+        )
     return Storyboard(" ".join(str(raw.get("voice_style", "")).split()), beats)
 
 
